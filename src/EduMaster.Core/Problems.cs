@@ -15,6 +15,7 @@ public sealed record ProblemDraft
     public bool FromSolution { get; init; }
     public bool UseSolutionLogic { get; init; }
     public string[] Steps { get; init; } = [];
+    public string[] ExcludedSteps { get; init; } = [];
     public string LogicScope { get; init; } = "";
     public bool SkipDeterministicPlan { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -25,12 +26,12 @@ public sealed record ProblemDraft
     public void Validate()
     {
         if (Id == Guid.Empty || Body is null || Answer is null || Explanation is null || string.IsNullOrWhiteSpace(Title) || (string.IsNullOrWhiteSpace(Body) && Source is null)
-            || Steps is null || Steps.Length > MaxLogicSteps || Steps.Any(s => s is null))
+            || Steps is null || ExcludedSteps is null || Steps.Length > MaxLogicSteps || ExcludedSteps.Length > MaxLogicSteps || Steps.Any(s => s is null) || ExcludedSteps.Any(s => s is null))
             throw new ArgumentException("문제 제목과 본문을 입력하거나 샘플 파일을 선택해 주세요. 정답·해설은 선택 사항입니다.");
         if(UseSolutionLogic&&string.IsNullOrWhiteSpace(Explanation))throw new ArgumentException("문제+풀이 방식에서는 기준 풀이가 필요합니다. 풀이가 함께 보이는 이미지를 넣거나 기준 해설을 입력해 주세요.");
         if(UseSolutionLogic&&(Steps.Length<MinLogicSteps||Steps.Length>MaxLogicSteps||Steps.Any(string.IsNullOrWhiteSpace)))throw new ArgumentException($"문제+풀이 방식에서는 실제 풀이 순서대로 {MinLogicSteps}~{MaxLogicSteps}개의 풀이 단계가 필요합니다. 풀이가 없으면 먼저 STEP별 풀이를 생성해 주세요.");
         if(UseSolutionLogic&&Body.Contains("[판독불가]"))throw new ArgumentException("기준 문제에 판독불가 부분이 있습니다. 원본을 보고 해당 글자·수치를 수정한 뒤 생성해 주세요.");
-        if (Body.Length > 12000 || Explanation.Length > 12000 || Answer.Length > 3000 || Title.Length > 200 || LogicScope.Length>1000 || Steps.Any(s => s.Length > 3000))
+        if (Body.Length > 12000 || Explanation.Length > 12000 || Answer.Length > 3000 || Title.Length > 200 || LogicScope.Length>1000 || Steps.Any(s => s.Length > 3000) || ExcludedSteps.Any(s => s.Length > 3000))
             throw new ArgumentException("입력 내용이 너무 깁니다. 문제·해설은 12,000자 이내로 입력해 주세요.");
     }
 

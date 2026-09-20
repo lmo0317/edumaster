@@ -43,17 +43,17 @@ public sealed class LocalGemmaGenerator(HttpClient client)
         if(draft.Source?.IsAttachment==true && images is not{Count:>0})throw new InvalidOperationException("원본 이미지를 준비하지 못했습니다. 파일을 다시 선택해 주세요.");
         var vision=new LocalVisionReader(client);var contexts=new List<VisualUnderstanding>();
         if(plan is null&&images is not null)foreach(var image in images){progress?.Report($"원본 {image.Page}페이지의 축·결합·연결 관계 확인");contexts.Add(await vision.UnderstandAsync(image,draft.Body,token));}
-        var source=JsonSerializer.Serialize(new{inputFingerprint=draft.Fingerprint(),materialKind=draft.UseSolutionLogic?"problem-and-solution":draft.FromSolution?"solution":"problem",title=draft.Title,body=draft.Body,suppliedAnswer=draft.Answer,suppliedExplanation=draft.Explanation,suppliedSteps=draft.Steps,logicScope=draft.LogicScope,
+        var source=JsonSerializer.Serialize(new{inputFingerprint=draft.Fingerprint(),materialKind=draft.UseSolutionLogic?"problem-and-solution":draft.FromSolution?"solution":"problem",title=draft.Title,body=draft.Body,suppliedAnswer=draft.Answer,suppliedExplanation=draft.Explanation,suppliedSteps=draft.Steps,forbiddenLaterSteps=draft.ExcludedSteps,logicScope=draft.LogicScope,
             visualContext=contexts.ToArray(),verifiedPlan=plan is null?null:new{body=plan.Body,choices=plan.Choices,answer=plan.Answer,explanation=string.Join("\n",plan.Solution.Steps)},visualPolicy="원본 문제의 수치, 좌표, 조건을 변형한다. verifiedPlan이 있으면 그 조건·표·질문·보기·정답을 그대로 사용하고 미지수나 몰질량을 바꾸지 않는다. 수치의 성립은 앱이 계산한다. 필수 그림은 변경된 조건에 맞춰 작성한다."},new JsonSerializerOptions{Encoder=System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping});
         object content=source;
         if(hasImages){var parts=new List<object>{new{type="text",text=source}};parts.AddRange(images!.Select(p=>(object)new{type="image_url",image_url=new{url=p.DataUrl}}));content=parts.ToArray();}
         SampleResult? result=null;
         for(var attempt=0;attempt<2;attempt++){
             var compact=attempt==0
-                ?"\n[간결한 완성 규칙]\n1. 본문(body)에는 변형 문제와 필수 조건만 적는다.\n2. 해설(explanation)은 핵심 계산식과 정답 근거를 2~3문장으로 짧게 작성한다. 중간 사고 과정, 긴 유도 과정, 반복 문장을 쓰지 않는다.\n3. steps는 각 1문장, 보기 값은 짧게 적는다."
-                :"\n이전 응답은 출력 한도를 넘었다. 같은 입력으로 최종 JSON만 다시 작성한다. 본문에는 풀이를 쓰지 말고 필수 조건과 질문만 적는다. 해설은 핵심 계산 2문장, steps는 각각 한 문장, 보기 값은 짧게 적는다. 입력 문제의 필수 조건을 생략하거나 다른 문제로 바꾸지 않는다. 반복 문장과 중간 추론을 출력하지 않는다.";
-            var body=new{model=model.Id,messages=new object[]{new{role="system",content=VariantResponse.LocalPrompt()+compact+"\n"+ScientificVisuals.DrawingInstructions+"\n"+ScientificTemplates.Instructions},new{role="user",content}},
-                max_tokens=attempt==0?2048:1536,temperature=0.5,stream=false,reasoning_effort="low",chat_template_kwargs=new{enable_thinking=false},response_format=new{type="json_object",schema=VariantResponse.LocalSchema(draft)}};
+                ?"\n[상세 해설 완성 규칙]\n1. 본문(body)에는 변형 문제와 필수 조건만 적는다.\n2. 해설(explanation)은 각 STEP마다 사용 조건, 판단 이유, 수치 대입 전 식, 실제 계산, 단위, 중간 결론과 최종 정답 연결을 자세히 적는다.\n3. steps는 각 단계의 핵심 판단과 계산을 독립적으로 이해할 수 있는 완전한 문장으로 적는다."
+                :"\n이전 응답은 출력 한도를 넘었다. 같은 입력으로 완결된 JSON만 다시 작성한다. 본문 조건은 유지한다. 해설은 각 STEP의 조건·식·계산·결론을 최소 1문장씩 포함하고, steps도 기준 단계와 1:1로 유지한다. 불필요한 수사와 동일 문장 반복만 줄인다.";
+            var body=new{model=model.Id,messages=new object[]{new{role="system",content=VariantResponse.LocalPrompt()+compact+"\n"+(draft.SkipDeterministicPlan?LearningStagePlan.GenerationRules+"\n":"")+ScientificVisuals.DrawingInstructions+"\n"+ScientificTemplates.Instructions},new{role="user",content}},
+                max_tokens=attempt==0?6144:4096,temperature=0.0,stream=false,reasoning_effort="low",chat_template_kwargs=new{enable_thinking=false},response_format=new{type="json_object",schema=VariantResponse.LocalSchema(draft)}};
             progress?.Report(attempt==0?(hasImages?"Gemma가 원본 이미지를 직접 보며 변형 문제 작성 중 (약 1분 소요)":"로컬 Gemma가 변형 문제·정답·해설 작성 중 (로컬 GPU 생성 · 약 1분 소요)"):"Gemma 출력 한도 도달 · 간결한 완성 답변으로 자동 재시도 1/1 · 원본 유지");
             using var request=new HttpRequestMessage(HttpMethod.Post,new Uri(Endpoint(endpoint),"chat/completions")){Content=JsonContent.Create(body)};
             using var response=await client.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,token);

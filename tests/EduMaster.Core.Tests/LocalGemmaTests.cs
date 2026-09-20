@@ -104,7 +104,7 @@ public class LocalGemmaTests
         using var http=new HttpClient(new Handler(async request=>{
             if(request.Method==HttpMethod.Get)return Json(new{data=new[]{new{id="gemma-4-12b"}}});
             using var payload=JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
-            posts++;Assert.Equal(posts==1?2048:1536,payload.RootElement.GetProperty("max_tokens").GetInt32());
+            posts++;Assert.Equal(posts==1?6144:4096,payload.RootElement.GetProperty("max_tokens").GetInt32());
             using var source=JsonDocument.Parse(payload.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!);
             Assert.Equal(draft.Body,source.RootElement.GetProperty("body").GetString());
             var variant=System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Variant(draft.Body)))!;

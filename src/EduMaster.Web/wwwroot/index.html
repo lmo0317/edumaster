@@ -103,14 +103,16 @@
       <details class="text-mode-details"><summary>선택한 문제의 텍스트·상세 해설</summary><h3 id="result-title"></h3><div id="result-body" class="pre"></div><div id="choices"></div><div class="answer-box"><span>정답 · 검토 전</span><strong id="result-answer"></strong></div><h4>해설</h4><div id="result-explanation" class="pre"></div><h4>풀이 흐름</h4><ol id="steps"></ol></details>
       <details class="source-mode-details"><summary>입력했던 기준 원본 자료</summary><div id="result-figures"></div><div id="source" class="pre"></div></details>
     </article>
-    <div id="result-footer" class="card-footer result-footer" hidden><span>선택한 결과 내보내기</span><button id="copy" disabled>텍스트 복사</button><button id="print" disabled>인쇄 · PDF</button><button id="copy-image-footer" disabled hidden>문제 이미지 복사</button><button id="download-image-footer" disabled hidden>이미지 저장</button></div>
+    <div id="result-footer" class="card-footer result-footer" hidden><span>전체 결과 내보내기</span><button id="report-pdf" class="primary" disabled>전체 보고서 PDF 저장 · 머리말 끄기</button><button id="copy" disabled>선택 문제 텍스트 복사</button><button id="print" disabled>선택 문제 인쇄</button><button id="copy-image-footer" disabled hidden>문제 이미지 복사</button><button id="download-image-footer" disabled hidden>이미지 저장</button></div>
   </section>
 
   <div class="wizard-reset"><button id="reset" class="reset-btn">처음부터 다시 시작</button></div>
   <p id="status" class="status" aria-live="polite">입력과 결과는 이 브라우저 탭에서 유지됩니다.</p>
 </main>
 
+<article id="report-print" class="report-print" hidden aria-label="전체 문제 보고서"></article>
+
 <dialog id="image-viewer" class="image-viewer" aria-labelledby="image-viewer-title"><div class="image-viewer-toolbar"><strong id="image-viewer-title">이미지 크게 보기</strong><button type="button" id="image-viewer-close" aria-label="이미지 크게 보기 닫기">닫기 ✕</button></div><div class="image-viewer-controls"><button type="button" id="image-viewer-out" aria-label="이미지 축소">−</button><span id="image-viewer-scale" aria-live="polite">100%</span><button type="button" id="image-viewer-in" aria-label="이미지 확대">＋</button><button type="button" id="image-viewer-fit">화면에 맞추기</button><span>확대 후 좌우·위아래로 스크롤할 수 있습니다</span></div><div id="image-viewer-stage" class="image-viewer-stage"><img id="image-viewer-image" alt=""></div></dialog>
-<script src="app.js?v=20260920_v35"></script>
+<script src="app.js?v=20260920_v43"></script>
 </body>
 </html>

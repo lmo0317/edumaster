@@ -25,7 +25,7 @@ try {
     New-Item -ItemType Directory -Force $logs | Out-Null
     # Keep the shared Blog text server. Limit this server's GPU layers to coexist on 16GB.
     # Gemma image prefill is non-causal; ubatch must cover the entire 1120-token image.
-    $arguments=@('-m',$model,'--mmproj',$projector,'--host','127.0.0.1','--port','8092','--alias','edumaster-gemma-4-12b-vision','-c','8192','-np','1','-ngl','12','-b','2048','-ub','2048','--no-mmproj-offload','--image-min-tokens','1120','--image-max-tokens','1120','--jinja','--reasoning-budget','0','--reasoning','off')
+    $arguments=@('-m',$model,'--mmproj',$projector,'--host','127.0.0.1','--port','8092','--alias','edumaster-gemma-4-12b-vision','-c','32768','-fa','on','-np','1','-ngl','12','-b','2048','-ub','2048','--no-mmproj-offload','--image-min-tokens','1120','--image-max-tokens','1120','--jinja','--reasoning-budget','0','--reasoning','off')
     $vision=Start-Process $server -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $logs 'gemma-vision-server.log') -RedirectStandardOutput (Join-Path $logs 'gemma-vision-out.log')
     $vision.Id | Set-Content $pidFile
 } finally {$mutex.ReleaseMutex();$mutex.Dispose()}

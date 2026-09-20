@@ -50,6 +50,29 @@ public static class ReactionMassCheck
     }
     private sealed record Row(double A,double B,char Remaining,double Rest,string Relative)
     { public double ReactedA=>Remaining=='A'?A-Rest:A; }
+    public static bool TryHideRemainingSpecies(string text,out string repaired,out string proof)
+    {
+        repaired=text;proof="";var lines=text.Split('\n');var parsed=new List<(int Line,string Experiment,Row Row,string[] Cells)>();
+        for(var i=0;i<lines.Length;i++){
+            var cells=lines[i].Split('|',StringSplitOptions.TrimEntries|StringSplitOptions.RemoveEmptyEntries);
+            if(cells.Length<4||!Regex.IsMatch(cells[0],@"^(I|II|III|Ⅰ|Ⅱ|Ⅲ)$"))continue;
+            var rest=Regex.Match(Regex.Replace(cells[3],@"\s", ""),@"^([AB])(.+w)$");if(!rest.Success)continue;
+            try{parsed.Add((i,cells[0],new Row(Number(cells[1]),Number(cells[2]),rest.Groups[1].Value[0],Number(rest.Groups[2].Value),cells.Length>4?cells[4]:""),cells));}catch(InvalidDataException){return false;}
+        }
+        if(parsed.Count<2||parsed.Count>8)return false;
+        var candidates=new List<List<Row>>();
+        for(var mask=0;mask<(1<<parsed.Count);mask++){
+            var candidate=parsed.Select((p,i)=>p.Row with{Remaining=(mask&(1<<i))==0?'A':'B'}).ToList();
+            try{_=ConsumedMassRatio(candidate);if(!candidates.Any(c=>c.Select(r=>r.Remaining).SequenceEqual(candidate.Select(r=>r.Remaining))))candidates.Add(candidate);}catch(InvalidDataException){}
+        }
+        if(candidates.Count!=1||!candidates[0].Select(r=>r.Remaining).SequenceEqual(parsed.Select(p=>p.Row.Remaining)))return false;
+        var unique=candidates[0];var ratio=ConsumedMassRatio(unique);
+        foreach(var (item,index) in parsed.Select((p,i)=>(p,i))){var cells=item.Cells.ToArray();cells[3]=Regex.Replace(cells[3],@"^\s*[AB]\s*","");lines[item.Line]="| "+string.Join(" | ",cells)+" |";}
+        repaired=string.Join("\n",lines);
+        var details=parsed.Select((p,i)=>{var r=unique[i];var consumedA=r.Remaining=='A'?r.A-r.Rest:r.A;var consumedB=r.Remaining=='B'?r.B-r.Rest:r.B;return $"실험 {p.Experiment}은 {r.Remaining}가 남을 때 반응한 A:B 질량이 {Fraction(consumedA)}w:{Fraction(consumedB)}w";});
+        proof=$"잔류 기체의 종류를 A 또는 B로 가정해 모든 실험의 공통 소비 질량비를 비교한다. {string.Join(", ",details)}로만 서로 일치하므로 남는 기체는 {string.Join(", ",unique.Select(r=>r.Remaining))}이고 B/A 소비 질량비는 {Fraction(ratio)}이다.";
+        return true;
+    }
     public static QualityCheck? InspectMassConditions(string text)
     {
         text=CalculationText(text);var compact=Regex.Replace(text,@"\s","");

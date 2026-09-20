@@ -1,11 +1,13 @@
 'use strict';
-const $=id=>document.getElementById(id);const prefix=new URL('.',document.currentScript?.src||location.href).href;let busy=false,jobId=null,result=null,previewUrl=null,separatePreviewUrls=[],selectedQuestionFile=null,selectedSolutionFile=null,materialReadPending=false,sourceId=null,requiresImage=false,sourceExpiresAt=null,importController=null,importTimedOut=false;
+const $=id=>document.getElementById(id);const prefix=new URL('.',document.currentScript?.src||location.href).href;let busy=false,jobId=null,result=null,previewUrl=null,separatePreviewUrls=[],selectedQuestionFile=null,selectedSolutionFile=null,materialReadPending=false,sourceId=null,requiresImage=false,sourceExpiresAt=null,hasSolutionImage=false,importController=null,importTimedOut=false;
 let pendingJob=null,generationStarted=false;
 let imageReady=false;
 let qualityChecking=false;
 let renderController=null;
 let comparisonOutputs=[];globalThis.currentStageProgress='';
 const stageQualityChecks=new Set();
+const stageRenderAutoChecks=new Set();
+let stageRenderQueue=Promise.resolve();
 const logicStepInputs=()=>[...$('logic-steps').querySelectorAll('textarea')];
 const readLogicSteps=()=>logicStepInputs().map(input=>input.value.trim());
 function updateLogicStepLabels(){logicStepInputs().forEach((input,index)=>{input.id='logic-step-'+(index+1);const row=input.closest('.logic-step-row');row.querySelector('label').htmlFor=input.id;row.querySelector('label b').textContent=index+1;row.querySelector('.logic-step-remove').ariaLabel=`풀이 단계 ${index+1} 삭제`;});$('logic-card-title').textContent=`풀이 로직 ${logicStepInputs().length}단계`;}
@@ -134,7 +136,7 @@ function feedback(title,body,error=false){
  if(!result)$('output').hidden=true;$('comparison').hidden=true;$('feedback').hidden=false;
  $('feedback-title').textContent=title;$('feedback-body').textContent=body;
  $('feedback-body').classList.toggle('error',error);
- $('copy').disabled=$('print').disabled=true;
+ $('copy').disabled=$('print').disabled=true;if($('report-pdf'))$('report-pdf').disabled=true;
  if($('copy-image-footer'))$('copy-image-footer').disabled=$('download-image-footer').disabled=true;
  globalThis.updateWorkflowState?.();
 }
@@ -144,7 +146,7 @@ function analysisStatus(title,body,state=''){
 
 function setBusy(value){
  busy=value;
- for(const id of ['file','question-file','solution-file','read-material','solve-problem','add-logic-step','title','body','answer','explanation','generate','reset','material-kind','provider','copy-image-footer','download-image-footer']){
+ for(const id of ['file','question-file','solution-file','read-material','solve-problem','add-logic-step','title','body','answer','explanation','generate','reset','material-kind','provider','copy-image-footer','download-image-footer','report-pdf']){
   const el=$(id);if(el)el.disabled=value||(!authenticated&&['file','question-file','solution-file','generate'].includes(id));
  }
  if(typeof logicStepInputs==='function')logicStepInputs().forEach(input=>input.disabled=value);document.querySelectorAll('.logic-step-remove').forEach(button=>button.disabled=value);
@@ -160,7 +162,7 @@ function setBusy(value){
 
 function save(){
  $('resume-job').hidden=!pendingJob||busy||!authenticated;
- const saved={title:$('title').value,body:$('body').value,answer:$('answer').value,explanation:$('explanation').value,logicSteps:readLogicSteps(),sourceId,requiresImage,sourceExpiresAt,fromSolution:false,useSolutionLogic:true,materialKind:$('material-kind').value,provider:$('provider').value,comparisonOutputs:comparisonOutputs.filter(o=>o.state!=='running'),result,pendingJob};
+ const saved={title:$('title').value,body:$('body').value,answer:$('answer').value,explanation:$('explanation').value,logicSteps:readLogicSteps(),sourceId,requiresImage,sourceExpiresAt,hasSolutionImage,fromSolution:false,useSolutionLogic:true,materialKind:$('material-kind').value,provider:$('provider').value,comparisonOutputs:comparisonOutputs.filter(o=>o.state!=='running'),result,pendingJob};
  try{sessionStorage.setItem('edumaster-workspace',JSON.stringify(saved));}catch{
   saved.result=null;try{sessionStorage.setItem('edumaster-workspace',JSON.stringify(saved));}catch{}$('status').textContent='이미지가 커서 결과는 새로고침 후 복구되지 않습니다. 현재 화면에서 인쇄·PDF 저장해 주세요.';
  }
@@ -222,6 +224,8 @@ function renderQuality(report){
 function applyExportState(){
  const blocked=busy||qualityChecking||!imageReady||qualityState(result?.quality)==='fail';
  for(const id of ['copy-image','copy-image-footer','download-image','download-image-footer','copy','print']){const el=$(id);if(el)el.disabled=blocked;}
+ const allReportOutputs=typeof comparisonOutputs==='undefined'?[]:comparisonOutputs,reportOutputs=allReportOutputs.filter(o=>o.state==='ready'&&o.result),reportBlocked=busy||qualityChecking||!reportOutputs.length||reportOutputs.length!==allReportOutputs.length||reportOutputs.some(o=>qualityState(o.result.quality)==='fail');
+ if($('report-pdf'))$('report-pdf').disabled=reportBlocked;
  if($('toggle-image-answer'))$('toggle-image-answer').disabled=busy||qualityChecking;
  for(const id of ['retry-render-check','retry-text-check']){const el=$(id);if(el)el.disabled=busy||qualityChecking||!result?.qualityJobId||!imageReady;}
 }
@@ -269,6 +273,7 @@ function clearResult(){
 function applyImportedMaterial(d){
  materialReadPending=false;
  sourceId=d.sourceId||null;requiresImage=!!d.needsReview;sourceExpiresAt=d.sourceExpiresAt||null;
+ hasSolutionImage=(d.previewMaterialRoles||[]).includes('solution')||(!d.previewMaterialRoles&&d.previewDataUrls?.length>=2);
  for(const id of ['title','body'])$(id).value=d[id]||'';$('answer').value=d.answer||'';$('explanation').value=d.explanation||'';writeLogicSteps(d.steps||[]);
  $('material-kind').value=d.explanation?'problem-solution-separate':'problem-only';
  if(d.explanation||d.steps?.some(Boolean))document.querySelector('.optional-details').open=true;
@@ -305,6 +310,12 @@ function showSeparatePreview(id,file,index){
  separatePreviewUrls[index]=file.type.startsWith('image/')?URL.createObjectURL(file):null;
  image.hidden=!separatePreviewUrls[index];if(separatePreviewUrls[index])image.src=separatePreviewUrls[index];
 }
+function applySourcePreviews(urls=[],roles=[]){
+ if(!urls?.length)return;
+ const questionIndex=roles.indexOf('question')>=0?roles.indexOf('question'):0,solutionIndex=roles.indexOf('solution')>=0?roles.indexOf('solution'):(roles.length?-1:urls.length>=2?1:-1);
+ const question=$('question-preview'),solution=$('solution-preview');question.src=urls[questionIndex];question.hidden=false;
+ hasSolutionImage=solutionIndex>=0&&!!urls[solutionIndex];solution.hidden=!hasSolutionImage;if(hasSolutionImage)solution.src=urls[solutionIndex];else solution.removeAttribute('src');
+}
 async function importSeparateFiles(questionFile,solutionFile=null){
  if(busy||!questionFile)return;
  if(!authenticated){$('main-studio').hidden=true;$('lock-screen').hidden=false;return;}
@@ -319,7 +330,7 @@ async function importSeparateFiles(questionFile,solutionFile=null){
  try{
   const form=new FormData();form.append('questionFile',questionFile);if(solutionFile)form.append('solutionFile',solutionFile);form.append('provider',selectedModel().provider);form.append('materialKind',solutionFile?'problem-solution-separate':'problem-only');
   const d=await api('import',{method:'POST',body:form,signal:importController.signal});applyImportedMaterial(d);
-  if(d.previewDataUrls?.length){if(!$('question-preview').getAttribute('src'))$('question-preview').src=d.previewDataUrls[0];$('question-preview').hidden=false;if(d.previewDataUrls.length>=2){if(!$('solution-preview').getAttribute('src'))$('solution-preview').src=d.previewDataUrls[1];$('solution-preview').hidden=false;}}
+  applySourcePreviews(d.previewDataUrls,d.previewMaterialRoles);
  }catch(e){
  const message=e.name==='AbortError'?(importTimedOut?'이미지 읽기가 5분을 넘었습니다. 선명한 이미지로 다시 넣어 주세요.':'파일 읽기를 취소했습니다.'):e.message;
   $('file-info').textContent='이미지 분석 실패 · 선택한 파일 유지';globalThis.analysisStatus?.('이미지를 분석하지 못했습니다',message+'\n파일은 그대로 유지됩니다. 같은 단계에서 다시 분석할 수 있습니다.','error');feedback('이미지를 읽지 못했습니다',message,true);
@@ -328,7 +339,7 @@ async function importSeparateFiles(questionFile,solutionFile=null){
 
 $('file').addEventListener('change',()=>importFile($('file').files[0]));
 $('question-file').addEventListener('change',()=>{selectedQuestionFile=$('question-file').files[0]||null;if(selectedQuestionFile){sourceId=null;requiresImage=false;for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);clearResult();if($('analysis-status'))$('analysis-status').hidden=true;showSeparatePreview('question-preview',selectedQuestionFile,0);}materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);$('file-info').textContent=selectedQuestionFile?(selectedSolutionFile?'문제와 풀이 선택 완료':'문제 선택 완료 · 풀이가 없으면 문제만 분석할 수 있습니다'):'문제 이미지를 선택해 주세요.';globalThis.updateWorkflowState?.();$('wizard-stage-2')?.scrollIntoView({behavior:'smooth',block:'center'});});
-$('solution-file').addEventListener('change',()=>{selectedSolutionFile=$('solution-file').files[0]||null;materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);if(selectedSolutionFile)showSeparatePreview('solution-preview',selectedSolutionFile,1);$('file-info').textContent=selectedQuestionFile?'문제와 풀이 선택 완료':'풀이 선택 완료 · 문제 이미지도 선택해 주세요.';if($('analysis-status'))$('analysis-status').hidden=true;globalThis.updateWorkflowState?.();});
+$('solution-file').addEventListener('change',()=>{selectedSolutionFile=$('solution-file').files[0]||null;hasSolutionImage=!!selectedSolutionFile;materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);if(selectedSolutionFile)showSeparatePreview('solution-preview',selectedSolutionFile,1);else{$('solution-preview').hidden=true;$('solution-preview').removeAttribute('src');}$('file-info').textContent=selectedQuestionFile?'문제와 풀이 선택 완료':'풀이 선택 완료 · 문제 이미지도 선택해 주세요.';if($('analysis-status'))$('analysis-status').hidden=true;globalThis.updateWorkflowState?.();});
 $('read-material').onclick=()=>{const uploads=selectedUploads();if(!uploads.question){feedback('문제 이미지가 필요합니다','문제 칸에 이미지나 한 페이지 PDF를 먼저 선택해 주세요.',true);return;}materialReadPending=true;importSeparateFiles(uploads.question,uploads.solution);};
 const drop=document.querySelector('.upload');drop.addEventListener('dragover',e=>e.preventDefault());
 drop.addEventListener('drop',e=>{
@@ -338,16 +349,19 @@ drop.addEventListener('drop',e=>{
 
 for(const id of ['title','body','answer','explanation'])$(id).addEventListener('input',clearResult);
 $('add-logic-step').onclick=()=>{if(!busy){addLogicStep();clearResult();logicStepInputs().at(-1)?.focus();}};
-$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;$('question-file').value='';$('solution-file').value='';for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
+$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;hasSolutionImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;$('question-file').value='';$('solution-file').value='';for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
 
+function stageDisplayChecks(report){
+ return (report?.checks||[]).filter(c=>!(c.id==='render'&&c.state==='unknown'&&String(c.evidence||'').includes('브라우저 렌더링 후')));
+}
 function stageQualitySummary(report){
- const checks=report?.checks||[],failed=checks.filter(c=>c.state==='fail').length,pending=checks.filter(c=>c.state==='unknown').length,passed=checks.filter(c=>c.state==='pass').length;
+ const checks=stageDisplayChecks(report),failed=checks.filter(c=>c.state==='fail').length,pending=checks.filter(c=>c.state==='unknown').length,passed=checks.filter(c=>c.state==='pass').length;
  return !checks.length?'검사 기록 없음':failed?`오류 ${failed} · 통과 ${passed}`:pending?`추가 확인 ${pending} · 통과 ${passed}`:`검사 통과 ${passed}`;
 }
 function qualityMethodLabel(method){return String(method||'').startsWith('code')?'코드 검사':method==='local-vision'?'로컬 이미지 검사':'AI 검토';}
-async function recheckStageResult(output,kind,png,button){
+async function recheckStageResult(output,kind,png,button=null){
  const r=output.result,key=String(r?.id||output.stageNumber)+'-'+kind;if(!r?.qualityJobId||stageQualityChecks.has(key))return;
- stageQualityChecks.add(key);button.disabled=true;button.textContent=kind==='render'?'PNG 검사 중…':'문항 검사 중…';
+ stageQualityChecks.add(key);if(button){button.disabled=true;button.textContent=kind==='render'?'PNG 검사 중…':'문항 검사 중…';}
  const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),kind==='render'?120000:115000);
  try{
   const path='jobs/'+r.qualityJobId+'/'+(kind==='render'?'render-check':'text-check');
@@ -364,12 +378,12 @@ function downloadStageImage(output,img){
  const link=document.createElement('a'),safe=(output.result?.title||`문제_${output.stageNumber}`).replace(/[\\/:*?"<>|]/g,'_');link.download=`EduMaster_${safe}.png`;link.href=img.src;link.click();
 }
 function createStageQuality(output,r,img){
- const report=r.quality,checks=report?.checks||[{id:'quality',label:'문항 검사',state:'unknown',evidence:'검사 기록이 없습니다.',method:'code'}];
+ const report=r.quality,allChecks=report?.checks||[{id:'quality',label:'문항 검사',state:'unknown',evidence:'검사 기록이 없습니다.',method:'code'}],checks=stageDisplayChecks({checks:allChecks});
  const panel=document.createElement('details'),summary=document.createElement('summary'),list=document.createElement('ul'),actions=document.createElement('div');
- panel.className='stage-quality '+qualityState(report);panel.open=checks.some(c=>c.state==='fail'||c.state==='unknown');summary.textContent=`문제 ${output.stageNumber} 검사 결과 · ${stageQualitySummary(report)}`;
+ const displayReport={checks};panel.className='stage-quality '+qualityState(displayReport);panel.open=checks.some(c=>c.state==='fail'||c.state==='unknown');summary.textContent=`문제 ${output.stageNumber} 검사 결과 · ${stageQualitySummary(report)}`;
  for(const check of checks){const row=document.createElement('li'),heading=document.createElement('strong'),evidence=document.createElement('p');heading.textContent=(check.state==='pass'?'통과':check.state==='fail'?'오류':check.state==='skipped'?'검사 생략':'추가 확인')+' · '+check.label;evidence.textContent=check.evidence+' · '+qualityMethodLabel(check.method);row.className=check.state;row.append(heading,evidence);list.append(row);}
  actions.className='stage-quality-actions';
- const renderCheck=checks.find(c=>c.id==='render'),hasTextIssue=checks.some(c=>c.id!=='render'&&['fail','unknown'].includes(c.state));
+ const renderCheck=allChecks.find(c=>c.id==='render'),hasTextIssue=checks.some(c=>c.id!=='render'&&['fail','unknown'].includes(c.state));
  if(renderCheck?.state==='unknown'&&r.qualityJobId){const retry=document.createElement('button');retry.type='button';retry.textContent=`문제 ${output.stageNumber} PNG 검사 다시`;retry.onclick=()=>recheckStageResult(output,'render',img.src,retry);actions.append(retry);}
  if(hasTextIssue&&r.qualityJobId){const retry=document.createElement('button');retry.type='button';retry.textContent=`문제 ${output.stageNumber} 문항 재검사`;retry.onclick=()=>recheckStageResult(output,'text',null,retry);actions.append(retry);}
  panel.append(summary,list,actions);return panel;
@@ -387,12 +401,23 @@ function renderComparisons(outputs){
    const r=prepareProblemDisplay(o.result),summary=document.createElement('div'),title=document.createElement('h3'),answer=document.createElement('strong'),visual=document.createElement('section'),visualTitle=document.createElement('strong'),canvas=document.createElement('canvas'),img=document.createElement('img'),imageActions=document.createElement('div'),download=document.createElement('button'),details=document.createElement('details'),detailSummary=document.createElement('summary'),content=document.createElement('div'),body=document.createElement('div'),choices=document.createElement('div'),explanation=document.createElement('div');
    summary.className='stage-ready-summary';title.textContent=r.title;answer.textContent='정답 · '+r.answer;summary.append(title,answer);
    visual.className='stage-problem-preview';visualTitle.textContent=`문제 ${o.stageNumber} 이미지`;canvas.hidden=true;img.className='stage-problem-image';img.alt=`문제 ${o.stageNumber}/${o.stageCount} 생성 이미지 · 눌러서 크게 보기`;img.tabIndex=0;img.title='눌러서 크게 보기';img.setAttribute('aria-haspopup','dialog');download.type='button';download.textContent='PNG 저장';download.onclick=()=>downloadStageImage(o,img);imageActions.className='stage-image-actions';imageActions.append(download);visual.append(visualTitle,img,imageActions);renderProblemToImage(r,false,canvas,img);
+   const renderCheck=r.quality?.checks?.find(c=>c.id==='render');
+   if(authenticated&&renderCheck?.state==='unknown'&&String(renderCheck.evidence||'').includes('브라우저 렌더링 후')&&r.qualityJobId&&!stageRenderAutoChecks.has(r.id)){
+    stageRenderAutoChecks.add(r.id);const png=img.src;
+    stageRenderQueue=stageRenderQueue.then(()=>recheckStageResult(o,'render',png)).catch(()=>{});
+   }
    details.className='stage-result-details';detailSummary.textContent=`문제 ${o.stageNumber} 본문·정답·해설 펼쳐보기`;content.className='stage-result-content';body.className='pre';renderProblemText(body,r.body);renderProblemChoices(choices,r);explanation.className='pre stage-explanation';explanation.textContent='해설\n'+r.explanation;content.append(body,choices,explanation);details.append(detailSummary,content);
    card.append(summary,visual,details,createStageQuality(o,r,img));
   }
   return card;
  });
  $('comparison').replaceChildren(...cards);$('comparison').hidden=false;
+}
+async function refreshSavedComparisonOutputs(){
+ const id=comparisonOutputs.map(o=>o.result?.qualityJobId).find(value=>/^[a-f0-9]{32}$/.test(value||''));
+ if(!id){renderComparisons(comparisonOutputs);return;}
+ try{const latest=await api('jobs/'+id);if(Array.isArray(latest.outputs)&&latest.outputs.length){comparisonOutputs=latest.outputs;if(result&&latest.result?.id===result.id)result=latest.result;save();}}catch{}
+ renderComparisons(comparisonOutputs);
 }
 
 function selectedModel(){const value=$('provider').value;return {provider:value==='gemma'?'gemma':value==='both'?'both':'deepseek'};}
@@ -461,7 +486,8 @@ function generationError(e){
 async function submitGeneration(payload){
  const d=await api('generate',{method:'POST',idempotent:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
  if(!/^[a-f0-9]{32}$/.test(d.id))throw new Error('서버가 올바른 생성 작업 번호를 반환하지 않았습니다.');
- jobId=d.id;pendingJob={id:jobId,provider:payload.provider,stageSeries:!!payload.stageSeries,startedAt:Date.now()};save();$('progress').hidden=false;$('cancel').disabled=false;
+ jobId=d.id;pendingJob={id:jobId,provider:payload.provider,stageSeries:!!payload.stageSeries,startedAt:Date.now(),reused:!!d.reused};save();$('progress').hidden=false;$('cancel').disabled=!!d.reused;
+ if(d.reused)feedback('동일한 입력의 검증 결과를 불러옵니다','같은 이미지·문제·풀이·모델·프롬프트로 완료된 결과를 다시 생성하지 않고 재사용합니다.');
 }
 
 async function resumeGeneration(){
@@ -512,6 +538,58 @@ $('copy').onclick=async()=>{
  }
 };
 $('print').onclick=()=>window.print();
+
+function appendReportHeading(parent,level,text,className=''){
+ const el=document.createElement('h'+level);el.textContent=text;if(className)el.className=className;parent.append(el);return el;
+}
+function appendReportSolution(parent,answer,explanation,steps,compact=false){
+ appendReportHeading(parent,3,'정답 및 해설');
+ const answerBox=document.createElement('div');answerBox.className='report-answer';const answerLabel=document.createElement('strong');answerLabel.textContent='정답';const answerText=document.createElement('span');answerText.textContent=answer||'미제공';answerBox.append(answerLabel,answerText);parent.append(answerBox);
+ const explanationBox=document.createElement('div');explanationBox.className='report-explanation';renderProblemText(explanationBox,explanation||'해설이 제공되지 않았습니다.',true);parent.append(explanationBox);
+ if(steps?.length){appendReportHeading(parent,4,'풀이 단계');const list=document.createElement('ol');list.className='report-steps report-stage-explanation';for(const step of steps){const li=document.createElement('li');li.textContent=formatProblemMath(step);list.append(li);}parent.append(list);}
+}
+function reportPreviewSource(id){const image=$(id);return image?.getAttribute('src')||image?.src||'';}
+function appendReportSourceImage(parent,heading,source,caption){
+ if(!source)return false;
+ const block=document.createElement('div');block.className='report-source-block';appendReportHeading(block,3,heading);const figure=document.createElement('figure');figure.className='report-source-figure';const image=document.createElement('img'),label=document.createElement('figcaption');
+ image.className='report-source-image';image.src=source;image.alt=caption;label.textContent=caption;figure.append(image,label);block.append(figure);parent.append(block);return true;
+}
+function appendReportProblem(parent,label,r){
+ r=prepareProblemDisplay(r);const section=document.createElement('section');section.className='report-section report-generated';appendReportHeading(section,2,label,'report-section-title');
+ const title=document.createElement('p');title.className='report-problem-title';title.textContent=r.title;section.append(title);
+ appendReportHeading(section,3,'문제');const body=document.createElement('div');body.className='report-problem-body';renderProblemText(body,r.body);section.append(body);
+ const choices=document.createElement('div');choices.className='report-choices';renderProblemChoices(choices,r);section.append(choices);
+ const needsVisual=r.requiresVisuals||r.graph||(r.diagrams||[]).length||(r.drawings||[]).length||(r.visualTemplates||[]).length;
+ if(needsVisual){const canvas=document.createElement('canvas'),image=document.createElement('img');canvas.hidden=true;image.className='report-problem-image';image.alt=label+' 문제 그림';renderProblemToImage(r,false,canvas,image);section.append(image);}
+ appendReportSolution(section,r.answer,r.explanation,r.steps,true);parent.append(section);
+}
+function fullReportData(){
+ const ready=comparisonOutputs.filter(o=>o.state==='ready'&&o.result).sort((a,b)=>(a.stageNumber||0)-(b.stageNumber||0));
+ if(!ready.length||ready.length!==comparisonOutputs.length)throw new Error('단계별 문제가 모두 완성된 뒤 저장해 주세요.');
+ if(ready.some(o=>qualityState(o.result.quality)==='fail'))throw new Error('검사 오류가 있는 문제는 보고서로 저장할 수 없습니다. 오류를 먼저 수정해 주세요.');
+ const reference=ready.at(-1).result;
+ return {ready,reference,sourceProblem:reference.sourceProblem||$('body').value,sourceAnswer:reference.sourceAnswer||$('answer').value,sourceExplanation:reference.sourceExplanation||$('explanation').value,sourceSteps:(reference.sourceSteps?.length?reference.sourceSteps:readLogicSteps())};
+}
+function buildFullReport(){
+ const {ready,reference,sourceProblem,sourceAnswer,sourceExplanation,sourceSteps}=fullReportData(),report=$('report-print');
+ const questionImage=reportPreviewSource('question-preview')||reportPreviewSource('preview'),solutionImage=reportPreviewSource('solution-preview');
+ if(requiresImage&&!questionImage)throw new Error('원본 문제 이미지를 복구하지 못했습니다. 원본 파일을 다시 넣은 뒤 PDF를 저장해 주세요.');
+ if(hasSolutionImage&&!solutionImage)throw new Error('원본 해설 이미지를 복구하지 못했습니다. 해설 파일을 다시 넣은 뒤 PDF를 저장해 주세요.');
+ report.replaceChildren();const header=document.createElement('header');header.className='report-header';appendReportHeading(header,1,'EduMaster 단계별 문제 생성 보고서');const meta=document.createElement('p');meta.textContent=`입력 문제 1개 · 단계별 생성 문제 ${ready.length}개 · ${new Date().toLocaleString('ko-KR')}`;header.append(meta);const notice=document.createElement('p');notice.className='report-notice';notice.textContent='AI 생성 문항 · 교사 최종 검수 전';header.append(notice);report.append(header);
+ const input=document.createElement('section');input.className='report-section report-input';appendReportHeading(input,2,'입력 문제와 입력 해설','report-section-title');appendReportSourceImage(input,'원본 문제 이미지',questionImage,'업로드한 원본 문제 이미지');const extracted=document.createElement('div');extracted.className='report-text-block';appendReportHeading(extracted,3,'추출한 입력 문제');const inputTitle=document.createElement('p');inputTitle.className='report-problem-title';inputTitle.textContent=$('title').value||'입력 문제';extracted.append(inputTitle);const source=document.createElement('div');source.className='report-problem-body';renderProblemText(source,sourceProblem);extracted.append(source);input.append(extracted);
+ for(const figure of reference.figures||[]){const box=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=figure.dataUrl;img.alt=figure.caption||'입력 문제 그림';caption.textContent=figure.caption||'입력 문제 그림';box.append(img,caption);input.append(box);}
+ appendReportSourceImage(input,'원본 해설 이미지',solutionImage,'업로드한 원본 해설 이미지');
+ appendReportSolution(input,sourceAnswer,sourceExplanation,sourceSteps);report.append(input);
+ for(const output of ready)appendReportProblem(report,output.stageLabel||`STEP ${output.stageNumber} 문제 및 해설`,output.result);
+ return report;
+}
+async function waitForReportImages(report){
+ const images=[...report.querySelectorAll('img')];await Promise.all(images.map(image=>image.complete&&image.naturalWidth?Promise.resolve():new Promise(resolve=>{const done=()=>resolve();image.addEventListener('load',done,{once:true});image.addEventListener('error',done,{once:true});setTimeout(done,5000);})));if(images.some(image=>!image.naturalWidth))throw new Error('보고서 원본 이미지 일부를 읽지 못했습니다. 원본을 다시 넣고 저장해 주세요.');
+}
+async function printFullReport(){
+ try{const report=buildFullReport();$('status').textContent='원본 문제·해설 이미지를 보고서에 넣고 있습니다.';await waitForReportImages(report);const oldTitle=document.title;document.body.classList.add('printing-report');report.hidden=false;document.title='EduMaster_전체_문제_보고서';const restore=()=>{document.body.classList.remove('printing-report');report.hidden=true;document.title=oldTitle;window.removeEventListener('afterprint',restore);};window.addEventListener('afterprint',restore);requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));$('status').textContent='인쇄 대상에서 브라우저의 ‘PDF로 저장’을 선택하세요. Microsoft Print to PDF는 글자 검색이 되지 않을 수 있습니다.';}catch(e){$('status').textContent=e.message;}
+}
+if($('report-pdf'))$('report-pdf').onclick=printFullReport;
 
 // Problem Image Card Rendering
 function formatProblemMath(text){
@@ -1196,6 +1274,7 @@ try{
   const legacy=!Object.prototype.hasOwnProperty.call(saved,'requiresImage');
   sourceId=legacy?null:(saved.sourceId||null);
   sourceExpiresAt=saved.sourceExpiresAt||null;
+  hasSolutionImage=!!saved.hasSolutionImage;
   $('material-kind').value=saved.materialKind==='problem-only'?'problem-only':'problem-solution-separate';updateInputFormat();
   $('provider').value=saved.provider==='gemma'?'gemma':saved.provider==='both'?'both':'deepseek';
   if(!$('provider').value)$('provider').value='deepseek';
@@ -1242,7 +1321,7 @@ async function connect(){
  }finally{
   connecting=false;button.disabled=false;button.textContent='스튜디오 입장하기';
  }
- if(authenticated){await restoreSourcePreview();if(result?.qualityJobId)await checkRenderedResult();}
+ if(authenticated){await restoreSourcePreview();if(typeof comparisonOutputs!=='undefined'&&comparisonOutputs.length)await refreshSavedComparisonOutputs();if(result?.qualityJobId)await checkRenderedResult();}
 }
 
 $('auth-form').onsubmit=async e=>{
@@ -1269,7 +1348,7 @@ async function restoreSourcePreview(){
   const d=await api('sources/'+restoringId+'?preview=true');if(sourceId!==restoringId)return;
   if(d.ready){
    sourceExpiresAt=d.expiresAt;
-   if(d.previewDataUrls?.length){$('question-preview').src=d.previewDataUrls[0];$('question-preview').hidden=false;if(d.previewDataUrls.length>=2){$('solution-preview').src=d.previewDataUrls[1];$('solution-preview').hidden=false;}}
+   if(d.previewDataUrls?.length)applySourcePreviews(d.previewDataUrls,d.previewMaterialRoles);
    else if(d.previewDataUrl){$('question-preview').src=d.previewDataUrl;$('question-preview').hidden=false;}
    $('file-info').textContent='원본 이미지 복구 완료 · '+d.pageCount+'페이지 · 2시간 보관';save();
   } else {

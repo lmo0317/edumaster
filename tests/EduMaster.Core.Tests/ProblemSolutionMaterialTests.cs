@@ -30,6 +30,9 @@ public class ProblemSolutionMaterialTests
         Assert.Equal(4,stages.Length);Assert.Equal([1,2,3,4],stages.Select(x=>x.Draft.Steps.Length));
         Assert.All(stages.Take(3),x=>Assert.True(x.Draft.SkipDeterministicPlan));Assert.False(stages[^1].Draft.SkipDeterministicPlan);
         Assert.Contains("STEP 1~3",stages[2].Label);Assert.Equal(source.Answer,stages[^1].Draft.Answer);Assert.Empty(stages[0].Draft.Answer);
+        Assert.Equal(["두 번째 계산","세 번째 결론","최종 검산"],stages[0].Draft.ExcludedSteps);
+        Assert.Equal(["최종 검산"],stages[2].Draft.ExcludedSteps);Assert.Empty(stages[^1].Draft.ExcludedSteps);
+        Assert.Contains("잔류량 칸에 A 또는 B를 쓰지",LearningStagePlan.GenerationRules);
     }
     [Fact]public void ReaderSeparatesQuestionAndSolutionWithoutPromotingAnswerToCondition(){
         var material=ProblemSolutionMaterial.Parse(JsonSerializer.Serialize(new{body=ReactionVariantPlanTests.Source,answer="② (2)/(5)",explanation="원본 풀이: A가 모두 반응했다고 가정하면 실험별 소비 질량비가 달라 모순이다. B가 모두 반응한다.",steps=new[]{"가정과 모순으로 한계 반응물 판단","반응 후 질량·몰수 정리","공통 상댓값 배율·계수·몰질량으로 계산"},uncertainties=Array.Empty<string>()}));

@@ -19,7 +19,7 @@ string GetAccess()=>File.Exists(configPath)?File.ReadAllText(configPath).Trim():
 var jobRegistry=new GenerationJobRegistry();var jobs=jobRegistry.Jobs;var gate=jobRegistry.Gate;var importGate=new SemaphoreSlim(1);
 var resultCache=new GenerationResultCache(Path.Combine(app.Environment.ContentRootPath,"job-cache"));
 foreach(var saved in resultCache.Load(DateTime.UtcNow)){
-    foreach(var output in saved.Value.Outputs)if(output.Result is not null)output.Result=output.Result with{QualityJobId=saved.Key};
+    foreach(var output in saved.Value.Outputs)if(output.Result is not null){var partial=output.StageNumber>0&&output.StageNumber<output.StageCount;var restored=LearningStagePlan.RepairExposedConclusion(output.Result,output.Result.SourceSteps,partial);output.Result=restored with{QualityJobId=saved.Key,Quality=partial?ProblemQualityHarness.RefreshPartialStage(restored):restored.Quality};}
     saved.Value.Result=saved.Value.Outputs.FirstOrDefault(o=>o.State=="ready")?.Result;jobs[saved.Key]=saved.Value;
 }
 using var client=new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(480)};
@@ -52,7 +52,7 @@ app.MapGet("/api/status",async(CancellationToken token)=>{
     catch(Exception){return Results.Ok(new{ready=false,model="Gemma 4 12B",deepseekConfigured=deepseekKey.Length>0,deepseekModel=DeepSeekVisualGenerator.DisplayName,publicTest=false,error="로컬 모델 서버에 연결하지 못했습니다."});}
 });
 app.MapGet("/api/sources/{id}",(string id,bool? preview)=>sources.TryGetValue(id,out var source)&&DateTime.UtcNow-source.Created<TimeSpan.FromHours(2)
-    ?Results.Ok(new{ready=true,expiresAt=source.Created.AddHours(2),pageCount=source.Pages.Length,previewDataUrl=preview==true?source.Pages[0].DataUrl:null,previewDataUrls=preview==true?source.Pages.Select(p=>p.DataUrl).ToArray():null}) :Results.Ok(new{ready=false}));
+    ?Results.Ok(new{ready=true,expiresAt=source.Created.AddHours(2),pageCount=source.Pages.Length,previewDataUrl=preview==true?source.Pages[0].DataUrl:null,previewDataUrls=preview==true?source.Pages.Select(p=>p.DataUrl).ToArray():null,previewMaterialRoles=preview==true?source.Pages.Select(p=>p.MaterialRole).ToArray():null}) :Results.Ok(new{ready=false}));
 app.MapPost("/api/import",async(HttpRequest request,CancellationToken requestToken)=>{
     if(!await importGate.WaitAsync(0))return Results.Json(new{error="다른 파일을 읽고 있습니다. 파일 읽기가 끝난 뒤 다시 넣어 주세요."},statusCode:409);
     using var deadline=CancellationTokenSource.CreateLinkedTokenSource(requestToken);deadline.CancelAfter(TimeSpan.FromSeconds(300));var token=deadline.Token;
@@ -114,7 +114,7 @@ app.MapPost("/api/import",async(HttpRequest request,CancellationToken requestTok
             sourceId=Guid.NewGuid().ToString("N");var storedSource=new ImageSource(pages,DateTime.UtcNow);await sourceCache.SaveAsync(sourceId,storedSource,token);sources[sourceId]=storedSource;
         }
         var displayName=separate?Path.GetFileName(questionFile!.FileName)+" + "+Path.GetFileName(solutionFile!.FileName):Path.GetFileName((file??questionFile)!.FileName);
-        return Results.Ok(new{title=Path.GetFileNameWithoutExtension(Path.GetFileName((file??questionFile!).FileName)),body,answer=material?.Answer??"",explanation=material?.Explanation??"",steps=material?.Steps??[],uncertainties=material?.Uncertainties??[],materialKind=problemOnly?"problem-only":"problem-solution-separate",sourceId,sourceExpiresAt=sourceId is null?(DateTime?)null:sources[sourceId].Created.AddHours(2),fileName=displayName,readMethod=material is not null?materialReaderName+" 문제·풀이 분리":first.Draft.Source.IsAttachment?(cloudReading?DeepSeekVisualGenerator.DisplayName+" 원본 이미지 인식":LocalVisionReader.ReadMethod):"본문 추출",needsReview=first.Draft.Source.IsAttachment,previewDataUrl=pages.Length>0?pages[0].DataUrl:null,previewDataUrls=pages.Select(p=>p.DataUrl).ToArray()});
+        return Results.Ok(new{title=Path.GetFileNameWithoutExtension(Path.GetFileName((file??questionFile!).FileName)),body,answer=material?.Answer??"",explanation=material?.Explanation??"",steps=material?.Steps??[],uncertainties=material?.Uncertainties??[],materialKind=problemOnly?"problem-only":"problem-solution-separate",sourceId,sourceExpiresAt=sourceId is null?(DateTime?)null:sources[sourceId].Created.AddHours(2),fileName=displayName,readMethod=material is not null?materialReaderName+" 문제·풀이 분리":first.Draft.Source.IsAttachment?(cloudReading?DeepSeekVisualGenerator.DisplayName+" 원본 이미지 인식":LocalVisionReader.ReadMethod):"본문 추출",needsReview=first.Draft.Source.IsAttachment,previewDataUrl=pages.Length>0?pages[0].DataUrl:null,previewDataUrls=pages.Select(p=>p.DataUrl).ToArray(),previewMaterialRoles=pages.Select(p=>p.MaterialRole).ToArray()});
     }finally{Directory.Delete(directory,true);}
     }finally{importGate.Release();}
 });
@@ -145,12 +145,13 @@ app.MapPost("/api/generate",(GenerationInput input)=>{
     _=ReactionVariantPlan.Create(draft); // Fail unclear source conditions before creating a paid generation job.
     var learningStages=input.StageSeries?LearningStagePlan.Build(draft):[];
     if(input.RequestId is not null&&!System.Text.RegularExpressions.Regex.IsMatch(input.RequestId,"^[a-f0-9]{32}$"))throw new ArgumentException("생성 요청 번호 형식이 올바르지 않습니다.");
-    var requestFingerprint=GenerationJobRegistry.Fingerprint(draft,input.Provider,input.SourceId,input.RequiresImage)+"|stage-series="+input.StageSeries;
+    var sourceFingerprint=GenerationJobRegistry.SourceFingerprint(images);
+    var requestFingerprint=GenerationJobRegistry.Fingerprint(draft,input.Provider,sourceFingerprint,input.RequiresImage)+"|stage-series="+input.StageSeries+"|prompt="+VariantResponse.PromptVersion+"|quality="+QualityReport.CurrentVersion;
     foreach(var old in jobs.Where(x=>x.Value.Finished&&DateTime.UtcNow-x.Value.Created>GenerationResultCache.Retention).ToArray()){if(jobs.TryRemove(old.Key,out var removed)){removed.Cancel.Dispose();resultCache.Remove(old.Key);}}
     var started=jobRegistry.Start(input.RequestId,requestFingerprint,()=>new GenerationJob{Outputs=input.StageSeries
         ?learningStages.Select(s=>new ProviderJob(input.Provider,s.Number,s.Total,s.Label)).ToArray()
         :(input.Provider=="both"?new[]{"gemma","deepseek"}:new[]{input.Provider}).Select(p=>new ProviderJob(p)).ToArray()});
-    if(started.Outcome=="existing")return Results.Ok(new{id=started.Id});
+    if(started.Outcome is "existing" or "reused")return Results.Ok(new{id=started.Id,reused=started.Outcome=="reused"});
     if(started.Outcome=="full")return Results.Json(new{error="작업이 많습니다. 잠시 후 다시 시도해 주세요."},statusCode:429);
     if(started.Outcome=="busy")return Results.Json(new{error="다른 생성 작업이 진행 중입니다. 잠시 후 다시 눌러 주세요."},statusCode:409);
     var id=started.Id!;var job=started.Job!;
@@ -161,9 +162,19 @@ app.MapPost("/api/generate",(GenerationInput input)=>{
                 try{
                     var prefix=output.StageNumber>0?$"{output.StageLabel} ({output.StageNumber}/{output.StageCount}) · ":"";
                     var progress=new ImmediateProgress(s=>{output.Phase=s;job.Phase=prefix+s;});
-                    output.Result=output.Provider=="gemma"?await generator.GenerateAsync(currentDraft,LocalGemmaGenerator.DefaultEndpoint,progress,job.Cancel.Token,images):await deepseek.GenerateAsync(currentDraft,deepseekKey,progress,job.Cancel.Token,images);
-                    output.Result=output.Result with{SourceExplanation=currentDraft.Explanation,SourceAnswer=currentDraft.Answer,SourceSteps=currentDraft.UseSolutionLogic?currentDraft.Steps:[]};
-                    output.Result=await qualityReviewer.ReviewTextAsync(output.Result,currentDraft,output.Provider,output.Provider=="deepseek"?"https://api.deepseek.com":LocalGemmaGenerator.DefaultEndpoint,output.Provider=="deepseek"?DeepSeekVisualGenerator.Model:output.Result.RuntimeModelId,deepseekKey,progress,job.Cancel.Token);
+                    async Task<SampleResult> GenerateReviewed(ProblemDraft attemptDraft){
+                        var generated=output.Provider=="gemma"?await generator.GenerateAsync(attemptDraft,LocalGemmaGenerator.DefaultEndpoint,progress,job.Cancel.Token,images):await deepseek.GenerateAsync(attemptDraft,deepseekKey,progress,job.Cancel.Token,images);
+                        generated=LearningStagePlan.RepairExposedConclusion(generated,attemptDraft);
+                        generated=generated with{SourceExplanation=attemptDraft.Explanation,SourceAnswer=attemptDraft.Answer,SourceSteps=attemptDraft.UseSolutionLogic?attemptDraft.Steps:[]};
+                        return await qualityReviewer.ReviewTextAsync(generated,attemptDraft,output.Provider,output.Provider=="deepseek"?"https://api.deepseek.com":LocalGemmaGenerator.DefaultEndpoint,output.Provider=="deepseek"?DeepSeekVisualGenerator.Model:generated.RuntimeModelId,deepseekKey,progress,job.Cancel.Token);
+                    }
+                    output.Result=await GenerateReviewed(currentDraft);
+                    if(currentDraft.SkipDeterministicPlan&&output.Result.Quality?.State=="fail"){
+                        var failures=string.Join(" | ",output.Result.Quality.Checks.Where(c=>c.State=="fail").Select(c=>c.Label+": "+c.Evidence));
+                        progress.Report("단계 문제 검사 오류 · 같은 풀이 단계로 자동 재작성 1/1");
+                        var retryDraft=currentDraft with{Id=Guid.NewGuid(),LogicScope=currentDraft.LogicScope+"\n[이전 초안 검사 실패] "+failures+"\n위 오류를 피하되 suppliedSteps의 판단 과정은 그대로 유지해 처음부터 새 문제를 작성한다."};
+                        output.Result=await GenerateReviewed(retryDraft);
+                    }
                     output.Result=output.Result with{QualityJobId=id};
                     output.State="ready";output.Phase="완료";
                 }catch(OperationCanceledException){output.State=job.UserCancelled?"cancelled":"failed";output.Error=job.UserCancelled?"생성을 취소했습니다.":"생성 시간이 초과됐습니다.";}
@@ -196,7 +207,9 @@ app.MapPost("/api/jobs/{id}/text-check",async(string id,TextReviewInput input,Ht
     if(output?.Result is not { } result)return Results.NotFound();
     if(!await job.ReviewGate.WaitAsync(0))return Results.Json(new{error="같은 결과를 검사 중입니다. 완료 후 다시 검사해 주세요."},statusCode:409);
     try{
-        var reviewed=await qualityReviewer.ReviewTextAsync(result,null,output.Provider,output.Provider=="deepseek"?"https://api.deepseek.com":LocalGemmaGenerator.DefaultEndpoint,output.Provider=="deepseek"?DeepSeekVisualGenerator.Model:result.RuntimeModelId,deepseekKey,token:context.RequestAborted);
+        var partialStage=output.StageNumber>0&&output.StageNumber<output.StageCount;
+        var learningScope=partialStage?$"중간 {output.StageNumber}/{output.StageCount}단계 연습 문제입니다. 기준 풀이의 STEP 1부터 STEP {output.StageNumber}까지만 사용해야 합니다.":null;
+        var reviewed=await qualityReviewer.ReviewTextAsync(result,null,output.Provider,output.Provider=="deepseek"?"https://api.deepseek.com":LocalGemmaGenerator.DefaultEndpoint,output.Provider=="deepseek"?DeepSeekVisualGenerator.Model:result.RuntimeModelId,deepseekKey,token:context.RequestAborted,partialLearningStage:partialStage,learningScope:learningScope);
         var report=reviewed.Quality!;
         // Input identity was checked with the original draft during generation. Preserve that evidence.
         if(result.Quality is { } old){report=ProblemQualityHarness.Merge(report,old.Checks.Where(c=>c.Id=="render")) with{Checks=report.Checks.Where(c=>c.Id!="render").Concat(old.Checks.Where(c=>c.Id is "input" or "render")).ToArray(),RenderHash=old.RenderHash,RenderReviewVersion=old.RenderReviewVersion};}
@@ -212,8 +225,11 @@ app.MapPost("/api/jobs/{id}/render-check",async(string id,RenderReviewInput inpu
     if(!await job.ReviewGate.WaitAsync(0))return Results.Json(new{error="최종 이미지 검사 중입니다. 잠시 후 같은 결과를 확인해 주세요."},statusCode:409);
     try{
         var png=RenderedImageInput.Decode(input.Png);var hash=Convert.ToHexString(SHA256.HashData(png));
-        var report=result.Quality??ProblemQualityHarness.Inspect(result);
-        report=ProblemQualityHarness.Merge(report,ProblemQualityHarness.Inspect(result).Checks.Where(c=>c.Method=="code"));
+        var partialStage=output.StageNumber>0&&output.StageNumber<output.StageCount;
+        var inspected=ProblemQualityHarness.Inspect(result,null,partialStage);
+        var report=result.Quality??inspected;
+        var codeUpdates=inspected.Checks.Where(c=>c.Method=="code"&&!((c.State=="unknown")&&report.Checks.Any(old=>old.Id==c.Id&&old.State=="pass")));
+        report=ProblemQualityHarness.Merge(report,codeUpdates);
         if(report.Checks.Any(c=>c.Method=="code"&&c.State=="fail")){
             report=ProblemQualityHarness.MarkSkippedAfterFailure(ProblemQualityHarness.Merge(report,[new QualityCheck("render","최종 PNG 대조","skipped","코드 검사에서 문항 오류를 발견해 이미지 모델 호출을 생략했습니다. 문제를 수정하거나 원본 입력으로 재생성해 주세요.","code")])) with{RenderHash=null};
         }

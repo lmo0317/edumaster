@@ -32,7 +32,7 @@ public sealed class ProblemSolver(HttpClient client)
         var endpoint=provider=="deepseek"?new Uri("https://api.deepseek.com/chat/completions"):new Uri(LocalGemmaGenerator.Endpoint(LocalGemmaGenerator.DefaultEndpoint),"chat/completions");
         var payload=new{
             model,messages=new object[]{new{role="system",content=prompt},new{role="user",content=userContent}},
-            response_format=new{type="json_object"},temperature=0.1,max_tokens=provider=="deepseek"?8000:3000,stream=false,
+            response_format=new{type="json_object"},temperature=0.0,max_tokens=provider=="deepseek"?8000:3000,stream=false,
             thinking=provider=="deepseek"?new{type="disabled"}:null,
             chat_template_kwargs=provider=="gemma"?new{enable_thinking=false}:null
         };

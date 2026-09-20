@@ -130,6 +130,42 @@ test('completed stage series keeps every problem card and does not auto-run one 
  await vm.runInContext("$('resume-job').onclick()",c);
  assert.equal(c.rendered.length,3);assert.equal(renderChecks,0);assert.equal(c.$('output').hidden,true);assert.match(c.$('status').textContent,/각 문제 카드/);
 });
+test('untouched per-stage PNG wait is hidden from the visible error summary',()=>{
+ const c=vm.createContext({});
+ vm.runInContext(source.slice(source.indexOf('function stageDisplayChecks('),source.indexOf('function qualityMethodLabel(')),c);
+ const base=Array.from({length:11},(_,i)=>({id:'pass-'+i,state:'pass'}));
+ const waiting={checks:[...base,{id:'render',state:'unknown',evidence:'브라우저 렌더링 후 로컬 이미지 검토 대기'}]};
+ const failed={checks:[...base,{id:'render',state:'unknown',evidence:'이미지 검사 시간이 초과됐습니다.'}]};
+ assert.equal(c.stageQualitySummary(waiting),'검사 통과 11');
+ assert.equal(c.stageQualitySummary(failed),'추가 확인 1 · 통과 11');
+ assert.match(source,/stageRenderQueue=stageRenderQueue\.then\(\(\)=>recheckStageResult\(o,'render',png\)\)/);
+});
+test('full report keeps source material and orders every generated stage',()=>{
+ const outputs=[3,1,2].map(n=>({stageNumber:n,state:'ready',result:{quality:{checks:[{state:'pass'}]},sourceProblem:n===3?'입력 문제':'',sourceAnswer:n===3?'입력 정답':'',sourceExplanation:n===3?'입력 해설':'',sourceSteps:n===3?['원본 단계 1']:[]}}));
+ const fields={body:{value:'화면 문제'},answer:{value:'화면 정답'},explanation:{value:'화면 해설'}};
+ const c=vm.createContext({comparisonOutputs:outputs,$:id=>fields[id],readLogicSteps:()=>['화면 단계'],qualityState:()=> 'pass'});
+ vm.runInContext(source.slice(source.indexOf('function fullReportData('),source.indexOf('function buildFullReport(')),c);
+ const report=c.fullReportData();assert.deepEqual(Array.from(report.ready,x=>x.stageNumber),[1,2,3]);assert.equal(report.sourceProblem,'입력 문제');assert.equal(report.sourceExplanation,'입력 해설');assert.deepEqual(Array.from(report.sourceSteps),['원본 단계 1']);
+ c.comparisonOutputs[0].state='running';assert.throws(()=>c.fullReportData(),/모두 완성/);
+});
+test('full report includes role-specific original problem and solution images',()=>{
+ assert.match(source,/appendReportSourceImage\(input,'원본 문제 이미지',questionImage,'업로드한 원본 문제 이미지'\)/);
+ assert.match(source,/appendReportSourceImage\(input,'원본 해설 이미지',solutionImage,'업로드한 원본 해설 이미지'\)/);
+ assert.match(source,/previewMaterialRoles/);assert.match(source,/waitForReportImages\(report\)/);
+});
+test('generated report always keeps the full explanation and numbered solution steps',()=>{
+ assert.match(source,/appendReportSolution\(section,r\.answer,r\.explanation,r\.steps,true\)/);
+ assert.match(source,/renderProblemText\(explanationBox,explanation\|\|'해설이 제공되지 않았습니다\.'/);
+ assert.match(source,/appendReportHeading\(parent,4,'풀이 단계'\)/);
+ assert.match(source,/for\(const step of steps\)/);
+ assert.match(source,/Microsoft Print to PDF는 글자 검색이 되지 않을 수 있습니다/);
+});
+test('saved stage results refresh from their existing server job without creating a new job',async()=>{
+ let path='';const latest=[{stageNumber:1,state:'ready',result:{id:'new',qualityJobId:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}}];
+ const c=vm.createContext({comparisonOutputs:[{stageNumber:1,state:'ready',result:{id:'old',qualityJobId:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}}],result:null,api:async p=>{path=p;return{outputs:latest}},save(){},renderComparisons(v){c.rendered=v}});
+ vm.runInContext(source.slice(source.indexOf('async function refreshSavedComparisonOutputs('),source.indexOf('function selectedModel(')),c);
+ await c.refreshSavedComparisonOutputs();assert.equal(path,'jobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');assert.equal(c.rendered[0].result.id,'new');
+});
 test('failed resume preserves request and existing job for another attempt',async()=>{
  const c=context(async()=>{throw new TypeError('Failed to fetch')});
  Object.assign(c,{pendingJob:{id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',provider:'deepseek'},busy:false,jobId:null,result:null,comparisonOutputs:[],feedback(){},renderComparisons(){},save(){}});

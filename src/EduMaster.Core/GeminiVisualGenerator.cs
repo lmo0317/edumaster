@@ -48,7 +48,7 @@ public sealed class GeminiVisualGenerator(HttpClient client)
         using var request=new HttpRequestMessage(HttpMethod.Post,$"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent");
         request.Headers.Add("x-goog-api-key",apiKey.Trim());
         // The selected model constructs the variant for the supplied problem type.
-        var generationConfig=new Dictionary<string,object>{{"temperature",0.2},{"maxOutputTokens",8192},{"responseMimeType","application/json"},{"responseJsonSchema",VariantResponse.LocalSchema(draft)}};
+        var generationConfig=new Dictionary<string,object>{{"temperature",0.0},{"maxOutputTokens",8192},{"responseMimeType","application/json"},{"responseJsonSchema",VariantResponse.LocalSchema(draft)}};
         if(model=="gemini-2.5-flash")generationConfig["thinkingConfig"]=new{thinkingBudget=1024};
         request.Content=JsonContent.Create(new{systemInstruction=new{parts=new[]{new{text=VariantResponse.LocalPrompt()}}},contents=new[]{new{role="user",parts}},generationConfig});
         progress?.Report("Gemini가 기준 자료와 원본 이미지로 문제 생성 중");

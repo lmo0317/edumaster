@@ -3,6 +3,14 @@ namespace EduMaster.Core.Tests;
 
 public class WorkspaceTests
 {
+    [Fact] public void VariantPromptRequiresReproducibleDetailedSolution()
+    {
+        var prompt=VariantResponse.LocalPrompt();
+        Assert.Contains("사용 조건, 판단 이유, 실제 계산식과 단위",prompt);
+        Assert.Contains("학생이 풀이를 재현",prompt);
+        Assert.Contains("조건, 판단 이유, 수치 대입 전 식",LearningStagePlan.GenerationRules);
+        Assert.Contains("detailed-solution",VariantResponse.PromptVersion);
+    }
     [Fact] public void SampleHasOneAnswerAndTracksInput()
     {
         var input = SampleProblems.Nitrogen(); var result = SampleProblems.Generate(input, 0);

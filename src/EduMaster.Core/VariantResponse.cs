@@ -3,7 +3,7 @@ namespace EduMaster.Core;
 
 public static class VariantResponse
 {
-    public const string PromptVersion = "local-variant-v7-dynamic-logic";
+    public const string PromptVersion = "local-variant-v11-detailed-solution";
     public static string LocalPrompt()
     {
         using var stream=typeof(VariantResponse).Assembly.GetManifestResourceStream("EduMaster.Core.Prompts.local-variant-v2.txt")!;
