@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Service Hub - minohlee.mooo.com</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 30, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover: rgba(30, 42, 68, 0.85);
+      --card-hover-border: rgba(99, 140, 255, 0.35);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-blue: #3b82f6;
+      --accent-emerald: #10b981;
+      --accent-violet: #8b5cf6;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --status-ok: #10b981;
+      --status-warn: #f59e0b;
+      --status-off: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+      padding: 32px 20px 60px;
+    }
+
+    /* Ambient Background Glows */
+    .ambient-glow {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.35;
+    }
+    .glow-1 { top: -100px; left: 10%; width: 450px; height: 450px; background: radial-gradient(circle, #3b82f6, transparent 70%); }
+    .glow-2 { top: 30%; right: 5%; width: 500px; height: 500px; background: radial-gradient(circle, #8b5cf6, transparent 70%); }
+    .glow-3 { bottom: 5%; left: 15%; width: 400px; height: 400px; background: radial-gradient(circle, #10b981, transparent 70%); }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .brand-area {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+    }
+    .brand-icon svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2; }
+    .brand-title {
+      font-family: "Outfit", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .server-meta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+    }
+    .time-badge {
+      font-family: "Outfit", monospace;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      color: var(--text-muted);
+    }
+    .system-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--status-ok);
+      box-shadow: 0 0 10px var(--status-ok);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.7; }
+    }
+
+    /* Hero / Intro */
+    .hero {
+      text-align: center;
+      margin: 20px 0 44px;
+    }
+    .hero-eyebrow {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.12);
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+    .hero h1 {
+      font-size: clamp(26px, 4vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.25;
+      background: linear-gradient(135deg, #ffffff 30%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-top: 10px;
+    }
+
+    /* Section Headings */
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title span {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    /* Primary Grid (3 Main Services) */
+    .primary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 22px;
+      margin-bottom: 48px;
+    }
+
+    .service-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 26px;
+      backdrop-filter: blur(16px);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      text-decoration: none;
+      color: inherit;
+      position: relative;
+      overflow: hidden;
+    }
+    .service-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      opacity: 0.8;
+      transition: height 0.25s ease;
+    }
+    .service-card.planner::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+    .service-card.kidsnote::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .service-card.edumaster::before { background: linear-gradient(90deg, #10b981, #06b6d4); }
+
+    .service-card:hover {
+      background: var(--card-hover);
+      border-color: var(--card-hover-border);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+    }
+    .service-card:hover::before {
+      height: 4px;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .card-icon-wrap {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .service-card.planner .card-icon-wrap {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+    }
+    .service-card.kidsnote .card-icon-wrap {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fbbf24;
+    }
+    .service-card.edumaster .card-icon-wrap {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+    .card-icon-wrap svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+    .card-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .card-status-badge.active {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+    .card-status-badge .mini-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+    }
+
+    .card-title-group h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      letter-spacing: -0.02em;
+    }
+    .card-route {
+      font-family: "Outfit", monospace;
+      font-size: 13px;
+      color: #60a5fa;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: inline-block;
+    }
+    .service-card.kidsnote .card-route { color: #fbbf24; }
+    .service-card.edumaster .card-route { color: #34d399; }
+
+    .card-desc {
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+      flex-grow: 1;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+    .tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-dim);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .card-cta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: all 0.2s ease;
+    }
+    .service-card:hover .card-cta {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .card-cta svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      transition: transform 0.2s ease;
+    }
+    .service-card:hover .card-cta svg {
+      transform: translateX(4px);
+    }
+
+    /* Sub Services Section */
+    .infra-section {
+      margin-top: 20px;
+    }
+    .sub-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+    .sub-card {
+      background: rgba(18, 24, 38, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.2s ease;
+    }
+    .sub-card:hover {
+      background: rgba(25, 34, 54, 0.7);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+    }
+    .sub-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sub-title {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sub-port {
+      font-family: "Outfit", monospace;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+    }
+    .sub-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .sub-status {
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-dim);
+      margin-top: auto;
+    }
+    .sub-status.live { color: #34d399; }
+    .sub-status .mini-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 60px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .footer-links {
+      display: flex;
+      gap: 16px;
+    }
+    .footer-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover {
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 20px 14px 40px; }
+      header { margin-bottom: 24px; }
+      .primary-grid { grid-template-columns: 1fr; }
+      .sub-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <div class="container">
+    <header>
+      <div class="brand-area">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+        </div>
+        <div>
+          <div class="brand-title">Minoh's Service Hub</div>
+          <div class="brand-sub">112 Home Server · minohlee.mooo.com</div>
+        </div>
+      </div>
+      <div class="server-meta">
+        <div class="time-badge" id="clock">2026-09-20 00:00:00</div>
+        <div class="system-badge"><span class="dot"></span> <span>서버 정상 가동</span></div>
+      </div>
+    </header>
+
+    <main>
+      <div class="hero">
+        <span class="hero-eyebrow">HOME LAB PORTAL</span>
+        <h1>실행 중인 서비스 선택</h1>
+        <p>원하시는 애플리케이션을 선택하시면 해당 전용 서비스 경로로 바로 이동합니다.</p>
+      </div>
+
+      <div class="section-head">
+        <div class="section-title">주요 웹 애플리케이션 <span>(Primary Services)</span></div>
+      </div>
+
+      <div class="primary-grid">
+        <!-- 1. NEO Planner -->
+        <a href="/planner" class="service-card planner">
+          <div class="card-top">
+            <div class="card-icon-wrap">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
+            </div>
+            <span class="card-status-badge active" id="badge-planner"><span class="mini-dot"></span> 정상 가동 (포트 3000)</span>
+          </div>
+          <div class="card-title-group">
+            <h2>스마트 플래너 (NEO Planner)</h2>
+            <span class="card-route">/planner</span>
+          </div>
+          <p class="card-desc">개인 맞춤형 스마트 캘린더 & 할 일 관리. TimeTree 및 Google Calendar와 양방향 동기화되며, 자연어 AI 입력을 통해 일정을 손쉽게 등록합니다.</p>
+          <div class="tag-row">
+            <span class="tag">#일정관리</span>
+            <span class="tag">#TimeTree연동</span>
+            <span class="tag">#GoogleCalendar</span>
+            <span class="tag">#AI자연어등록</span>
+          </div>
+          <div class="card-cta">
+            <span>플래너 접속하기</span>
+            <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+
+        <!-- 2. KidsNote -->
+        <a href="/kidsnote" class="service-card kidsnote">
+          <div class="card-top">
+            <div class="card-icon-wrap">
+              <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+            <span class="card-status-badge active" id="badge-kidsnote"><span class="mini-dot"></span> 정상 가동 (포트 9000)</span>
+          </div>
+          <div class="card-title-group">
+            <h2>키즈노트 사진 배달 (KidsNote)</h2>
+            <span class="card-route">/kidsnote</span>
+          </div>
+          <p class="card-desc">어린이집 졸업 및 재원생 키즈노트 사진 일괄 수집 및 연도별 자동 정리 서비스. 링크 하나로 모든 사진을 모아 이메일로 안전하게 발송합니다.</p>
+          <div class="tag-row">
+            <span class="tag">#사진일괄백업</span>
+            <span class="tag">#연도별다운로드</span>
+            <span class="tag">#ZIP대용량압축</span>
+            <span class="tag">#이메일배달</span>
+          </div>
+          <div class="card-cta">
+            <span>키즈노트 접속하기</span>
+            <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+
+        <!-- 3. EduMaster -->
+        <a href="/edumaster" class="service-card edumaster">
+          <div class="card-top">
+            <div class="card-icon-wrap">
+              <svg viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/><path d="m9 14 2 2 4-4"/></svg>
+            </div>
+            <span class="card-status-badge active" id="badge-edumaster"><span class="mini-dot"></span> 정상 가동 (포트 18280)</span>
+          </div>
+          <div class="card-title-group">
+            <h2>에듀마스터 AI (EduMaster)</h2>
+            <span class="card-route">/edumaster</span>
+          </div>
+          <p class="card-desc">고등 과학·화학 킬러 문항 및 수학 문제 OCR 분석. 단계별 해설 논리 추출, AI 쌍둥이/유사 변형 문항 생성 및 수험생 맞춤형 학습지 자동 조판.</p>
+          <div class="tag-row">
+            <span class="tag">#AI문제변형</span>
+            <span class="tag">#과학탐구</span>
+            <span class="tag">#수능/내신대비</span>
+            <span class="tag">#OCR분석</span>
+            <span class="tag">#학습지조판</span>
+          </div>
+          <div class="card-cta">
+            <span>에듀마스터 접속하기</span>
+            <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+        </a>
+      </div>
+
+      <!-- Infrastructure / Other Running Services -->
+      <div class="infra-section">
+        <div class="section-head">
+          <div class="section-title">서버 실행 중인 AI 및 인프라 서비스 <span>(Active Engines)</span></div>
+        </div>
+
+        <div class="sub-grid">
+          <!-- Open WebUI -->
+          <a href="http://minohlee.mooo.com:8080" target="_blank" rel="noopener" class="sub-card">
+            <div class="sub-head">
+              <div class="sub-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Open WebUI</span>
+              </div>
+              <span class="sub-port">:8080</span>
+            </div>
+            <p class="sub-desc">Ollama 및 로컬 모델 연동 대화형 챗봇 인터페이스 (Docker 컨테이너)</p>
+            <div class="sub-status live" id="status-openwebui"><span class="mini-dot"></span> <span>Docker 가동 중 (포트 8080)</span></div>
+          </a>
+
+          <!-- Gemma 4 Vision -->
+          <div class="sub-card">
+            <div class="sub-head">
+              <div class="sub-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/></svg>
+                <span>Gemma 4 로컬 Vision</span>
+              </div>
+              <span class="sub-port">:8081 (/v1/)</span>
+            </div>
+            <p class="sub-desc">llama.cpp Gemma 4 E4B Q4_K_M 멀티모달 추론 서버 (OpenAI 호환 규격)</p>
+            <div class="sub-status live" id="status-gemma"><span class="mini-dot"></span> <span>systemd 서비스 활성</span></div>
+          </div>
+
+          <!-- Ollama Engine -->
+          <div class="sub-card">
+            <div class="sub-head">
+              <div class="sub-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                <span>Ollama Engine</span>
+              </div>
+              <span class="sub-port">:11434</span>
+            </div>
+            <p class="sub-desc">로컬 LLM 런타임 엔진 (탑재 모델: Llama 3.2 3B, Gemma 4)</p>
+            <div class="sub-status live" id="status-ollama"><span class="mini-dot"></span> <span>127.0.0.1:11434 응답</span></div>
+          </div>
+
+          <!-- EduMaster Worker Tunnel -->
+          <div class="sub-card">
+            <div class="sub-head">
+              <div class="sub-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f472b6" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>EduMaster Worker</span>
+              </div>
+              <span class="sub-port">:18282</span>
+            </div>
+            <p class="sub-desc">Windows 개발 PC와 연결된 AI 문제 생성 파이프라인 역방향 터널</p>
+            <div class="sub-status live" id="status-edumaster-backend"><span class="mini-dot"></span> <span>터널 연결 대기 중</span></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div>호스트: 192.168.219.112 (Ubuntu 24.04 LTS) · 도메인: minohlee.mooo.com</div>
+      <div class="footer-links">
+        <a href="/planner">플래너</a>
+        <a href="/kidsnote">키즈노트</a>
+        <a href="/edumaster">에듀마스터</a>
+        <a href="javascript:location.reload()">새로고침</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // Live Clock
+    function updateClock() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const text = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const clockEl = document.getElementById('clock');
+      if (clockEl) clockEl.textContent = text;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Status polling
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/hub/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const s = data.services || {};
+
+        const updateBadge = (id, online, label) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (online) {
+            el.className = 'card-status-badge active';
+            el.innerHTML = `<span class="mini-dot"></span> 정상 가동 (${label})`;
+          } else {
+            el.className = 'card-status-badge';
+            el.innerHTML = `<span class="mini-dot" style="background:#f59e0b"></span> 대기 중 (${label})`;
+          }
+        };
+
+        updateBadge('badge-planner', s.planner, '포트 3000');
+        updateBadge('badge-kidsnote', s.kidsnote, '포트 9000');
+        updateBadge('badge-edumaster', s.edumaster, '포트 18280');
+
+        const updateSub = (id, online, okText, failText) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.className = 'sub-status ' + (online ? 'live' : '');
+          el.innerHTML = `<span class="mini-dot" style="${online ? '' : 'background:#64748b'}"></span> <span>${online ? okText : failText}</span>`;
+        };
+
+        updateSub('status-openwebui', s.openwebui, 'Docker 가동 중 (포트 8080)', '중지됨');
+        updateSub('status-gemma', s.gemma, 'systemd 서비스 활성 (포트 8081)', '대기 중');
+        updateSub('status-ollama', s.ollama, 'Ollama 응답 정상 (포트 11434)', '대기 중');
+        updateSub('status-edumaster-backend', s.edumasterBackend, 'AI 터널 연결 활성 (포트 18282)', '터널 대기 중');
+      } catch (e) {
+        console.warn('Hub status check failed:', e);
+      }
+    }
+    checkStatus();
+    setInterval(checkStatus, 15000);
+  </script>
+</body>
+</html>

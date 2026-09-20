@@ -7,6 +7,12 @@ vm.runInContext(source.slice(source.indexOf('function roundRect('),source.indexO
 vm.runInContext(source.slice(source.indexOf('function drawPointChargesDiagram('),source.indexOf('function renderProblemToImage(')),context);
 vm.runInContext(source.slice(source.indexOf('function drawProblemGraph('),source.indexOf('function drawPointChargesDiagram(')),context);
 test('whole application script parses',()=>assert.doesNotThrow(()=>new vm.Script(source)));
+test('each stage reports its own pass, error, and pending counts without calling pending an error',()=>{
+ const c=vm.createContext({});vm.runInContext(source.slice(source.indexOf('function stageQualitySummary('),source.indexOf('async function recheckStageResult(')),c);
+ assert.equal(c.stageQualitySummary({checks:[{state:'pass'},{state:'pass'},{state:'unknown'}]}),'추가 확인 1 · 통과 2');
+ assert.equal(c.stageQualitySummary({checks:[{state:'pass'},{state:'fail'}]}),'오류 1 · 통과 1');
+ assert.equal(c.qualityMethodLabel('code-reaction-twin'),'코드 검사');
+});
 
 test('failed quality report blocks every export even after generation is no longer busy',()=>{
  const nodes=new Map();const c=vm.createContext({busy:false,qualityChecking:false,imageReady:true,result:{quality:{checks:[{state:'fail'}]}},$:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)}});

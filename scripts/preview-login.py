@@ -48,9 +48,9 @@ class Handler(BaseHTTPRequestHandler):
                 serialized=json.dumps(result,ensure_ascii=False)
                 content+=("generationStarted=true;renderComparisons(["
                     "{stageNumber:1,stageCount:3,stageLabel:'STEP 1 연습 문제',state:'ready',phase:'완료',result:"+serialized+"},"
-                    "{stageNumber:2,stageCount:3,stageLabel:'STEP 1~2 누적 연습 문제',state:'running',phase:'수치와 정답 검산 중'},"
-                    "{stageNumber:3,stageCount:3,stageLabel:'전체 로직 쌍둥이 문제',state:'waiting',phase:'앞 단계 생성 대기'}"
-                    "]);$('wizard-stage-5').hidden=false;$('feedback').hidden=false;$('feedback-title').textContent='문제 2/3 · STEP 1~2 누적 연습 문제';$('feedback-body').textContent='수치와 정답 검산 중\\n완료 1/3';$('badge').textContent='1/3 완료';").encode()
+                    "{stageNumber:2,stageCount:3,stageLabel:'STEP 1~2 누적 연습 문제',state:'ready',phase:'완료',result:"+serialized+"},"
+                    "{stageNumber:3,stageCount:3,stageLabel:'전체 로직 쌍둥이 문제',state:'ready',phase:'완료',result:"+serialized+"}"
+                    "]);$('wizard-stage-5').hidden=false;$('feedback').hidden=true;$('output').hidden=true;$('result-footer').hidden=true;$('badge').textContent='단계별 3문제 완성';").encode()
             if '--viewer' in sys.argv:content+=b"document.getElementById('preview').src='fixture-source.jpeg';document.getElementById('preview').hidden=false;"
             self.send_response(200)
             content_type = 'text/javascript; charset=utf-8'

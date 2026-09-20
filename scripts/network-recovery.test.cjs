@@ -1,6 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),test=require('node:test'),assert=require('node:assert/strict');
 const source=fs.readFileSync('src/EduMaster.Web/wwwroot/app.js','utf8');
 const apiSource=source.slice(source.indexOf('async function api('),source.indexOf('function feedback('));
+const selectedUploadsSource=source.slice(source.indexOf('function selectedUploads(){'),source.indexOf('function generationButtonText(){'));
 function context(fetch){
  const nodes=new Map();const storage={removeItem(){}};
  const c=vm.createContext({fetch,prefix:'https://example.test/edumaster/',access:'test-only',AbortController,authenticated:true,busy:false,qualityChecking:false,checkRenderedResult:async()=>{},qualitySummary:()=>'',localStorage:storage,sessionStorage:storage,setBusy(){},$:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)},setInterval:()=>2,clearInterval(){},setTimeout:(fn,ms)=>{if(ms<5000)queueMicrotask(fn);return 1},clearTimeout(){}});
@@ -121,6 +122,14 @@ test('resume queries existing job without a new generation POST',async()=>{
  await vm.runInContext("$('resume-job').onclick()",c);
  assert.equal(c.result.body,'variant');assert.equal(c.pendingJob,null);
 });
+test('completed stage series keeps every problem card and does not auto-run one global PNG check',async()=>{
+ let renderChecks=0;const outputs=[1,2,3].map(n=>({stageNumber:n,stageCount:3,state:'ready',result:{id:'result-'+n,body:'variant '+n}}));
+ const c=context(async()=>response({state:'ready',stageSeries:true,stageCount:3,result:outputs[2].result,outputs}));
+ Object.assign(c,{pendingJob:{id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',provider:'deepseek'},busy:false,jobId:null,result:null,feedback(){},renderComparisons(value){c.rendered=value},show(r){c.result=r;c.$('output').hidden=false},checkRenderedResult:async()=>{renderChecks++},save(){}});
+ vm.runInContext(source.slice(source.indexOf('async function waitForGeneration('),source.indexOf("$('generate').onclick=")),c);
+ await vm.runInContext("$('resume-job').onclick()",c);
+ assert.equal(c.rendered.length,3);assert.equal(renderChecks,0);assert.equal(c.$('output').hidden,true);assert.match(c.$('status').textContent,/각 문제 카드/);
+});
 test('failed resume preserves request and existing job for another attempt',async()=>{
  const c=context(async()=>{throw new TypeError('Failed to fetch')});
  Object.assign(c,{pendingJob:{id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',provider:'deepseek'},busy:false,jobId:null,result:null,comparisonOutputs:[],feedback(){},renderComparisons(){},save(){}});
@@ -189,6 +198,16 @@ test('combined image import sends its input type and fills separate problem, ans
  assert.equal(nodes.get('body').value,'문제 조건과 표');assert.equal(nodes.get('answer').value,'② 2/5');assert.match(nodes.get('explanation').value,/모순/);
  assert.deepEqual(['logic-step-1','logic-step-2','logic-step-3'].map(id=>nodes.get(id).value),['가정과 모순 확인','반응량 계산','답 검산']);
  assert.equal(details.open,true);assert.equal(c.sourceId,'source');assert.equal(c.busy,false);
+});
+test('selected upload remains available after the browser clears its native file input',()=>{
+ const problem={name:'problem.jpg'},solution={name:'solution.jpg'};
+ const inputs={'question-file':{files:[problem]},'solution-file':{files:[solution]}};
+ const c=vm.createContext({inputs,selectedQuestionFile:null,selectedSolutionFile:null,$:id=>inputs[id]});
+ vm.runInContext(selectedUploadsSource+';globalThis.readSelectedUploads=selectedUploads;',c);
+ assert.equal(c.readSelectedUploads().question.name,'problem.jpg');
+ inputs['question-file'].files=[];inputs['solution-file'].files=[];
+ assert.equal(c.readSelectedUploads().question.name,'problem.jpg');
+ assert.equal(c.readSelectedUploads().solution.name,'solution.jpg');
 });
 
 test('separate question and solution images are sent with fixed roles and fill one logic card',async()=>{
