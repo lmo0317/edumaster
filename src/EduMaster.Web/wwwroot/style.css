@@ -231,6 +231,7 @@ main.wizard{max-width:980px;padding:30px 22px 60px}
 .wizard-stage-head>b{padding:4px 9px;border-radius:999px;background:#eef3f7;color:#64748b;font-size:11px}
 .stage-file-info{min-height:22px;margin-top:12px;padding:9px 12px;border-radius:8px;background:#f5f8fa;color:#52627a;font-size:12px;font-weight:650}
 .stage-main-action{display:block;width:100%;margin-top:16px;padding:15px 20px;font-size:15px;font-weight:800}
+.analysis-readiness{margin:8px 2px 0;color:#9a5b16;font-size:12px}.analysis-readiness.ready{color:#087f70;font-weight:700}
 .stage-message{margin-top:14px;padding:15px;border:1px solid #cfe1e8;border-radius:10px;background:#f6fafb}
 .stage-message.error{border-color:#efb2b4;background:#fff5f5}
 .stage-message.success{border-color:#a7ddcf;background:#f0fbf7}

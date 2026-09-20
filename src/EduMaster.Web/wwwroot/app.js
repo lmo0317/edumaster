@@ -16,6 +16,12 @@ function addLogicStep(value=''){
 }
 function writeLogicSteps(steps=[]){$('logic-steps').replaceChildren();for(const step of (steps.length?steps:['']))addLogicStep(step);updateLogicStepLabels();}
 writeLogicSteps();
+function selectedUploads(){
+ const question=selectedQuestionFile||$('question-file')?.files?.[0]||null;
+ const solution=selectedSolutionFile||$('solution-file')?.files?.[0]||null;
+ selectedQuestionFile=question;selectedSolutionFile=solution;
+ return {question,solution};
+}
 function generationButtonText(){return '단계별 문제와 해설 만들기';}
 function updateInputFormat(){$('combined-upload').hidden=true;$('separate-upload').hidden=false;$('preview').hidden=true;}
 function hasValidLogic(){const steps=readLogicSteps();return steps.length>0&&steps.every(Boolean);}
@@ -27,6 +33,7 @@ function setWorkflowStage(stage){
 }
 function updateWorkflowState(){
  const action=$('continue-action');
+ const uploads=selectedUploads(),hasQuestionUpload=!!uploads.question,hasAnyUpload=hasQuestionUpload||!!uploads.solution;
  const phaseTitle=$('feedback-title')?.textContent||'',phaseBody=$('feedback-body')?.textContent||'';
  let stage=1,badge='현재 단계 · 자료 입력',title='문제 이미지를 넣어 주세요',description='풀이 이미지가 있으면 함께 넣고, 없으면 문제 이미지만 넣어도 됩니다.',label='문제 이미지 선택',kind='select',disabled=!authenticated;
  if(busy){
@@ -34,8 +41,8 @@ function updateWorkflowState(){
   stage=checking?5:reading?2:solving?3:5;badge='진행 중';title=phaseTitle||'처리 중입니다';description=phaseBody||'현재 작업이 끝나면 다음 단계가 열립니다.';label='처리 중…';kind='busy';disabled=true;
  }else if(pendingJob){
   stage=5;badge='이어하기 · 생성 작업';title='진행 중이던 생성 결과가 있습니다';description='새 요청 없이 기존 작업을 다시 확인합니다.';label='진행 결과 확인';kind='resume';disabled=!authenticated;
- }else if(materialReadPending){
-  stage=2;badge='현재 단계 · 이미지 분석';title='선택한 이미지를 분석해 주세요';description='문제와 풀이를 분리해 실제 풀이 단계를 찾습니다.';label='선택한 이미지 분석하기';kind='read';disabled=!authenticated||!selectedQuestionFile;
+ }else if(materialReadPending||hasAnyUpload){
+  stage=2;badge='현재 단계 · 이미지 분석';title=hasQuestionUpload?'선택한 이미지를 분석해 주세요':'문제 이미지를 먼저 선택해 주세요';description=hasQuestionUpload?'문제와 풀이를 분리해 실제 풀이 단계를 찾습니다.':'풀이 이미지만으로는 분석을 시작할 수 없습니다.';label=hasQuestionUpload?'선택한 이미지 분석하기':'문제 이미지 선택';kind=hasQuestionUpload?'read':'select';disabled=!authenticated;
  }else if(result){
   stage=5;badge='완료 · 최종 결과';title='단계별 문제와 해설이 완성됐습니다';description='각 결과를 순서대로 확인하세요.';label='다시 만들기';kind='generate';disabled=!authenticated;
  }else if($('body').value.trim()&&hasValidLogic()){
@@ -46,13 +53,15 @@ function updateWorkflowState(){
  setWorkflowStage(stage);$('workflow-state-badge').textContent=badge;$('workflow-title').textContent=title;$('workflow-description').textContent=description;
  if(action){action.textContent=label;action.dataset.action=kind;action.disabled=disabled;}
  const hasBody=!!$('body').value.trim(),validLogic=hasValidLogic(),generating=busy&&!importController&&!(/풀이/.test(phaseTitle)&&!/쌍둥이/.test(phaseTitle));
- $('wizard-stage-2').hidden=!(materialReadPending||!!importController||hasBody);
+ $('wizard-stage-2').hidden=!(materialReadPending||hasAnyUpload||!!importController||hasBody);
  $('wizard-stage-3').hidden=!hasBody;
  $('wizard-stage-4').hidden=!(hasBody&&validLogic);
  $('wizard-stage-5').hidden=!(generationStarted||generating||pendingJob||result||comparisonOutputs.length);
  for(let index=1;index<=5;index++){const section=$('wizard-stage-'+index);if(section){section.classList.toggle('active',index===stage);section.classList.toggle('completed',index<stage);}}
  $('solve-problem').hidden=!(hasBody&&!validLogic)||busy;
- $('read-material').disabled=busy||!selectedQuestionFile;
+ $('read-material').disabled=busy||!authenticated||!hasQuestionUpload;
+ $('read-material').textContent=hasQuestionUpload?'선택한 이미지 분석하기':'문제 이미지를 먼저 선택하세요';
+ const readiness=$('analysis-readiness');if(readiness){readiness.textContent=hasQuestionUpload?`준비 완료 · ${uploads.question.name}${uploads.solution?' + 풀이 이미지':''}`:(uploads.solution?'풀이 이미지는 선택됐습니다. 문제 이미지도 선택해 주세요.':'문제 이미지가 선택되면 분석 버튼이 활성화됩니다.');readiness.classList.toggle('ready',hasQuestionUpload);}
  $('generate').disabled=busy||!validLogic||!authenticated;
  const count=readLogicSteps().filter(Boolean).length;
  if($('analysis-summary-steps'))$('analysis-summary-steps').textContent=count?`실제 풀이 ${count}단계`:'';
@@ -319,7 +328,7 @@ async function importSeparateFiles(questionFile,solutionFile=null){
 $('file').addEventListener('change',()=>importFile($('file').files[0]));
 $('question-file').addEventListener('change',()=>{selectedQuestionFile=$('question-file').files[0]||null;if(selectedQuestionFile){sourceId=null;requiresImage=false;for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);clearResult();if($('analysis-status'))$('analysis-status').hidden=true;showSeparatePreview('question-preview',selectedQuestionFile,0);}materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);$('file-info').textContent=selectedQuestionFile?(selectedSolutionFile?'문제와 풀이 선택 완료':'문제 선택 완료 · 풀이가 없으면 문제만 분석할 수 있습니다'):'문제 이미지를 선택해 주세요.';globalThis.updateWorkflowState?.();$('wizard-stage-2')?.scrollIntoView({behavior:'smooth',block:'center'});});
 $('solution-file').addEventListener('change',()=>{selectedSolutionFile=$('solution-file').files[0]||null;materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);if(selectedSolutionFile)showSeparatePreview('solution-preview',selectedSolutionFile,1);$('file-info').textContent=selectedQuestionFile?'문제와 풀이 선택 완료':'풀이 선택 완료 · 문제 이미지도 선택해 주세요.';if($('analysis-status'))$('analysis-status').hidden=true;globalThis.updateWorkflowState?.();});
-$('read-material').onclick=()=>{if(!selectedQuestionFile){feedback('문제 이미지가 필요합니다','문제 칸에 이미지나 한 페이지 PDF를 먼저 선택해 주세요.',true);return;}importSeparateFiles(selectedQuestionFile,selectedSolutionFile);};
+$('read-material').onclick=()=>{const uploads=selectedUploads();if(!uploads.question){feedback('문제 이미지가 필요합니다','문제 칸에 이미지나 한 페이지 PDF를 먼저 선택해 주세요.',true);return;}materialReadPending=true;importSeparateFiles(uploads.question,uploads.solution);};
 const drop=document.querySelector('.upload');drop.addEventListener('dragover',e=>e.preventDefault());
 drop.addEventListener('drop',e=>{
  e.preventDefault();if(e.dataTransfer.files.length!==1){feedback('파일 하나를 선택해 주세요','먼저 한 문제의 파일을 넣어 주세요.',true);return;}
@@ -328,7 +337,7 @@ drop.addEventListener('drop',e=>{
 
 for(const id of ['title','body','answer','explanation'])$(id).addEventListener('input',clearResult);
 $('add-logic-step').onclick=()=>{if(!busy){addLogicStep();clearResult();logicStepInputs().at(-1)?.focus();}};
-$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
+$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;$('question-file').value='';$('solution-file').value='';for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
 
 function renderComparisons(outputs){
  comparisonOutputs=outputs;if(!outputs.length){$('comparison').hidden=true;return;}

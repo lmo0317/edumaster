@@ -62,6 +62,7 @@
   <section id="wizard-stage-2" class="wizard-stage" hidden>
     <div class="wizard-stage-head"><span>2</span><div><h2>이미지 분석</h2><p>문제와 풀이를 분리하고 실제 풀이 단계를 찾습니다.</p></div></div>
     <button id="read-material" type="button" class="primary stage-main-action">선택한 이미지 분석하기</button>
+    <p id="analysis-readiness" class="analysis-readiness">문제 이미지가 선택되면 분석 버튼이 활성화됩니다.</p>
     <div id="analysis-status" class="stage-message" hidden><strong id="analysis-status-title"></strong><p id="analysis-status-body"></p></div>
   </section>
 
@@ -110,6 +111,6 @@
 </main>
 
 <dialog id="image-viewer" class="image-viewer" aria-labelledby="image-viewer-title"><div class="image-viewer-toolbar"><strong id="image-viewer-title">이미지 크게 보기</strong><button type="button" id="image-viewer-close" aria-label="이미지 크게 보기 닫기">닫기 ✕</button></div><div class="image-viewer-controls"><button type="button" id="image-viewer-out" aria-label="이미지 축소">−</button><span id="image-viewer-scale" aria-live="polite">100%</span><button type="button" id="image-viewer-in" aria-label="이미지 확대">＋</button><button type="button" id="image-viewer-fit">화면에 맞추기</button><span>확대 후 좌우·위아래로 스크롤할 수 있습니다</span></div><div id="image-viewer-stage" class="image-viewer-stage"><img id="image-viewer-image" alt=""></div></dialog>
-<script src="app.js?v=20260920_v33"></script>
+<script src="app.js?v=20260920_v34"></script>
 </body>
 </html>
