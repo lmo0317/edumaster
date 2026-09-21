@@ -30,7 +30,11 @@ public sealed record ProblemSolutionMaterial(string Body,string Answer,string Ex
             }
             string Read(string key)=>ReadElement(r.GetProperty(key));
             string[] Array(string key)=>r.GetProperty(key).EnumerateArray().Select(ReadElement).ToArray();
-            var result=new ProblemSolutionMaterial(Read("body"),Read("answer"),Read("explanation"),Array("steps"),Array("uncertainties"));
+            var rawSteps=Array("steps");
+            var steps=LearningStepConsolidator.Consolidate(rawSteps);
+            var uncertainties=Array("uncertainties");
+            if(rawSteps.Length>steps.Length)uncertainties=uncertainties.Concat([$"이미지 판독 결과의 세부 계산 {rawSteps.Length}개를 순서와 내용을 유지한 채 {steps.Length}개의 큰 학습 단계로 묶었습니다."]).ToArray();
+            var result=new ProblemSolutionMaterial(Read("body"),Read("answer"),Read("explanation"),steps,uncertainties);
             if(result.Body.Length<20||result.Body.Length>12000||result.Explanation.Length<20||result.Explanation.Length>12000||result.Answer.Length>3000||result.Steps.Length is < ProblemDraft.MinLogicSteps or > ProblemDraft.MaxLogicSteps||result.Steps.Any(string.IsNullOrWhiteSpace)||result.Steps.Any(s=>s.Length>3000)||result.Uncertainties.Length>20)
                 throw new InvalidDataException("문제와 풀이를 모두 읽지 못했습니다. 문제·정답·풀이가 함께 보이는 선명한 이미지 한 장을 넣어 주세요.");
             if(Regex.Matches(result.Body,@":-{3,}").Count>24||result.Body.Count(c=>c=='|')>160)
@@ -65,7 +69,15 @@ public sealed record ProblemSolutionMaterial(string Body,string Answer,string Ex
             }else throw new InvalidDataException("원본의 몰질량을 물질량으로 읽었을 가능성이 있지만 정답과 독립 계산이 일치하지 않습니다. 원본 이미지를 확인해 주세요.");
         }
         var verified=ReactionMassCheck.Solve(normalizedBody);
-        if(verified is null)return this;
+        if(verified is null){
+            if(AcidBaseMixtureCheck.SolveSource(normalizedBody) is { } neutralization){
+                return this with{
+                    Body=normalizedBody,Answer=neutralization.Answer,Explanation=neutralization.Explanation,Steps=neutralization.Steps,
+                    Uncertainties=Uncertainties.Concat(["산·염기 혼합 문제의 원본 정답과 풀이를 표의 이온 수·전하 균형으로 독립 검산해 교정했습니다."]).Distinct().ToArray()
+                };
+            }
+            return GasMixtureAtomCheck.VerifySource(this)??this;
+        }
         if(!ReactionMassCheck.ReferenceAnswerMatches(Answer,verified))
             throw new InvalidDataException($"풀이 이미지의 정답({Answer})과 문제 조건의 독립 검산({verified.Answer})이 다릅니다. 문제와 풀이 이미지를 다시 확인해 주세요.");
         // This narrow, code-supported reaction-quantity source has three printed STEP
@@ -77,6 +89,7 @@ public sealed record ProblemSolutionMaterial(string Body,string Answer,string Ex
         var segmentationChanged=Steps.Length!=verified.Steps.Length;
         return this with{
             Body=normalizedBody,
+            Explanation=verified.Explanation,
             Steps=verified.Steps,
             Uncertainties=Uncertainties.Concat([quantityRepaired
                 ?"이미지에서 물질량으로 읽힌 최종 비를 몰질량으로 교정했고, 원본 정답과 독립 계산이 일치함을 확인했습니다."

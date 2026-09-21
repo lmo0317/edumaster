@@ -122,6 +122,20 @@ test('resume queries existing job without a new generation POST',async()=>{
  await vm.runInContext("$('resume-job').onclick()",c);
  assert.equal(c.result.body,'variant');assert.equal(c.pendingJob,null);
 });
+test('numbered image analysis retries a dropped response with the same upload',async()=>{
+ let count=0;const body={requestId:'fixed-id'};const c=context(async(url,options)=>{
+  assert.equal(options.body,body);
+  if(++count===1)throw new TypeError('Failed to fetch');
+  return response({sourceId:'saved-source'});
+ });
+ assert.equal((await c.api('import',{method:'POST',body,idempotent:true})).sourceId,'saved-source');
+ assert.equal(count,2);
+});
+test('numbered image analysis retry is bounded and reports connection loss',async()=>{
+ let count=0;const c=context(async()=>{count++;throw new TypeError('Failed to fetch')});
+ await assert.rejects(c.api('import',{method:'POST',body:{},idempotent:true}),e=>e.networkFailure===true&&e.message.includes('이미지는 유지됩니다'));
+ assert.equal(count,3);
+});
 test('completed stage series keeps every problem card and does not auto-run one global PNG check',async()=>{
  let renderChecks=0;const outputs=[1,2,3].map(n=>({stageNumber:n,stageCount:3,state:'ready',result:{id:'result-'+n,body:'variant '+n}}));
  const c=context(async()=>response({state:'ready',stageSeries:true,stageCount:3,result:outputs[2].result,outputs}));
@@ -129,6 +143,16 @@ test('completed stage series keeps every problem card and does not auto-run one 
  vm.runInContext(source.slice(source.indexOf('async function waitForGeneration('),source.indexOf("$('generate').onclick=")),c);
  await vm.runInContext("$('resume-job').onclick()",c);
  assert.equal(c.rendered.length,3);assert.equal(renderChecks,0);assert.equal(c.$('output').hidden,true);assert.match(c.$('status').textContent,/각 문제 카드/);
+});
+test('completed job with a failed quality check is never announced as fully complete',async()=>{
+ const outputs=[{stageNumber:1,stageCount:1,state:'ready',result:{id:'bad',body:'variant',quality:{checks:[{state:'fail',label:'수치·해설',evidence:'계산 누락'}]}}}];
+ const c=context(async()=>response({state:'ready',stageSeries:true,stageCount:1,result:outputs[0].result,outputs}));
+ Object.assign(c,{pendingJob:{id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',provider:'deepseek'},busy:false,jobId:null,result:null,feedback(title){c.feedbackTitle=title},renderComparisons(){},show(r){c.result=r},save(){}});
+ vm.runInContext(source.slice(source.indexOf('async function waitForGeneration('),source.indexOf("$('generate').onclick=")),c);
+ await vm.runInContext("$('resume-job').onclick()",c);
+ assert.match(c.$('badge').textContent,/검사 오류/);
+ assert.match(c.$('status').textContent,/사용하거나 PDF로 저장하지 마세요/);
+ assert.equal(c.feedbackTitle,'생성 문항 검사 오류');
 });
 test('untouched per-stage PNG wait is hidden from the visible error summary',()=>{
  const c=vm.createContext({});
@@ -139,13 +163,14 @@ test('untouched per-stage PNG wait is hidden from the visible error summary',()=
  assert.equal(c.stageQualitySummary(waiting),'검사 통과 11');
  assert.equal(c.stageQualitySummary(failed),'추가 확인 1 · 통과 11');
  assert.match(source,/stageRenderQueue=stageRenderQueue\.then\(\(\)=>recheckStageResult\(o,'render',png\)\)/);
+ assert.match(source,/브라우저 렌더링 후\|그림 라벨/);
 });
 test('full report keeps source material and orders every generated stage',()=>{
  const outputs=[3,1,2].map(n=>({stageNumber:n,state:'ready',result:{quality:{checks:[{state:'pass'}]},sourceProblem:n===3?'입력 문제':'',sourceAnswer:n===3?'입력 정답':'',sourceExplanation:n===3?'입력 해설':'',sourceSteps:n===3?['원본 단계 1']:[]}}));
  const fields={body:{value:'화면 문제'},answer:{value:'화면 정답'},explanation:{value:'화면 해설'}};
- const c=vm.createContext({comparisonOutputs:outputs,$:id=>fields[id],readLogicSteps:()=>['화면 단계'],qualityState:()=> 'pass'});
+ const c=vm.createContext({comparisonOutputs:outputs,$:id=>fields[id],readLogicSteps:()=>['화면 단계'],qualityState:()=> 'pass',answerVerified:()=>true});
  vm.runInContext(source.slice(source.indexOf('function fullReportData('),source.indexOf('function buildFullReport(')),c);
- const report=c.fullReportData();assert.deepEqual(Array.from(report.ready,x=>x.stageNumber),[1,2,3]);assert.equal(report.sourceProblem,'입력 문제');assert.equal(report.sourceExplanation,'입력 해설');assert.deepEqual(Array.from(report.sourceSteps),['원본 단계 1']);
+ const report=c.fullReportData();assert.deepEqual(Array.from(report.ready,x=>x.stageNumber),[1,2,3]);assert.equal(report.sourceProblem,'화면 문제');assert.equal(report.sourceExplanation,'화면 해설');assert.deepEqual(Array.from(report.sourceSteps),['화면 단계']);
  c.comparisonOutputs[0].state='running';assert.throws(()=>c.fullReportData(),/모두 완성/);
 });
 test('full report includes role-specific original problem and solution images',()=>{
@@ -220,11 +245,11 @@ test('overall deadline aborts a pending status fetch and keeps existing job for 
 
 test('combined image import sends its input type and fills separate problem, answer and solution fields',async()=>{
  const nodes=new Map();const details={open:false};let sent;
- const c=vm.createContext({busy:false,authenticated:true,previewUrl:null,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,
+ const c=vm.createContext({busy:false,authenticated:true,previewUrl:null,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,crypto:require('node:crypto'),
   FormData:class{constructor(){this.values={}}append(k,v){this.values[k]=v}},URL:{createObjectURL:()=> 'blob:test',revokeObjectURL(){}},Date,
   document:{querySelector:()=>details},$:id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,getAttribute:()=>null,replaceChildren(){},removeAttribute(){}});return nodes.get(id)},
   writeLogicSteps:steps=>steps.forEach((value,index)=>{const id='logic-step-'+(index+1);if(!nodes.has(id))nodes.set(id,{value:''});nodes.get(id).value=value}),
-  selectedModel:()=>({provider:'deepseek'}),setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
+  selectedModel:()=>({provider:'deepseek'}),setMaterialMode(){},sourceReuseStatus(){},sourceTimeText(){return ''},setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
   api:async(path,options)=>{assert.equal(path,'import');sent=options.body.values;return {title:'원본',body:'문제 조건과 표',answer:'② 2/5',explanation:'가정과 모순으로 한계 반응물을 판단한다.',steps:['가정과 모순 확인','반응량 계산','답 검산'],readMethod:'로컬 문제·풀이 분리',fileName:'photo.jpg',needsReview:true,sourceId:'source',uncertainties:[]}}
  });
  vm.runInContext(source.slice(source.indexOf('function applyImportedMaterial('),source.indexOf("$('file').addEventListener")),c);
@@ -234,6 +259,17 @@ test('combined image import sends its input type and fills separate problem, ans
  assert.equal(nodes.get('body').value,'문제 조건과 표');assert.equal(nodes.get('answer').value,'② 2/5');assert.match(nodes.get('explanation').value,/모순/);
  assert.deepEqual(['logic-step-1','logic-step-2','logic-step-3'].map(id=>nodes.get(id).value),['가정과 모순 확인','반응량 계산','답 검산']);
  assert.equal(details.open,true);assert.equal(c.sourceId,'source');assert.equal(c.busy,false);
+});
+test('server-corrected step count is shown before starting generation',async()=>{
+ const c=context(async url=>{assert.ok(url.endsWith('api/generate'));return response({planChanged:true,stageCount:3,logicSteps:['첫 판단','둘째 판단','셋째 판단'],explanation:'교정된 풀이',message:'이번에는 3문제를 만듭니다.'})});
+ const original=c.$;c.$=id=>{const node=original(id);node.scrollIntoView??=()=>{};return node;};
+ Object.assign(c,{pendingJob:{id:null},generationStarted:true,jobId:null,writeLogicSteps(steps){c.displayedSteps=steps},document:{querySelector:()=>({open:false})},feedback(title,message){c.feedbackText=title+' '+message},save(){}});
+ vm.runInContext(source.slice(source.indexOf('async function submitGeneration('),source.indexOf('async function resumeGeneration(')),c);
+ assert.equal(await c.submitGeneration({expectedStageCount:6}),false);
+ assert.equal(c.pendingJob,null);assert.equal(c.generationStarted,false);
+ assert.deepEqual(Array.from(c.displayedSteps),['첫 판단','둘째 판단','셋째 판단']);
+ assert.match(c.$('status').textContent,/생성 예정 3문제/);
+ assert.match(c.feedbackText,/3문제/);
 });
 test('selected upload remains available after the browser clears its native file input',()=>{
  const problem={name:'problem.jpg'},solution={name:'solution.jpg'};
@@ -248,10 +284,10 @@ test('selected upload remains available after the browser clears its native file
 
 test('separate question and solution images are sent with fixed roles and fill one logic card',async()=>{
  const nodes=new Map();const details={open:false};let sent;
- const c=vm.createContext({busy:false,authenticated:true,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,Date,
+ const c=vm.createContext({busy:false,authenticated:true,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,crypto:require('node:crypto'),Date,
   FormData:class{constructor(){this.values={}}append(k,v){this.values[k]=v}},document:{querySelector:()=>details},$:id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,getAttribute:()=>null,replaceChildren(){}});return nodes.get(id)},
   writeLogicSteps:steps=>steps.forEach((value,index)=>{const id='logic-step-'+(index+1);if(!nodes.has(id))nodes.set(id,{value:''});nodes.get(id).value=value}),
-  selectedModel:()=>({provider:'gemma'}),setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
+  selectedModel:()=>({provider:'gemma'}),setMaterialMode(){},sourceReuseStatus(){},sourceTimeText(){return ''},setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
   api:async(path,options)=>{assert.equal(path,'import');sent=options.body.values;return {title:'문제 원본',body:'분리된 문제 본문',answer:'②',explanation:'분리된 해설',steps:['STEP 1','STEP 2','STEP 3','STEP 4'],readMethod:'문제·풀이 분리',fileName:'question.png + solution.png',needsReview:true,sourceId:'source-two',uncertainties:[]}}
  });
  vm.runInContext(source.slice(source.indexOf('function applyImportedMaterial('),source.indexOf("$('file').addEventListener")),c);
@@ -262,11 +298,12 @@ test('separate question and solution images are sent with fixed roles and fill o
 });
 
 test('problem image alone is imported without inventing a solution',async()=>{
- const nodes=new Map();const details={open:false};let sent;
- const c=vm.createContext({busy:false,authenticated:true,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,Date,
+ const nodes=new Map();const details={open:false};let sent,autoSolved=false;
+ const c=vm.createContext({busy:false,authenticated:true,sourceId:null,requiresImage:false,sourceExpiresAt:null,result:null,jobId:null,importController:null,importTimedOut:false,comparisonOutputs:[],AbortController,crypto:require('node:crypto'),Date,
   FormData:class{constructor(){this.values={}}append(k,v){this.values[k]=v}},document:{querySelector:()=>details},$:id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:true,getAttribute:()=>null,replaceChildren(){}});return nodes.get(id)},
   writeLogicSteps:steps=>['logic-step-1','logic-step-2','logic-step-3'].forEach((id,index)=>{if(!nodes.has(id))nodes.set(id,{value:''});nodes.get(id).value=steps[index]||''}),
-  selectedModel:()=>({provider:'deepseek'}),setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
+  selectedModel:()=>({provider:'deepseek'}),setMaterialMode(){},sourceReuseStatus(){},sourceTimeText(){return ''},setBusy(value){c.busy=value},feedback(){},save(){},setInterval:()=>1,clearInterval(){},setTimeout:()=>1,clearTimeout(){},
+  solveProblem:async auto=>{autoSolved=auto},
   api:async(path,options)=>{sent=options.body.values;return {title:'문제',body:'문제 본문',answer:'',explanation:'',steps:[],materialKind:'problem-only',readMethod:'문제 이미지 인식',fileName:'question.png',needsReview:true,sourceId:'source-only',uncertainties:[]}}
  });
  vm.runInContext(source.slice(source.indexOf('function applyImportedMaterial('),source.indexOf("$('file').addEventListener")),c);
@@ -274,4 +311,65 @@ test('problem image alone is imported without inventing a solution',async()=>{
  assert.equal(sent.materialKind,'problem-only');assert.equal(sent.questionFile,question);assert.equal(sent.solutionFile,undefined);
  assert.equal(nodes.get('body').value,'문제 본문');assert.equal(nodes.get('answer').value,'');assert.deepEqual(['logic-step-1','logic-step-2','logic-step-3'].map(id=>nodes.get(id).value),['','','']);
  assert.equal(c.sourceId,'source-only');assert.equal(c.busy,false);
+ assert.equal(autoSolved,true);
+});
+
+test('input mode clearly supports problem-only auto solution and supplied solution',()=>{
+ const html=fs.readFileSync('src/EduMaster.Web/wwwroot/index.html','utf8');
+ const solver=fs.readFileSync('src/EduMaster.Core/ProblemSolver.cs','utf8');
+ const css=fs.readFileSync('src/EduMaster.Web/wwwroot/style.css','utf8');
+ assert.match(html,/문제만 넣기/);assert.match(html,/문제 \+ 해설 넣기/);
+ assert.match(source,/if\(autoSolve\)await solveProblem\(true\)/);
+ assert.match(solver,/STEP 1\./);
+ assert.match(css,/input\[type="radio"\]\{appearance:auto;width:17px/);
+ assert.match(html,/class="source-preview-card solution"/);
+});
+
+test('learning stages are capped at six and stale overlong jobs are not resumed',()=>{
+ assert.match(source,/const MAX_LOGIC_STEPS=6/);
+ assert.match(source,/consolidateLogicSteps/);
+ assert.match(source,/if\(restoredSteps\.length>MAX_LOGIC_STEPS\).*saved\.pendingJob=null/);
+ assert.match(source,/풀이 단계는 6개까지 입력할 수 있습니다/);
+});
+
+test('solution analysis retries one malformed or truncated model response',()=>{
+ const server=fs.readFileSync('src/EduMaster.Web/Program.cs','utf8');
+ assert.match(server,/catch\(InvalidDataException\)\{/);
+ assert.match(server,/첫 응답 중단 후 자동 재시도/);
+});
+
+test('model selector keeps Gemma visible but disables it when the PC tunnel is offline',()=>{
+ const html=fs.readFileSync('src/EduMaster.Web/wwwroot/index.html','utf8');
+ assert.match(html,/Gemma 4 12B · 현재 PC가 켜져 있을 때만 사용 가능/);
+ assert.match(source,/gemma\.disabled=!status\.gemmaAvailable/);
+ assert.match(source,/if\(!status\.gemmaAvailable&&select\.value==='gemma'\)select\.value='deepseek'/);
+});
+
+test('refresh explicitly distinguishes reusable server image from an expired source',()=>{
+ assert.match(source,/새로 이미지를 넣지 않아도 됩니다\. 현재 분석과 문제 생성에 이 원본을 그대로 사용합니다/);
+ assert.match(source,/서버 보관 시간이 끝났습니다\. 그림·표를 포함해 생성하려면 원본 이미지를 다시 선택하세요/);
+ assert.match(source,/sources\/'\+restoringId\+'\?preview=true/);
+ assert.match(source,/sourceReuseStatus\('checking','이전 원본 확인 중'/);
+});
+
+test('image imports wait for the active reader instead of failing immediately',()=>{
+ const server=fs.readFileSync('src/EduMaster.Web/Program.cs','utf8');
+ assert.match(server,/await importGate\.WaitAsync\(token\);gateAcquired=true/);
+ assert.match(server,/finally\{if\(gateAcquired\)importGate\.Release\(\);\}/);
+ assert.doesNotMatch(server,/importGate\.WaitAsync\(0\)/);
+ assert.match(source,/앞 작업이 있으면 끝난 뒤 자동 시작/);
+});
+
+test('saved report page is routed by the public gateway and uses authenticated report APIs',()=>{
+ const gateway=fs.readFileSync('scripts/web-gateway.cjs','utf8');
+ const resultPage=fs.readFileSync('src/EduMaster.Web/wwwroot/result/index.html','utf8');
+ const resultScript=fs.readFileSync('src/EduMaster.Web/wwwroot/result/result.js','utf8');
+ const server=fs.readFileSync('src/EduMaster.Web/Program.cs','utf8');
+ assert.match(gateway,/result\/index\.html/);
+ assert.match(gateway,/relative==='result'/);
+ assert.match(resultPage,/저장된 PDF/);
+ assert.match(resultScript,/request\('reports'\)/);
+ assert.match(server,/MapPost\("\/api\/reports"/);
+ assert.match(server,/MapGet\("\/api\/reports\/\{id\}\/file"/);
+ assert.match(fs.readFileSync('scripts/update-web-runtime.ps1','utf8'),/must be a win-x64 self-contained publish/);
 });

@@ -10,4 +10,10 @@ public class LocalVisionTests
     [Fact] public void MalformedRecognitionIsExplained()=>Assert.Throws<InvalidDataException>(()=>LocalVisionReader.Parse("{}"u8.ToArray()));
     [Fact] public void MathFormattingPreservesPhysicalQuantity()=>Assert.Equal("(C의 몰질량)/(B의 몰질량) × 2",LocalVisionReader.NormalizeMath(@"$\frac{\text{C의 몰질량}}{\text{B의 몰질량}} \times 2$"));
     [Fact] public void QuantityWordsAreNeverRewritten()=>Assert.Equal("몰질량 물질량 질량",LocalVisionReader.NormalizeMath("몰질량 물질량 질량"));
+    [Fact] public void StructuredProblemBodyIsExtractedWithoutJsonWrapper(){
+        var body=LocalVisionReader.ParseProblemBody(JsonSerializer.Serialize(new{body=@"A(g)+B(g) \rightarrow C(g)일 때 생성물의 몰수는?"}));
+        Assert.Equal("A(g)+B(g) → C(g)일 때 생성물의 몰수는?",body);
+    }
+    [Theory][InlineData("{}")][InlineData("{\"body\":\"짧음\"}")]
+    public void InvalidStructuredProblemBodyIsRejected(string text)=>Assert.Throws<InvalidDataException>(()=>LocalVisionReader.ParseProblemBody(text));
 }

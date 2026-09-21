@@ -7,16 +7,31 @@ namespace EduMaster.Core.Tests;
 
 public class ProblemSolverTests
 {
+    [Fact]public void MissingStepHeadingsAreAddedWithoutDroppingDetailedExplanation(){
+        var formatted=VariantResponse.WithStepHeadings("전체 계산을 자세히 설명한다.",["조건 확인","수치 계산"]);
+        Assert.Contains("STEP 1. 조건 확인",formatted);Assert.Contains("STEP 2. 수치 계산",formatted);Assert.Contains("전체 계산을 자세히 설명한다.",formatted);
+    }
+
     [Fact]public async Task SupportedReactionCreatesThreeVerifiedStepsWithoutCallingAModel(){
         using var http=new HttpClient(new RejectCalls());
         var solved=await new ProblemSolver(http).SolveAsync("반응량",ReactionVariantPlanTests.Source,"deepseek",DeepSeekVisualGenerator.Model,"unused");
         Assert.Equal("2/5",solved.Answer);Assert.Equal(3,solved.Steps.Length);Assert.Contains("A, A, B",solved.Steps[0]);Assert.Equal("코드 독립 검산",solved.Method);
+        Assert.Contains("M_A/M_B = b/3",solved.Explanation);Assert.Contains("b = 3",solved.Explanation);
     }
 
     [Fact]public async Task GeneralProblemUsesSelectedModelAndRequiresThreeSteps(){
         using var http=new HttpClient(new ReplyHandler());
         var solved=await new ProblemSolver(http).SolveAsync("일차방정식","2x+3=7일 때 x는?","deepseek",DeepSeekVisualGenerator.Model,"test");
         Assert.Equal("2",solved.Answer);Assert.Equal(3,solved.Steps.Length);Assert.Contains("DeepSeek",solved.Method);
+    }
+
+    [Fact]public void SolverConsolidatesElevenModelStepsAndRelabelsMicroHeadings(){
+        var steps=Enumerable.Range(1,11).Select(number=>$"계산 {number}").ToArray();
+        var explanation=string.Join("\n",steps.Select((step,index)=>$"STEP {index+1}. {step}의 근거와 계산 결과를 설명한다."));
+        var answer=JsonSerializer.Serialize(new{status="ready",message="",answer="7",explanation,steps});
+        var outer=JsonSerializer.SerializeToUtf8Bytes(new{choices=new[]{new{finish_reason="stop",message=new{content=answer}}}});
+        var solved=ProblemSolver.Parse(outer,"테스트 모델");
+        Assert.Equal(ProblemDraft.MaxLogicSteps,solved.Steps.Length);Assert.DoesNotContain("STEP 11",solved.Explanation);Assert.Contains("세부 계산 11",solved.Explanation);
     }
 
     private sealed class RejectCalls:HttpMessageHandler{protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)=>throw new Exception("model must not be called");}

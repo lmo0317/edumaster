@@ -8,7 +8,7 @@ if($null -eq $taskWeb -or $taskWeb.ExecutablePath -ne (Join-Path $taskWorkspace 
 $taskWatcher=$taskProcesses | Where-Object ProcessId -eq $taskRuntime.watcherPid
 $taskTunnel=$taskProcesses | Where-Object ProcessId -eq $taskRuntime.tunnelPid
 if($taskWatcher -and $taskWatcher.CommandLine -notlike '*edumaster*start-web.ps1*'){throw 'Wrong watcher process'}
-if($taskTunnel -and $taskTunnel.CommandLine -notlike '*18282:127.0.0.1:18280*'){throw 'Wrong tunnel process'}
+if($taskTunnel -and ($taskTunnel.CommandLine -notlike '*18283:127.0.0.1:8092*' -or $taskTunnel.CommandLine -notlike '*18284:127.0.0.1:8091*')){throw 'Wrong tunnel process'}
 if($taskWatcher){Stop-Process -Id $taskWatcher.ProcessId -ErrorAction SilentlyContinue}
 if($taskTunnel){Stop-Process -Id $taskTunnel.ProcessId -ErrorAction SilentlyContinue}
 Start-Process -FilePath 'C:/Users/lmo03/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'start-web.ps1'),'-Watch') -WorkingDirectory $taskWorkspace -WindowStyle Hidden

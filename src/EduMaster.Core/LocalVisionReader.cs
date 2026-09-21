@@ -4,11 +4,15 @@ namespace EduMaster.Core;
 
 public sealed class LocalVisionReader(HttpClient client)
 {
-    public const string Endpoint="http://127.0.0.1:8091/v1/";
+    public static string Endpoint => Environment.GetEnvironmentVariable("EDUMASTER_VISION_ENDPOINT")?.Trim() is {Length:>0} value?LocalGemmaGenerator.Endpoint(value).AbsoluteUri:"http://127.0.0.1:8091/v1/";
     public const string Model="edumaster-ocr-qwen3vl-4b";
     public const string ReadMethod="로컬 Qwen3-VL 이미지 인식";
     public async Task<string> ReadAsync(byte[] image,string mime,CancellationToken token=default)
-        =>NormalizeMath(await RequestAsync(image,mime,Prompt,4096,token));
+    {
+        var schema=new{type="object",properties=new{body=new{type="string",maxLength=6000}},required=new[]{"body"}};
+        var text=await RequestAsync(image,mime,Prompt+"\n반드시 {\"body\":\"전사한 문제 본문\"} JSON 객체 하나로만 답하세요.",2400,token,schema);
+        return ParseProblemBody(text);
+    }
     public async Task<ProblemSolutionMaterial> ReadMaterialAsync(VisualPage page,CancellationToken token=default,string? endpoint=null,string? model=null,IReadOnlyList<VisualPage>? views=null)
     {
         var schema=new{type="object",properties=new{
@@ -39,13 +43,22 @@ public sealed class LocalVisionReader(HttpClient client)
         nodes=new{type="array",maxItems=100,items=new{type="object",properties=new{id=new{type="string"},label=new{type="string"}},required=new[]{"id","label"}}},
         edges=new{type="array",maxItems=150,items=new{type="object",properties=new{from=new{type="string"},to=new{type="string"},relation=new{type="string"}},required=new[]{"from","to","relation"}}},
         constraints=new{type="array",maxItems=12,items=new{type="string"}},uncertainties=new{type="array",maxItems=30,items=new{type="string"}}},required=new[]{"kind","summary","nodes","edges","constraints","uncertainties"}};
-    public const string PromptVersion="image-reader-v1";
+    public const string PromptVersion="image-reader-v2-structured-body";
     private static string Prompt { get { using var stream=typeof(LocalVisionReader).Assembly.GetManifestResourceStream("EduMaster.Core.Prompts.image-reader-v1.txt")!;using var reader=new StreamReader(stream);return reader.ReadToEnd(); } }
     public static string NormalizeMath(string text)
     {
         text=System.Text.RegularExpressions.Regex.Replace(text,@"\\(?:text|mathrm|mathbf)\{([^{}]*)\}","$1");
         for(var i=0;i<4;i++)text=System.Text.RegularExpressions.Regex.Replace(text,@"\\frac\{([^{}]*)\}\{([^{}]*)\}","($1)/($2)");
         return text.Replace("\\longrightarrow","→").Replace("\\rightarrow","→").Replace("->","→").Replace("\\times","×").Replace("\\left","").Replace("\\right","").Replace("$","").Trim();
+    }
+    public static string ParseProblemBody(string text)
+    {
+        try{
+            using var json=JsonDocument.Parse(text);var body=json.RootElement.GetProperty("body").GetString()?.Trim()??"";
+            if(body.Length<8||body.Length>6000)throw new InvalidDataException("읽을 수 있는 문제 본문이 부족하거나 너무 깁니다. 문제 한 개의 선명한 파일을 선택해 주세요.");
+            return NormalizeMath(body);
+        }catch(InvalidDataException){throw;}
+        catch(Exception e) when(e is JsonException or InvalidOperationException or KeyNotFoundException){throw new InvalidDataException("이미지에서 문제 본문을 구조화해 읽지 못했습니다. 같은 파일로 다시 시도해 주세요.",e);}
     }
     private async Task<string> RequestAsync(byte[] image,string mime,string prompt,int limit,CancellationToken token,object? schema=null,string? endpoint=null,string? model=null,IReadOnlyList<VisualPage>? views=null)
     {

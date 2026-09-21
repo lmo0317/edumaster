@@ -10,10 +10,11 @@ import urllib.request
 
 def probe():
     try:
-        with urllib.request.urlopen('http://127.0.0.1:18282/api/status', timeout=4) as response:
-            return response.status == 401
-    except urllib.error.HTTPError as error:
-        return error.code == 401
+        for port in (18283, 18284):
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/v1/models', timeout=4) as response:
+                if response.status != 200:
+                    return False
+        return True
     except (OSError, urllib.error.URLError):
         return False
 

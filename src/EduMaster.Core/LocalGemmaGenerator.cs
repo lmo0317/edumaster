@@ -6,6 +6,7 @@ public sealed record LocalModel(string Id, string Name, int ContextSize);
 public sealed class LocalGemmaGenerator(HttpClient client)
 {
     public const string DefaultEndpoint = "http://127.0.0.1:8092/v1/";
+    public static string ConfiguredEndpoint => Environment.GetEnvironmentVariable("EDUMASTER_GEMMA_ENDPOINT")?.Trim() is {Length:>0} value?value:DefaultEndpoint;
     public static Uri Endpoint(string value)
     {
         if (!Uri.TryCreate(value,UriKind.Absolute,out var uri) || uri.Scheme != "http" || !uri.IsLoopback || uri.UserInfo!="" || uri.Query!="" || uri.Fragment!="" || uri.AbsolutePath.TrimEnd('/')!="/v1")
@@ -50,8 +51,8 @@ public sealed class LocalGemmaGenerator(HttpClient client)
         SampleResult? result=null;
         for(var attempt=0;attempt<2;attempt++){
             var compact=attempt==0
-                ?"\n[상세 해설 완성 규칙]\n1. 본문(body)에는 변형 문제와 필수 조건만 적는다.\n2. 해설(explanation)은 각 STEP마다 사용 조건, 판단 이유, 수치 대입 전 식, 실제 계산, 단위, 중간 결론과 최종 정답 연결을 자세히 적는다.\n3. steps는 각 단계의 핵심 판단과 계산을 독립적으로 이해할 수 있는 완전한 문장으로 적는다."
-                :"\n이전 응답은 출력 한도를 넘었다. 같은 입력으로 완결된 JSON만 다시 작성한다. 본문 조건은 유지한다. 해설은 각 STEP의 조건·식·계산·결론을 최소 1문장씩 포함하고, steps도 기준 단계와 1:1로 유지한다. 불필요한 수사와 동일 문장 반복만 줄인다.";
+                ?"\n[상세 해설 완성 규칙]\n1. 본문(body)에는 변형 문제와 필수 조건만 적는다.\n2. 해설(explanation)은 각 STEP마다 사용 조건, 판단 이유, 수치 대입 전 식, 실제 계산, 단위, 중간 결론과 최종 정답 연결을 자세히 적는다.\n3. steps는 상세 해설을 복사하지 말고 각 단계의 목표·핵심 판단·결론만 1~2문장으로 요약한다."
+                :"\n이전 응답은 출력 한도를 넘었다. 같은 입력으로 완결된 JSON만 다시 작성한다. 본문 조건은 유지한다. 해설은 각 STEP의 조건·식·계산·결론을 최소 1문장씩 포함한다. steps는 기준 단계와 1:1로 유지하되 상세 해설을 반복하지 않고 핵심만 1~2문장으로 요약한다.";
             var body=new{model=model.Id,messages=new object[]{new{role="system",content=VariantResponse.LocalPrompt()+compact+"\n"+(draft.SkipDeterministicPlan?LearningStagePlan.GenerationRules+"\n":"")+ScientificVisuals.DrawingInstructions+"\n"+ScientificTemplates.Instructions},new{role="user",content}},
                 max_tokens=attempt==0?6144:4096,temperature=0.0,stream=false,reasoning_effort="low",chat_template_kwargs=new{enable_thinking=false},response_format=new{type="json_object",schema=VariantResponse.LocalSchema(draft)}};
             progress?.Report(attempt==0?(hasImages?"Gemma가 원본 이미지를 직접 보며 변형 문제 작성 중 (약 1분 소요)":"로컬 Gemma가 변형 문제·정답·해설 작성 중 (로컬 GPU 생성 · 약 1분 소요)"):"Gemma 출력 한도 도달 · 간결한 완성 답변으로 자동 재시도 1/1 · 원본 유지");

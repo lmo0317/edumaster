@@ -18,6 +18,7 @@ A(g) + bB(g) → 2C(g) + 2D(g) (b는 반응 계수)
             Assert.Equal("pass",ReactionMassCheck.InspectMassConditions(plan.Body)!.State);Assert.DoesNotContain("x=",plan.Body.Replace(" ",""));
             var placeholder=new SampleResult(Guid.NewGuid(),draft.Id,draft.Fingerprint(),"초안","잘못된 표",["1","2","3","4","5"],"② 2","틀린 계산",["a","b","c"],"변형"){Model="Gemma 4 12B",SourceProblem=source};
             var r=plan.Apply(placeholder);Assert.Equal(r.Answer,ReactionMassCheck.Verify(r).Answer);Assert.Equal(source,r.SourceProblem);Assert.Equal(draft.Fingerprint(),r.InputFingerprint);Assert.Contains("코드 반응량 템플릿",r.GenerationNotice);
+            Assert.Equal(plan.Solution.Explanation,r.Explanation);Assert.Equal(plan.Solution.Steps,r.Steps);
             Assert.Equal(plan.Apply(r).UsageSummary,r.UsageSummary);
         }
     }
@@ -25,9 +26,9 @@ A(g) + bB(g) → 2C(g) + 2D(g) (b는 반응 계수)
     [Fact]public void CombinedMaterialKeepsLimitingReactantInferenceAndChecksOriginalAnswer(){
         var draft=new ProblemDraft{Title="문제+풀이",Body=Source,UseSolutionLogic=true,Answer="② (2)/(5)",Explanation="A가 모두 반응하면 실험 I와 II의 소비 질량비가 달라 모순이다. 따라서 B가 모두 반응한다.",Steps=["한계 반응물 가정과 모순 확인","반응 후 질량과 몰수 정리","상댓값·계수·몰질량 계산"]};
         var plan=ReactionVariantPlan.Create(draft)!;
-        Assert.DoesNotContain("| A ",plan.Body);Assert.DoesNotContain("| B ",plan.Body);
+        Assert.Contains("| A ",plan.Body);Assert.Contains("| B ",plan.Body);
         Assert.Equal(3,plan.Solution.B);Assert.Equal(15,plan.Solution.X,7);Assert.Equal("2/5",plan.Solution.Answer);
-        Assert.Contains("STEP 1",plan.Solution.Steps[0]);Assert.Contains("상댓값",plan.Body);
+        Assert.Contains("STEP 1",plan.Solution.Steps[0]);Assert.Contains("상댓값",plan.Body);Assert.Contains("실제 몰분율",plan.Solution.Explanation);Assert.Contains("k = 45",plan.Solution.Explanation);
         Assert.Throws<InvalidDataException>(()=>ReactionVariantPlan.Create(draft with{Answer="① 1/5"}));
     }
     [Fact]public async Task ParenthesizedOcrQuantityMisreadingStopsBothModelsBeforeAnyRequest(){

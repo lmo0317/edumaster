@@ -5,19 +5,25 @@ let imageReady=false;
 let qualityChecking=false;
 let renderController=null;
 let comparisonOutputs=[];globalThis.currentStageProgress='';
+const MAX_LOGIC_STEPS=6;
+let restoredStepGrouping=false,restoredOriginalStepCount=0;
 const stageQualityChecks=new Set();
 const stageRenderAutoChecks=new Set();
 let stageRenderQueue=Promise.resolve();
 const logicStepInputs=()=>[...$('logic-steps').querySelectorAll('textarea')];
 const readLogicSteps=()=>logicStepInputs().map(input=>input.value.trim());
+function consolidateLogicSteps(source=[]){
+ const steps=source.map(step=>String(step||'').trim()).filter(Boolean);if(steps.length<=MAX_LOGIC_STEPS)return steps;
+ return Array.from({length:MAX_LOGIC_STEPS},(_,group)=>{const start=Math.floor(group*steps.length/MAX_LOGIC_STEPS),end=Math.floor((group+1)*steps.length/MAX_LOGIC_STEPS);return steps.slice(start,end).join(' -> ');});
+}
 function updateLogicStepLabels(){logicStepInputs().forEach((input,index)=>{input.id='logic-step-'+(index+1);const row=input.closest('.logic-step-row');row.querySelector('label').htmlFor=input.id;row.querySelector('label b').textContent=index+1;row.querySelector('.logic-step-remove').ariaLabel=`풀이 단계 ${index+1} 삭제`;});$('logic-card-title').textContent=`풀이 로직 ${logicStepInputs().length}단계`;}
 function addLogicStep(value=''){
- if(logicStepInputs().length>=12){feedback('풀이 단계는 12개까지 입력할 수 있습니다','서로 같은 계산을 반복한 부분은 한 단계로 정리해 주세요.',true);return;}
+ if(logicStepInputs().length>=MAX_LOGIC_STEPS){feedback('풀이 단계는 6개까지 입력할 수 있습니다','같은 판단을 위한 식 전개와 수치 대입은 하나의 큰 학습 단계로 정리해 주세요.',true);return;}
  const row=document.createElement('div');row.className='logic-step-row';const label=document.createElement('label'),number=document.createElement('b'),textarea=document.createElement('textarea'),remove=document.createElement('button');
  label.append(number,document.createTextNode(' 실제 풀이 단계'));textarea.maxLength=3000;textarea.placeholder='이 단계에서 실제로 판단하거나 계산하는 내용을 적어 주세요.';textarea.value=value;remove.type='button';remove.className='logic-step-remove';remove.textContent='×';
  textarea.addEventListener('input',clearResult);remove.onclick=()=>{if(busy)return;row.remove();if(!logicStepInputs().length)addLogicStep();updateLogicStepLabels();clearResult();};row.append(label,textarea,remove);$('logic-steps').append(row);updateLogicStepLabels();
 }
-function writeLogicSteps(steps=[]){$('logic-steps').replaceChildren();for(const step of (steps.length?steps:['']))addLogicStep(step);updateLogicStepLabels();}
+function writeLogicSteps(steps=[]){$('logic-steps').replaceChildren();const grouped=consolidateLogicSteps(steps);for(const step of (grouped.length?grouped:['']))addLogicStep(step);updateLogicStepLabels();}
 writeLogicSteps();
 function selectedUploads(){
  const question=selectedQuestionFile||$('question-file')?.files?.[0]||null;
@@ -25,8 +31,15 @@ function selectedUploads(){
  selectedQuestionFile=question;selectedSolutionFile=solution;
  return {question,solution};
 }
+function sourceReuseStatus(state,title,detail){const box=$('source-reuse-status');if(!box)return;if(!state){box.hidden=true;return;}box.hidden=false;box.className='source-reuse-status '+state;$('source-reuse-icon').textContent=state==='reusable'?'✓':state==='expired'?'!':'…';$('source-reuse-title').textContent=title;$('source-reuse-detail').textContent=detail;$('reselect-source').textContent=state==='expired'?'원본 이미지 다시 선택':'다른 이미지로 바꾸기';}
+function sourceTimeText(value){const expires=new Date(value),remaining=expires-Date.now();if(!Number.isFinite(expires.getTime())||remaining<=0)return '곧 보관이 끝납니다.';const minutes=Math.max(1,Math.ceil(remaining/60000)),label=minutes>=60?`${Math.floor(minutes/60)}시간 ${minutes%60}분`:`${minutes}분`;return `${label} 동안 재사용 가능 · ${expires.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}까지`;}
+function selectedMaterialMode(){return document.querySelector('input[name="material-mode"]:checked')?.value||'problem-only';}
+function setMaterialMode(mode,clearSolution=false){
+ const value=mode==='problem-solution-separate'?'problem-solution-separate':'problem-only',radio=document.querySelector(`input[name="material-mode"][value="${value}"]`);if(radio)radio.checked=true;$('material-kind').value=value;$('solution-upload-block').hidden=value==='problem-only';
+ if(clearSolution&&value==='problem-only'){selectedSolutionFile=null;$('solution-file').value='';$('solution-preview').hidden=true;$('solution-preview').removeAttribute('src');hasSolutionImage=false;}
+}
 function generationButtonText(){return '단계별 문제와 해설 만들기';}
-function updateInputFormat(){$('combined-upload').hidden=true;$('separate-upload').hidden=false;$('preview').hidden=true;}
+function updateInputFormat(){$('combined-upload').hidden=true;$('separate-upload').hidden=false;$('preview').hidden=true;setMaterialMode($('material-kind').value);}
 function hasValidLogic(){const steps=readLogicSteps();return steps.length>0&&steps.every(Boolean);}
 function setWorkflowStage(stage){
  for(let index=1;index<=5;index++){
@@ -36,7 +49,7 @@ function setWorkflowStage(stage){
 }
 function updateWorkflowState(){
  const action=$('continue-action');
- const uploads=selectedUploads(),hasQuestionUpload=!!uploads.question,hasAnyUpload=hasQuestionUpload||!!uploads.solution;
+ const uploads=selectedUploads(),hasQuestionUpload=!!uploads.question,hasAnyUpload=hasQuestionUpload||!!uploads.solution,wantsSolution=selectedMaterialMode()==='problem-solution-separate',hasRequiredUploads=hasQuestionUpload&&(!wantsSolution||!!uploads.solution);
  const phaseTitle=$('feedback-title')?.textContent||'',phaseBody=$('feedback-body')?.textContent||'';
  let stage=1,badge='현재 단계 · 자료 입력',title='문제 이미지를 넣어 주세요',description='풀이 이미지가 있으면 함께 넣고, 없으면 문제 이미지만 넣어도 됩니다.',label='문제 이미지 선택',kind='select',disabled=!authenticated;
  if(busy){
@@ -45,11 +58,11 @@ function updateWorkflowState(){
  }else if(pendingJob){
   stage=5;badge='이어하기 · 생성 작업';title='진행 중이던 생성 결과가 있습니다';description='새 요청 없이 기존 작업을 다시 확인합니다.';label='진행 결과 확인';kind='resume';disabled=!authenticated;
  }else if(materialReadPending||hasAnyUpload){
-  stage=2;badge='현재 단계 · 이미지 분석';title=hasQuestionUpload?'선택한 이미지를 분석해 주세요':'문제 이미지를 먼저 선택해 주세요';description=hasQuestionUpload?'문제와 풀이를 분리해 실제 풀이 단계를 찾습니다.':'풀이 이미지만으로는 분석을 시작할 수 없습니다.';label=hasQuestionUpload?'선택한 이미지 분석하기':'문제 이미지 선택';kind=hasQuestionUpload?'read':'select';disabled=!authenticated;
+  stage=2;badge='현재 단계 · 이미지 분석';title=hasRequiredUploads?'선택한 이미지를 분석해 주세요':hasQuestionUpload&&wantsSolution?'해설 이미지도 선택해 주세요':'문제 이미지를 먼저 선택해 주세요';description=hasRequiredUploads?(wantsSolution?'문제와 해설을 분리해 실제 풀이 단계를 찾습니다.':'문제를 읽은 뒤 정답·상세 해설과 실제 풀이 STEP을 자동 생성합니다.'):'선택한 입력 방식에 필요한 이미지를 넣어 주세요.';label=hasRequiredUploads?'선택한 이미지 분석하기':hasQuestionUpload?'해설 이미지 선택':'문제 이미지 선택';kind=hasRequiredUploads?'read':hasQuestionUpload?'select-solution':'select';disabled=!authenticated;
  }else if(result){
   stage=5;badge='완료 · 최종 결과';title='단계별 문제와 해설이 완성됐습니다';description='각 결과를 순서대로 확인하세요.';label='다시 만들기';kind='generate';disabled=!authenticated;
  }else if($('body').value.trim()&&hasValidLogic()){
-  stage=4;badge='현재 단계 · 문제 만들기';title=`풀이 로직 ${readLogicSteps().length}단계가 준비됐습니다`;description=`STEP 1부터 전체 로직까지 문제 ${readLogicSteps().length}개를 순서대로 만듭니다.`;label='단계별 문제와 해설 만들기';kind='generate';disabled=!authenticated;
+  stage=4;badge='현재 단계 · 문제 만들기';title=`이번 분석: 풀이 ${readLogicSteps().length}단계 → 문제 ${readLogicSteps().length}개`;description=`문제 ${readLogicSteps().length}개를 STEP 1부터 전체 로직까지 순서대로 만듭니다. 6단계는 최대 한도입니다.`;label=`확인한 ${readLogicSteps().length}문제 만들기`;kind='generate';disabled=!authenticated;
  }else if($('body').value.trim()){
   stage=3;badge='현재 단계 · 분석 결과';title='풀이 단계를 완성해 주세요';description='풀이가 없으면 AI가 실제 판단과 계산 순서로 나눕니다.';label='풀이 단계 분석하기';kind='solve';disabled=!authenticated;
  }
@@ -62,14 +75,15 @@ function updateWorkflowState(){
  $('wizard-stage-5').hidden=!(generationStarted||generating||pendingJob||result||comparisonOutputs.length);
  for(let index=1;index<=5;index++){const section=$('wizard-stage-'+index);if(section){section.classList.toggle('active',index===stage);section.classList.toggle('completed',index<stage);}}
  $('solve-problem').hidden=!(hasBody&&!validLogic)||busy;
- $('read-material').disabled=busy||!authenticated||!hasQuestionUpload;
- $('read-material').textContent=hasQuestionUpload?'선택한 이미지 분석하기':'문제 이미지를 먼저 선택하세요';
- const readiness=$('analysis-readiness');if(readiness){readiness.textContent=hasQuestionUpload?`준비 완료 · ${uploads.question.name}${uploads.solution?' + 풀이 이미지':''}`:(uploads.solution?'풀이 이미지는 선택됐습니다. 문제 이미지도 선택해 주세요.':'문제 이미지가 선택되면 분석 버튼이 활성화됩니다.');readiness.classList.toggle('ready',hasQuestionUpload);}
+ $('read-material').disabled=busy||!authenticated||!hasRequiredUploads;
+ $('read-material').textContent=hasRequiredUploads?'선택한 이미지 분석하기':hasQuestionUpload&&wantsSolution?'해설 이미지를 선택하세요':'문제 이미지를 먼저 선택하세요';
+ const readiness=$('analysis-readiness');if(readiness){readiness.textContent=hasRequiredUploads?`준비 완료 · ${uploads.question.name}${wantsSolution?' + '+uploads.solution.name:' · 해설과 STEP 자동 생성'}`:(hasQuestionUpload&&wantsSolution?'문제 선택 완료 · 해설 이미지를 추가해 주세요.':'문제 이미지가 선택되면 분석 버튼이 활성화됩니다.');readiness.classList.toggle('ready',hasRequiredUploads);}
  $('generate').disabled=busy||!validLogic||!authenticated;
  const count=readLogicSteps().filter(Boolean).length;
- if($('analysis-summary-steps'))$('analysis-summary-steps').textContent=count?`실제 풀이 ${count}단계`:'';
- if($('series-plan'))$('series-plan').textContent=count?`풀이 ${count}단계 → 누적 연습 문제 ${count}개를 하나씩 생성합니다.`:'분석된 풀이 단계 수만큼 문제를 만듭니다.';
- if($('series-preview'))$('series-preview').replaceChildren(...Array.from({length:count},(_,i)=>{const row=document.createElement('div'),number=document.createElement('b'),text=document.createElement('span');number.textContent=i+1;text.textContent=i===count-1?'전체 로직 쌍둥이 문제':i===0?'STEP 1 연습 문제':`STEP 1~${i+1} 누적 연습 문제`;row.append(number,text);return row;}));
+ if($('analysis-summary-steps'))$('analysis-summary-steps').textContent=count?`풀이 ${count}단계 · 만들 문제 ${count}개`:'';
+ if($('series-plan'))$('series-plan').textContent=count?`이번 풀이에서 ${count}단계를 확인했습니다. 아래 ${count}문제를 만듭니다. (최대 6단계는 입력 한도)`:'풀이를 분석하면 이번에 만들 문제 수가 여기에 표시됩니다.';
+ if($('series-preview'))$('series-preview').replaceChildren(...Array.from({length:count},(_,i)=>{const row=document.createElement('div'),number=document.createElement('b'),text=document.createElement('span');number.textContent=`${i+1}/${count}`;text.textContent=i===count-1?'전체 로직 쌍둥이 문제':i===0?'STEP 1 연습 문제':`STEP 1~${i+1} 누적 연습 문제`;row.append(number,text);return row;}));
+ $('generate').textContent=count?`확인한 ${count}문제 만들기`:'단계별 문제와 해설 만들기';
  document.querySelector('.result')?.classList.toggle('has-result',!!result);
  if(result&&!materialReadPending&&!busy)$('result-footer').hidden=false;
  else if(!result)$('result-footer').hidden=true;
@@ -80,13 +94,13 @@ let access=sessionStorage.getItem('edumaster-access')||localStorage.getItem('edu
 
 async function api(path,options={},attempt=0){
  const isGet=!options.method||options.method==='GET';
- const retrySafe=isGet||(path==='generate'&&options.idempotent===true);
- const retryLimit=path==='status'?0:4;
+ const retrySafe=isGet||((path==='generate'||path==='import')&&options.idempotent===true);
+ const retryLimit=path==='status'?0:path==='import'?2:4;
  const controller=retrySafe?new AbortController():null;
  const abort=()=>controller?.abort();options.signal?.addEventListener('abort',abort,{once:true});
  if(options.signal?.aborted)abort();
  const readTimeout=path.startsWith('jobs/')||path.startsWith('sources/')?30000:15000;
- const timeout=retrySafe?setTimeout(abort,isGet?readTimeout:15000):null;
+ const timeout=retrySafe&&path!=='import'?setTimeout(abort,isGet?readTimeout:15000):null;
  let response,data;
  try{
   response=await fetch(prefix+'api/'+path,{...options,signal:controller?.signal||options.signal,headers:{Authorization:'Bearer '+access,'X-EduMaster-Renderer':'beaker-v1',...options.headers}});
@@ -100,16 +114,16 @@ async function api(path,options={},attempt=0){
   if(options.signal?.aborted)throw e;
   if(retrySafe&&attempt<retryLimit){
    clearTimeout(timeout);
-   $('status').textContent='서버 연결 복구 중 · 재시도 '+(attempt+1)+'/4 · 입력과 생성 작업 유지';
+   $('status').textContent='서버 연결 복구 중 · 재시도 '+(attempt+1)+'/'+retryLimit+' · 입력 유지';
    await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
    return api(path,options,attempt+1);
   }
-  const error=new Error(path==='status'?'접속 서버가 응답하지 않습니다. 비밀번호를 확인하지 못했습니다. 서버 연결 복구 후 다시 입장해 주세요.':isGet?'서버 연결이 끊겨 결과를 확인하지 못했습니다. 입력은 유지됩니다. 연결 복구 후 다시 확인해 주세요.':retrySafe?'서버와 연결이 끊겼습니다. 입력과 요청 번호를 유지했습니다. 연결 복구 후 같은 생성 요청을 다시 확인해 주세요.':'서버와 연결하지 못했습니다. 입력은 유지됩니다. 요청이 전달됐는지는 확인되지 않아 자동으로 다시 보내지 않습니다.');
+  const error=new Error(path==='status'?'접속 서버가 응답하지 않습니다. 비밀번호를 확인하지 못했습니다. 서버 연결 복구 후 다시 입장해 주세요.':isGet?'서버 연결이 끊겨 결과를 확인하지 못했습니다. 입력은 유지됩니다. 연결 복구 후 다시 확인해 주세요.':path==='import'?'이미지 분석 중 연결이 끊겼습니다. 같은 요청 번호로 자동 재연결했지만 응답을 받지 못했습니다. 이미지는 유지됩니다. 다시 분석해 주세요.':retrySafe?'서버와 연결이 끊겼습니다. 입력과 요청 번호를 유지했습니다. 연결 복구 후 같은 생성 요청을 다시 확인해 주세요.':'서버와 연결하지 못했습니다. 입력은 유지됩니다. 요청이 전달됐는지는 확인되지 않아 자동으로 다시 보내지 않습니다.');
   error.networkFailure=true;throw error;
  }finally{if(timeout!==null)clearTimeout(timeout);options.signal?.removeEventListener('abort',abort);}
  if(options.signal?.aborted){const error=new Error('요청이 취소되었습니다.');error.name='AbortError';throw error;}
  if([502,503,504].includes(response.status)&&retrySafe&&attempt<retryLimit){
-  $('status').textContent='서버 연결 복구 중 · 재시도 '+(attempt+1)+'/4 · 입력과 생성 작업 유지';
+  $('status').textContent='서버 연결 복구 중 · 재시도 '+(attempt+1)+'/'+retryLimit+' · 입력 유지';
   await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
   return api(path,options,attempt+1);
  }
@@ -136,9 +150,16 @@ function feedback(title,body,error=false){
  if(!result)$('output').hidden=true;$('comparison').hidden=true;$('feedback').hidden=false;
  $('feedback-title').textContent=title;$('feedback-body').textContent=body;
  $('feedback-body').classList.toggle('error',error);
- $('copy').disabled=$('print').disabled=true;if($('report-pdf'))$('report-pdf').disabled=true;
+ $('copy').disabled=$('print').disabled=true;for(const id of ['report-pdf','save-report'])if($(id))$(id).disabled=true;
  if($('copy-image-footer'))$('copy-image-footer').disabled=$('download-image-footer').disabled=true;
  globalThis.updateWorkflowState?.();
+}
+
+function applyModelAvailability(status){
+ const select=$('provider'),gemma=[...select.options].find(option=>option.value==='gemma');if(!gemma)return;
+ gemma.disabled=!status.gemmaAvailable;gemma.textContent=status.gemmaAvailable?'Gemma 4 12B · 현재 PC 연결됨':'Gemma 4 12B · 현재 PC가 켜져 있을 때만 사용 가능';
+ if(!status.gemmaAvailable&&select.value==='gemma')select.value='deepseek';
+ const note=$('model-availability');if(note)note.textContent=status.gemmaAvailable?'DeepSeek는 112 서버에서 항상 사용할 수 있습니다. Gemma도 현재 PC에 연결되어 선택할 수 있습니다.':'DeepSeek는 112 서버에서 항상 사용할 수 있습니다. Gemma는 현재 PC가 꺼져 있거나 연결되지 않아 선택할 수 없습니다.';
 }
 function analysisStatus(title,body,state=''){
  const box=$('analysis-status');if(!box)return;box.hidden=false;box.className='stage-message '+state;$('analysis-status-title').textContent=title;$('analysis-status-body').textContent=body;
@@ -146,9 +167,10 @@ function analysisStatus(title,body,state=''){
 
 function setBusy(value){
  busy=value;
- for(const id of ['file','question-file','solution-file','read-material','solve-problem','add-logic-step','title','body','answer','explanation','generate','reset','material-kind','provider','copy-image-footer','download-image-footer','report-pdf']){
+ for(const id of ['file','question-file','solution-file','read-material','solve-problem','add-logic-step','title','body','answer','explanation','generate','reset','material-kind','provider','copy-image-footer','download-image-footer','report-pdf','save-report']){
   const el=$(id);if(el)el.disabled=value||(!authenticated&&['file','question-file','solution-file','generate'].includes(id));
  }
+ document.querySelectorAll('input[name="material-mode"]').forEach(input=>input.disabled=value);
  if(typeof logicStepInputs==='function')logicStepInputs().forEach(input=>input.disabled=value);document.querySelectorAll('.logic-step-remove').forEach(button=>button.disabled=value);
  $('generate').textContent=value?'생성 중…':generationButtonText();
  $('progress').hidden=!value||(!jobId&&!importController);
@@ -174,23 +196,19 @@ function show(r){
  $('output').hidden=false;$('badge').textContent='AI 초안';
  $('result-footer').hidden=false;
  $('result-notice').textContent=r.generationNotice+'\n'+r.changeSummary+'\n'+r.model+' · '+r.usageSummary+'\n'+(r.visualVerification||'');
- $('result-figures').replaceChildren(...(r.figures||[]).map(f=>{
-  const figure=document.createElement('figure'),caption=document.createElement('figcaption'),img=document.createElement('img');
-  caption.textContent=f.caption;img.alt='연결 관계를 유지한 기준 그림';img.src=f.dataUrl;img.tabIndex=0;img.title='눌러서 크게 보기';img.setAttribute('aria-haspopup','dialog');figure.append(caption,img);return figure;
- }));
  const visualContext=$('visual-context');
  if(visualContext)visualContext.textContent=(r.visualContexts||[]).map(v=>[v.summary,...v.nodes.map(n=>n.id+': '+n.label),...v.edges.map(e=>e.from+' → '+e.to+': '+e.relation),...v.constraints].join('\n')).join('\n\n');
- for(const [id,key] of [['result-title','title'],['result-answer','answer']])$(id).textContent=r[key];
+ for(const [id,key] of [['result-title','title'],['result-answer','answer']]){$(id).textContent=id==='result-answer'&&!answerVerified(r.quality)?'정답 검증 전 · 사용 금지':r[key];window.EduMath?.schedule($(id));}
  renderProblemText($('source'),r.sourceProblem+(r.sourceExplanation?'\n\n기준 정답: '+(r.sourceAnswer||'미제공')+'\n\n기준 풀이:\n'+r.sourceExplanation:''));
  renderProblemText($('result-body'),r.body);
  renderProblemText($('result-explanation'),r.explanation,true);
  renderProblemChoices($('choices'),r);
  for(const [id,items] of [['steps',r.steps]]){
-  $(id).replaceChildren(...items.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
+  $(id).replaceChildren(...items.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));window.EduMath?.schedule($(id));
  }
  
  // Render problem image
- renderProblemToImage(r, $('toggle-image-answer')?$('toggle-image-answer').checked:false);
+ renderProblemToImage(r, answerVerified(r.quality)&&$('toggle-image-answer')?$('toggle-image-answer').checked:false);
 
  renderQuality(r.quality);applyExportState();
  globalThis.updateWorkflowState?.();
@@ -202,11 +220,19 @@ function qualityState(report){
  if(!report?.checks?.length)return 'review_required';
  return report.checks.some(c=>c.state==='fail')?'fail':report.checks.some(c=>c.state!=='pass')?'review_required':'pass';
 }
+function answerVerified(report){
+ if(!report?.checks?.length||report.checks.some(c=>c.state==='fail'))return false;
+ const check=id=>report.checks.find(c=>c.id===id);
+ const calculation=check('calculation'),source=check('source-calculation');
+ return calculation?.state==='pass'&&String(calculation.method||'').startsWith('code')
+  &&(!source||(source.state==='pass'&&String(source.method||'').startsWith('code')))
+  &&check('conditions')?.state==='pass'&&check('semantic-math')?.state==='pass';
+}
 function qualitySummary(report){
  const state=qualityState(report);
  const errors=report?.checks?.filter(c=>c.state==='fail').length||0;
  const skipped=report?.checks?.some(c=>c.state==='skipped');
- return state==='fail'?'최종 검사 오류 '+errors+'건'+(skipped?' · 후속 검사 생략':'')+' · 복사·저장 차단':state==='pass'?'자동 검사 통과 · AI 검토 포함 · 교사 검수 전 초안':'최종 검사에 확인 불가 항목이 있습니다 · 교사 검수 전 초안';
+ return state==='fail'?'최종 검사 오류 '+errors+'건'+(skipped?' · 후속 검사 생략':'')+' · 복사·저장 차단':!answerVerified(report)?'정답 검증 전 · 복사·저장 차단':state==='pass'?'자동 검사 통과 · AI 검토 포함 · 교사 검수 전 초안':'최종 검사에 확인 불가 항목이 있습니다 · 교사 검수 전 초안';
 }
 function renderQuality(report){
  const panel=$('quality-panel');if(!panel)return;
@@ -222,11 +248,11 @@ function renderQuality(report){
  $('badge').textContent=qualityChecking?'최종 이미지 검사 중':qualityState(report)==='fail'?'검사 오류 · 초안':'교사 검수 전 초안';
 }
 function applyExportState(){
- const blocked=busy||qualityChecking||!imageReady||qualityState(result?.quality)==='fail';
+ const blocked=busy||qualityChecking||!imageReady||!answerVerified(result?.quality);
  for(const id of ['copy-image','copy-image-footer','download-image','download-image-footer','copy','print']){const el=$(id);if(el)el.disabled=blocked;}
- const allReportOutputs=typeof comparisonOutputs==='undefined'?[]:comparisonOutputs,reportOutputs=allReportOutputs.filter(o=>o.state==='ready'&&o.result),reportBlocked=busy||qualityChecking||!reportOutputs.length||reportOutputs.length!==allReportOutputs.length||reportOutputs.some(o=>qualityState(o.result.quality)==='fail');
- if($('report-pdf'))$('report-pdf').disabled=reportBlocked;
- if($('toggle-image-answer'))$('toggle-image-answer').disabled=busy||qualityChecking;
+ const allReportOutputs=typeof comparisonOutputs==='undefined'?[]:comparisonOutputs,reportOutputs=allReportOutputs.filter(o=>o.state==='ready'&&o.result),reportBlocked=busy||qualityChecking||!reportOutputs.length||reportOutputs.length!==allReportOutputs.length||reportOutputs.some(o=>!answerVerified(o.result.quality));
+ for(const id of ['report-pdf','save-report'])if($(id))$(id).disabled=reportBlocked;
+ if($('toggle-image-answer'))$('toggle-image-answer').disabled=busy||qualityChecking||!answerVerified(result?.quality);
  for(const id of ['retry-render-check','retry-text-check']){const el=$(id);if(el)el.disabled=busy||qualityChecking||!result?.qualityJobId||!imageReady;}
 }
 async function recheckText(){
@@ -244,6 +270,7 @@ async function recheckText(){
  finally{clearTimeout(deadline);clearInterval(clock);renderController=null;qualityChecking=false;$('feedback').hidden=true;$('progress').hidden=true;setBusy(false);renderQuality(result?.quality);applyExportState();save();}
 }
 async function checkRenderedResult(){
+ await pendingPrimaryImageRender;
  if(!result||!imageReady||qualityChecking)return;
  if(!result.qualityJobId){renderQuality(result.quality);return;}
  const r=result,wasBusy=busy;qualityChecking=true;setBusy(true);renderQuality(r.quality);applyExportState();
@@ -275,9 +302,10 @@ function applyImportedMaterial(d){
  sourceId=d.sourceId||null;requiresImage=!!d.needsReview;sourceExpiresAt=d.sourceExpiresAt||null;
  hasSolutionImage=(d.previewMaterialRoles||[]).includes('solution')||(!d.previewMaterialRoles&&d.previewDataUrls?.length>=2);
  for(const id of ['title','body'])$(id).value=d[id]||'';$('answer').value=d.answer||'';$('explanation').value=d.explanation||'';writeLogicSteps(d.steps||[]);
- $('material-kind').value=d.explanation?'problem-solution-separate':'problem-only';
+ setMaterialMode(d.materialKind==='problem-only'?'problem-only':'problem-solution-separate');
  if(d.explanation||d.steps?.some(Boolean))document.querySelector('.optional-details').open=true;
  $('file-info').textContent=d.fileName+' · '+d.readMethod;
+ if(d.sourceId)sourceReuseStatus('reusable','현재 원본 이미지 사용 중','방금 넣은 이미지입니다. 새로 넣지 않아도 분석과 문제 생성에 그대로 사용됩니다. '+sourceTimeText(d.sourceExpiresAt));
  globalThis.analysisStatus?.('이미지 분석 완료',d.explanation?`문제·정답·해설과 실제 풀이 ${d.steps?.length||0}단계를 분리했습니다.`:'문제 본문을 분석했습니다. 다음 단계에서 풀이 과정을 분석하세요.','success');
  feedback(d.explanation?'문제와 풀이 로직을 분리해 읽었습니다':'문제 이미지를 읽었습니다',d.explanation?`문제 본문과 풀이가 분리됐습니다. 정답·해설과 실제 풀이 ${d.steps?.length||0}단계를 원본과 확인한 뒤 전체 로직의 쌍둥이 문제를 만드세요.`+(d.uncertainties?.length?'\n확인 필요: '+d.uncertainties.join(' · '):''):'문제 본문을 확인한 뒤 ‘STEP별 풀이 생성’을 누르세요.');
  $('status').textContent=d.explanation?`이미지 분석 완료 · 실제 풀이 ${d.steps?.length||0}단계 확인`:'문제 분석 완료 · 풀이 단계를 이어서 분석하세요.';globalThis.updateWorkflowState?.();setTimeout(()=>$('wizard-stage-3')?.scrollIntoView({behavior:'smooth',block:'start'}),0);save();
@@ -296,7 +324,7 @@ async function importFile(file){
  const start=Date.now();const timer=setInterval(()=>{const seconds=Math.floor((Date.now()-start)/1000);$('file-info').textContent=file.name+' · 파일 읽기 중 · '+seconds+'초 경과';$('elapsed').textContent=seconds+'초 경과 · 파일 읽기 취소 가능';},1000);
  const deadline=setTimeout(()=>{importTimedOut=true;importController?.abort();},305000);
  try{
-  const form=new FormData();form.append('file',file);const reading=selectedModel();form.append('provider',reading.provider);form.append('materialKind',$('material-kind').value);const d=await api('import',{method:'POST',body:form,signal:importController.signal});
+  const form=new FormData();form.append('file',file);const reading=selectedModel();form.append('provider',reading.provider);form.append('materialKind',$('material-kind').value);const requestId=globalThis.pendingImportRequestId||crypto.randomUUID().replace(/-/g,'');globalThis.pendingImportRequestId=requestId;form.append('requestId',requestId);const d=await api('import',{method:'POST',body:form,signal:importController.signal,idempotent:true});globalThis.pendingImportRequestId=null;
   applyImportedMaterial(d);previewUrl=newPreview;if(!newPreview&&d.previewDataUrl){$('preview').src=d.previewDataUrl;$('preview').hidden=false;}if(oldPreview)URL.revokeObjectURL(oldPreview);
  }catch(e){
   if(newPreview)URL.revokeObjectURL(newPreview);$('preview').hidden=oldPreviewHidden;if(oldPreviewSrc)$('preview').src=oldPreviewSrc;else $('preview').removeAttribute('src');
@@ -325,22 +353,25 @@ async function importSeparateFiles(questionFile,solutionFile=null){
  feedback(solutionFile?'문제 이미지와 풀이 이미지를 읽고 있습니다':'문제 이미지를 읽고 있습니다',solutionFile?'두 파일의 역할을 고정해 문제 본문, 정답·해설, 실제 풀이 순서로 분리합니다.':'문제 본문·표·그림만 먼저 읽습니다. 완료 후 STEP별 풀이를 생성할 수 있습니다.');
  globalThis.analysisStatus?.('이미지 분석 중',solutionFile?'문제와 풀이를 구분하고 실제 풀이 단계를 찾고 있습니다.':'문제 본문·표·그림을 읽고 있습니다.');
  $('cancel').disabled=false;$('cancel').textContent='파일 읽기 취소';$('elapsed').textContent='0초 경과 · 파일 읽기 취소 가능';
- const start=Date.now();const timer=setInterval(()=>{const seconds=Math.floor((Date.now()-start)/1000);$('file-info').textContent=(solutionFile?'문제+풀이 분리 중':'문제 읽는 중')+' · '+seconds+'초 경과';$('elapsed').textContent=seconds+'초 경과 · 파일 읽기 취소 가능';},1000);
+ const start=Date.now();const timer=setInterval(()=>{const seconds=Math.floor((Date.now()-start)/1000),phase=seconds>=10?'서버 순서 대기 또는 이미지 분석 중':(solutionFile?'문제+풀이 분리 중':'문제 읽는 중');$('file-info').textContent=phase+' · '+seconds+'초 경과';$('elapsed').textContent=seconds+'초 경과 · '+(seconds>=10?'앞 작업이 있으면 끝난 뒤 자동 시작 · ':'')+'파일 읽기 취소 가능';},1000);
  const deadline=setTimeout(()=>{importTimedOut=true;importController?.abort();},305000);
- try{
-  const form=new FormData();form.append('questionFile',questionFile);if(solutionFile)form.append('solutionFile',solutionFile);form.append('provider',selectedModel().provider);form.append('materialKind',solutionFile?'problem-solution-separate':'problem-only');
-  const d=await api('import',{method:'POST',body:form,signal:importController.signal});applyImportedMaterial(d);
+ let autoSolve=false;try{
+  const form=new FormData();form.append('questionFile',questionFile);if(solutionFile)form.append('solutionFile',solutionFile);form.append('provider',selectedModel().provider);form.append('materialKind',solutionFile?'problem-solution-separate':'problem-only');const requestId=globalThis.pendingImportRequestId||crypto.randomUUID().replace(/-/g,'');globalThis.pendingImportRequestId=requestId;form.append('requestId',requestId);
+  const d=await api('import',{method:'POST',body:form,signal:importController.signal,idempotent:true});globalThis.pendingImportRequestId=null;applyImportedMaterial(d);autoSolve=!solutionFile&&!d.explanation;
   applySourcePreviews(d.previewDataUrls,d.previewMaterialRoles);
  }catch(e){
  const message=e.name==='AbortError'?(importTimedOut?'이미지 읽기가 5분을 넘었습니다. 선명한 이미지로 다시 넣어 주세요.':'파일 읽기를 취소했습니다.'):e.message;
   $('file-info').textContent='이미지 분석 실패 · 선택한 파일 유지';globalThis.analysisStatus?.('이미지를 분석하지 못했습니다',message+'\n파일은 그대로 유지됩니다. 같은 단계에서 다시 분석할 수 있습니다.','error');feedback('이미지를 읽지 못했습니다',message,true);
  }finally{clearInterval(timer);clearTimeout(deadline);importController=null;setBusy(false);$('question-file').value='';$('solution-file').value='';}
+ if(autoSolve)await solveProblem(true);
 }
 
-$('file').addEventListener('change',()=>importFile($('file').files[0]));
-$('question-file').addEventListener('change',()=>{selectedQuestionFile=$('question-file').files[0]||null;if(selectedQuestionFile){sourceId=null;requiresImage=false;for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);clearResult();if($('analysis-status'))$('analysis-status').hidden=true;showSeparatePreview('question-preview',selectedQuestionFile,0);}materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);$('file-info').textContent=selectedQuestionFile?(selectedSolutionFile?'문제와 풀이 선택 완료':'문제 선택 완료 · 풀이가 없으면 문제만 분석할 수 있습니다'):'문제 이미지를 선택해 주세요.';globalThis.updateWorkflowState?.();$('wizard-stage-2')?.scrollIntoView({behavior:'smooth',block:'center'});});
-$('solution-file').addEventListener('change',()=>{selectedSolutionFile=$('solution-file').files[0]||null;hasSolutionImage=!!selectedSolutionFile;materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);if(selectedSolutionFile)showSeparatePreview('solution-preview',selectedSolutionFile,1);else{$('solution-preview').hidden=true;$('solution-preview').removeAttribute('src');}$('file-info').textContent=selectedQuestionFile?'문제와 풀이 선택 완료':'풀이 선택 완료 · 문제 이미지도 선택해 주세요.';if($('analysis-status'))$('analysis-status').hidden=true;globalThis.updateWorkflowState?.();});
-$('read-material').onclick=()=>{const uploads=selectedUploads();if(!uploads.question){feedback('문제 이미지가 필요합니다','문제 칸에 이미지나 한 페이지 PDF를 먼저 선택해 주세요.',true);return;}materialReadPending=true;importSeparateFiles(uploads.question,uploads.solution);};
+$('file').addEventListener('change',()=>{globalThis.pendingImportRequestId=null;importFile($('file').files[0]);});
+$('question-file').addEventListener('change',()=>{globalThis.pendingImportRequestId=null;selectedQuestionFile=$('question-file').files[0]||null;if(selectedQuestionFile){sourceReuseStatus(null);sourceId=null;requiresImage=false;for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);clearResult();if($('analysis-status'))$('analysis-status').hidden=true;showSeparatePreview('question-preview',selectedQuestionFile,0);}materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);$('file-info').textContent=selectedQuestionFile?(selectedSolutionFile?'새 문제와 해설 선택 완료 · 아직 서버에 저장되지 않음':'새 문제 선택 완료 · 아직 서버에 저장되지 않음'):'문제 이미지를 선택해 주세요.';globalThis.updateWorkflowState?.();$('wizard-stage-2')?.scrollIntoView({behavior:'smooth',block:'center'});});
+$('solution-file').addEventListener('change',()=>{globalThis.pendingImportRequestId=null;selectedSolutionFile=$('solution-file').files[0]||null;hasSolutionImage=!!selectedSolutionFile;materialReadPending=!!(selectedQuestionFile||selectedSolutionFile);if(selectedSolutionFile)showSeparatePreview('solution-preview',selectedSolutionFile,1);else{$('solution-preview').hidden=true;$('solution-preview').removeAttribute('src');}$('file-info').textContent=selectedQuestionFile?'문제와 풀이 선택 완료':'풀이 선택 완료 · 문제 이미지도 선택해 주세요.';if($('analysis-status'))$('analysis-status').hidden=true;globalThis.updateWorkflowState?.();});
+$('read-material').onclick=()=>{const uploads=selectedUploads(),wantsSolution=selectedMaterialMode()==='problem-solution-separate';if(!uploads.question){feedback('문제 이미지가 필요합니다','문제 칸에 이미지나 한 페이지 PDF를 먼저 선택해 주세요.',true);return;}if(wantsSolution&&!uploads.solution){feedback('해설 이미지가 필요합니다','문제+해설 방식에서는 해설 이미지를 선택해 주세요. 같은 한 장에 모두 있으면 같은 파일을 두 칸에 선택할 수 있습니다.',true);return;}materialReadPending=true;importSeparateFiles(uploads.question,wantsSolution?uploads.solution:null);};
+$('reselect-source').onclick=()=>{$('question-file').click();};
+document.querySelectorAll('input[name="material-mode"]').forEach(input=>input.addEventListener('change',()=>{setMaterialMode(input.value,true);materialReadPending=!!selectedQuestionFile;if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent=input.value==='problem-only'?'문제만 분석한 뒤 정답·해설·STEP을 자동 생성합니다.':'문제 이미지와 해설 이미지를 각각 선택해 주세요.';globalThis.updateWorkflowState?.();}));
 const drop=document.querySelector('.upload');drop.addEventListener('dragover',e=>e.preventDefault());
 drop.addEventListener('drop',e=>{
  e.preventDefault();if(e.dataTransfer.files.length!==1){feedback('파일 하나를 선택해 주세요','먼저 한 문제의 파일을 넣어 주세요.',true);return;}
@@ -349,7 +380,7 @@ drop.addEventListener('drop',e=>{
 
 for(const id of ['title','body','answer','explanation'])$(id).addEventListener('input',clearResult);
 $('add-logic-step').onclick=()=>{if(!busy){addLogicStep();clearResult();logicStepInputs().at(-1)?.focus();}};
-$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;hasSolutionImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;$('question-file').value='';$('solution-file').value='';for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
+$('reset').onclick=()=>{if(busy)return;sourceId=null;requiresImage=false;hasSolutionImage=false;pendingJob=null;generationStarted=false;materialReadPending=false;selectedQuestionFile=selectedSolutionFile=null;$('question-file').value='';$('solution-file').value='';sourceReuseStatus(null);for(const id of ['title','body','answer','explanation'])$(id).value='';writeLogicSteps([]);for(const id of ['preview','question-preview','solution-preview']){$(id).hidden=true;$(id).removeAttribute('src');}if($('analysis-status'))$('analysis-status').hidden=true;$('file-info').textContent='문제 이미지를 먼저 선택해 주세요.';setBusy(false);clearResult();$('wizard-stage-1')?.scrollIntoView({behavior:'smooth',block:'start'});};
 
 function stageDisplayChecks(report){
  return (report?.checks||[]).filter(c=>!(c.id==='render'&&c.state==='unknown'&&String(c.evidence||'').includes('브라우저 렌더링 후')));
@@ -395,18 +426,18 @@ function renderComparisons(outputs){
   const card=document.createElement('article');card.className='stage-result-card '+o.state;
   const head=document.createElement('div');head.className='stage-result-head';const heading=document.createElement('div'),number=document.createElement('b'),label=document.createElement('strong'),status=document.createElement('span');
   heading.className='stage-result-title';number.textContent=o.stageNumber&&o.stageCount?`문제 ${o.stageNumber}/${o.stageCount}`:'문제';label.textContent=o.stageLabel||o.model||o.result?.model||(o.provider==='deepseek'?'DeepSeek V4 Flash':'Gemma 4 12B');heading.append(number,label);
-  status.textContent=o.state==='ready'?(qualityState(o.result?.quality)==='fail'?'검사 오류 있음':'✓ 문제·해설 완료'):o.state==='waiting'?'앞 문제 완료 후 시작':o.state==='running'?(o.phase||'문제 생성 중'):o.error||'생성 실패';status.className='stage-state '+(qualityState(o.result?.quality)==='fail'?'failed':o.state);head.append(heading,status);card.append(head);
+  status.textContent=o.state==='ready'?(answerVerified(o.result?.quality)?'✓ 정답 검산 완료':'정답 미검증 · 사용 금지'):o.state==='waiting'?'앞 문제 완료 후 시작':o.state==='running'?(o.phase||'문제 생성 중'):o.error||'생성 실패';status.className='stage-state '+(o.state==='ready'&&!answerVerified(o.result?.quality)?'failed':o.state);head.append(heading,status);card.append(head);
   if(!o.result){const state=document.createElement('div'),track=document.createElement('div');state.className='stage-progress-state';track.className='stage-progress-track';state.append(track,document.createTextNode(o.state==='waiting'?'순서대로 생성하기 위해 대기 중입니다.':o.state==='running'?'현재 이 문제를 만들고 검사하고 있습니다.':o.error||'생성을 완료하지 못했습니다.'));card.append(state);}
   if(o.result){
    const r=prepareProblemDisplay(o.result),summary=document.createElement('div'),title=document.createElement('h3'),answer=document.createElement('strong'),visual=document.createElement('section'),visualTitle=document.createElement('strong'),canvas=document.createElement('canvas'),img=document.createElement('img'),imageActions=document.createElement('div'),download=document.createElement('button'),details=document.createElement('details'),detailSummary=document.createElement('summary'),content=document.createElement('div'),body=document.createElement('div'),choices=document.createElement('div'),explanation=document.createElement('div');
-   summary.className='stage-ready-summary';title.textContent=r.title;answer.textContent='정답 · '+r.answer;summary.append(title,answer);
-   visual.className='stage-problem-preview';visualTitle.textContent=`문제 ${o.stageNumber} 이미지`;canvas.hidden=true;img.className='stage-problem-image';img.alt=`문제 ${o.stageNumber}/${o.stageCount} 생성 이미지 · 눌러서 크게 보기`;img.tabIndex=0;img.title='눌러서 크게 보기';img.setAttribute('aria-haspopup','dialog');download.type='button';download.textContent='PNG 저장';download.onclick=()=>downloadStageImage(o,img);imageActions.className='stage-image-actions';imageActions.append(download);visual.append(visualTitle,img,imageActions);renderProblemToImage(r,false,canvas,img);
+   summary.className='stage-ready-summary';title.textContent=r.title;answer.textContent=answerVerified(r.quality)?'정답 · '+r.answer:'정답 검증 전 · 사용 금지';summary.append(title,answer);
+   visual.className='stage-problem-preview';visualTitle.textContent=`문제 ${o.stageNumber} 이미지`;canvas.hidden=true;img.className='stage-problem-image';img.alt=`문제 ${o.stageNumber}/${o.stageCount} 생성 이미지 · 눌러서 크게 보기`;img.tabIndex=0;img.title='눌러서 크게 보기';img.setAttribute('aria-haspopup','dialog');download.type='button';download.textContent='PNG 저장';download.disabled=!answerVerified(r.quality);download.onclick=()=>downloadStageImage(o,img);imageActions.className='stage-image-actions';imageActions.append(download);visual.append(visualTitle,img,imageActions);renderProblemToImage(r,false,canvas,img);
    const renderCheck=r.quality?.checks?.find(c=>c.id==='render');
-   if(authenticated&&renderCheck?.state==='unknown'&&String(renderCheck.evidence||'').includes('브라우저 렌더링 후')&&r.qualityJobId&&!stageRenderAutoChecks.has(r.id)){
+   if(authenticated&&renderCheck?.state==='unknown'&&/브라우저 렌더링 후|그림 라벨/.test(String(renderCheck.evidence||''))&&r.qualityJobId&&!stageRenderAutoChecks.has(r.id)){
     stageRenderAutoChecks.add(r.id);const png=img.src;
     stageRenderQueue=stageRenderQueue.then(()=>recheckStageResult(o,'render',png)).catch(()=>{});
    }
-   details.className='stage-result-details';detailSummary.textContent=`문제 ${o.stageNumber} 본문·정답·해설 펼쳐보기`;content.className='stage-result-content';body.className='pre';renderProblemText(body,r.body);renderProblemChoices(choices,r);explanation.className='pre stage-explanation';explanation.textContent='해설\n'+r.explanation;content.append(body,choices,explanation);details.append(detailSummary,content);
+   details.className='stage-result-details';detailSummary.textContent=`문제 ${o.stageNumber} 본문·정답·해설 펼쳐보기`;content.className='stage-result-content';body.className='pre';renderProblemText(body,r.body);renderProblemChoices(choices,r);explanation.className='pre stage-explanation';explanation.textContent='해설\n'+r.explanation;window.EduMath?.schedule(explanation);content.append(body,choices,explanation);details.append(detailSummary,content);
    card.append(summary,visual,details,createStageQuality(o,r,img));
   }
   return card;
@@ -423,21 +454,25 @@ async function refreshSavedComparisonOutputs(){
 function selectedModel(){const value=$('provider').value;return {provider:value==='gemma'?'gemma':value==='both'?'both':'deepseek'};}
 $('provider').addEventListener('change',()=>{clearResult();globalThis.updateWorkflowState?.();});
 
-$('solve-problem').onclick=async()=>{
+async function solveProblem(auto=false){
  if(busy)return;
  const title=$('title').value.trim(),body=$('body').value.trim();
  if(!title||!body){feedback('먼저 문제를 읽어 주세요','문제 이미지를 선택하고 ‘선택한 문제·풀이 읽기’를 누르거나 문제 본문을 입력해 주세요.',true);return;}
  const selected=selectedModel().provider,provider=selected==='both'?'deepseek':selected;
  importController=new AbortController();importTimedOut=false;setBusy(true);$('cancel').disabled=false;$('cancel').textContent='풀이 생성 취소';
- feedback('STEP별 풀이를 만들고 있습니다','원본 문제를 먼저 직접 풀고, 실제 판단과 계산 순서에 맞춰 필요한 만큼 단계로 정리합니다.');
+ feedback(auto?'문제 분석 완료 · 정답과 STEP별 해설을 자동 생성합니다':'STEP별 풀이를 다시 만들고 있습니다','원본 문제를 직접 풀고, 실제 판단과 계산 순서에 맞춰 필요한 만큼 단계로 정리합니다.');
  const deadline=setTimeout(()=>{importTimedOut=true;importController?.abort();},305000);
  try{
   const solved=await api('solution',{method:'POST',signal:importController.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body,provider,sourceId})});
-  $('body').value=solved.body||body;$('answer').value=solved.answer||'';$('explanation').value=solved.explanation||'';writeLogicSteps(solved.steps||[]);$('material-kind').value='problem-solution-separate';
-  document.querySelector('.optional-details').open=true;feedback('풀이 단계 분석이 완성됐습니다',`정답과 실제 풀이 ${solved.steps?.length||0}단계를 확인하세요.`);globalThis.analysisStatus?.('풀이 단계 분석 완료',`실제 풀이 ${solved.steps?.length||0}단계로 정리했습니다.`,'success');$('status').textContent=solved.method+' 완료 · 단계별 문제 생성 가능';save();
+  $('body').value=solved.body||body;$('answer').value=solved.answer||'';$('explanation').value=solved.explanation||'';writeLogicSteps(solved.steps||[]);
+  document.querySelector('.optional-details').open=true;
+  if(solved.verified){feedback('풀이 단계 분석과 독립 검산 완료',`정답과 실제 풀이 ${solved.steps?.length||0}단계를 확인하세요.`);globalThis.analysisStatus?.('풀이 단계 분석 완료',`실제 풀이 ${solved.steps?.length||0}단계로 정리했습니다.`,'success');$('status').textContent=solved.method+' 완료 · 단계별 문제 생성 가능';}
+  else{feedback('AI 풀이 초안 · 정답 미검증','이 유형은 아직 독립 계산기로 정답을 확인하지 못했습니다. 틀린 답을 응용 문제에 전파하지 않도록 생성은 중단됩니다.',true);globalThis.analysisStatus?.('정답 검증 전','AI 풀이 초안입니다. 독립 검산을 지원하지 않아 생성할 수 없습니다.','error');$('status').textContent='정답 미검증 · 생성 차단';}
+  save();
  }catch(e){const message=e.name==='AbortError'?(importTimedOut?'풀이 생성이 5분을 넘었습니다. 문제 한 개만 남겨 다시 시도해 주세요.':'풀이 생성을 취소했습니다.'):e.message;feedback('STEP별 풀이를 만들지 못했습니다',message,true);$('status').textContent='풀이 생성 실패 · 문제 입력은 유지됩니다.';}
  finally{clearTimeout(deadline);importController=null;setBusy(false);if(hasValidLogic())setTimeout(()=>$('wizard-stage-4')?.scrollIntoView({behavior:'smooth',block:'start'}),0);}
-};
+}
+$('solve-problem').onclick=()=>solveProblem(false);
 
 async function waitForGeneration(provider){
  const started=Date.now(),controller=new AbortController();
@@ -468,10 +503,11 @@ async function waitForGeneration(provider){
   if(j.stageSeries)$('badge').textContent=`${readyStages}/${j.stageCount} 완료`;
   $('status').textContent='서버 상태 확인됨 · '+j.phase;renderComparisons(j.outputs||[]);
   if(j.state==='ready'){
+   const failedChecks=(j.outputs||[]).flatMap(o=>(o.result?.quality?.checks||[]).filter(c=>c.state==='fail').map(c=>`문제 ${o.stageNumber||1} ${c.label}: ${c.evidence}`));
    show(j.result);if(j.stageSeries)$('output').hidden=true;else await checkRenderedResult();pendingJob=null;
    renderComparisons(j.outputs||[]);
    if(provider==='both'&&!j.stageSeries){$('output').hidden=true;$('copy').disabled=$('print').disabled=true;}
-   globalThis.currentStageProgress='';$('badge').textContent=j.stageSeries?`단계별 ${j.stageCount}문제 완성`:'생성 완료';$('status').textContent=j.stageSeries?`단계별 문제 ${j.stageCount}개 완성 · 각 문제 카드에서 이미지와 검사 결과를 확인하세요.`:'문제 이미지 생성됨 · '+qualitySummary(result?.quality);return;
+   globalThis.currentStageProgress='';$('badge').textContent=failedChecks.length?`검사 오류 ${failedChecks.length}개`:j.stageSeries?`단계별 ${j.stageCount}문제 완성`:'생성 완료';$('status').textContent=failedChecks.length?'검사 오류가 있는 문제는 사용하거나 PDF로 저장하지 마세요. 해당 문제 카드의 검사 근거를 확인하세요.':j.stageSeries?`단계별 문제 ${j.stageCount}개 완성 · 각 문제 카드에서 이미지와 검사 결과를 확인하세요.`:'문제 이미지 생성됨 · '+qualitySummary(result?.quality);if(failedChecks.length)feedback('생성 문항 검사 오류',failedChecks.join('\n'),true);return;
   }
   if(j.state==='failed'||j.state==='cancelled'){pendingJob=null;throw new Error((j.error||'서버가 실패 원인을 반환하지 않았습니다.')+'\n작업 번호: '+jobId);}
  }}finally{clearInterval(timer);clearTimeout(deadline);}
@@ -485,9 +521,18 @@ function generationError(e){
 
 async function submitGeneration(payload){
  const d=await api('generate',{method:'POST',idempotent:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ if(d.planChanged){
+  pendingJob=null;generationStarted=false;jobId=null;
+  if(Array.isArray(d.logicSteps)){writeLogicSteps(d.logicSteps);$('explanation').value=d.explanation||$('explanation').value;}
+  document.querySelector('.optional-details').open=true;
+  feedback('생성할 문제 수가 다시 확인됐습니다',d.message||`이번에는 ${d.stageCount}문제를 만듭니다. 풀이 단계를 확인한 뒤 다시 눌러 주세요.`);
+  $('status').textContent=`풀이 ${d.stageCount}단계 · 생성 예정 ${d.stageCount}문제 · 아직 생성하지 않았습니다.`;
+  $('wizard-stage-3').scrollIntoView({behavior:'smooth',block:'start'});save();return false;
+ }
  if(!/^[a-f0-9]{32}$/.test(d.id))throw new Error('서버가 올바른 생성 작업 번호를 반환하지 않았습니다.');
  jobId=d.id;pendingJob={id:jobId,provider:payload.provider,stageSeries:!!payload.stageSeries,startedAt:Date.now(),reused:!!d.reused};save();$('progress').hidden=false;$('cancel').disabled=!!d.reused;
  if(d.reused)feedback('동일한 입력의 검증 결과를 불러옵니다','같은 이미지·문제·풀이·모델·프롬프트로 완료된 결과를 다시 생성하지 않고 재사용합니다.');
+ return true;
 }
 
 async function resumeGeneration(){
@@ -501,17 +546,16 @@ $('resume-job').onclick=resumeGeneration;
 
 $('generate').onclick=async()=>{
  if(busy)return;if(pendingJob)return resumeGeneration();if(!$('title').value.trim()||!$('body').value.trim()){feedback('기준 자료를 확인해 주세요','1단계에서 문제 이미지나 본문을 입력해 주세요.',true);return;}
- const logicSteps=readLogicSteps();if(logicSteps.length<1||logicSteps.length>12||logicSteps.some(step=>!step)){document.querySelector('.optional-details').open=true;feedback('실제 풀이 단계를 확인해 주세요','쌍둥이 문제는 원본 풀이의 모든 단계를 같은 순서로 사용합니다. 빈 단계 없이 1~12개로 정리하거나, 풀이가 없으면 먼저 STEP별 풀이를 생성해 주세요.',true);logicStepInputs()[0]?.scrollIntoView({behavior:'smooth',block:'center'});return;}
+ const logicSteps=readLogicSteps();if(logicSteps.length<1||logicSteps.length>MAX_LOGIC_STEPS||logicSteps.some(step=>!step)){document.querySelector('.optional-details').open=true;feedback('실제 풀이 단계를 확인해 주세요','쌍둥이 문제는 원본 풀이의 모든 큰 학습 단계를 같은 순서로 사용합니다. 빈 단계 없이 1~6개로 정리하거나, 풀이가 없으면 먼저 STEP별 풀이를 생성해 주세요.',true);logicStepInputs()[0]?.scrollIntoView({behavior:'smooth',block:'center'});return;}
  const {provider}=selectedModel();result=null;comparisonOutputs=[];jobId=null;generationStarted=true;
  $('elapsed').textContent='0초 경과 · 생성 취소 가능';$('cancel').textContent='생성 취소';setBusy(true);save();
  feedback('단계별 문제와 해설을 만들고 있습니다',`총 ${logicSteps.length}개 문제를 STEP 1부터 전체 로직까지 순서대로 생성합니다.`);$('badge').textContent=`0/${logicSteps.length} 완료`;document.querySelector('.result').scrollIntoView({behavior:'smooth',block:'start'});
  try{
   if(requiresImage){const source=sourceId?await api('sources/'+sourceId):{ready:false};if(!source.ready){throw new Error('원본 보관 시간이 끝났거나 이전 버전에서 사라진 이미지입니다. 본문은 유지됩니다. 파일을 한 번 다시 넣어 주세요.');}}
   const requestId=crypto.randomUUID().replace(/-/g,'');
-  const payload={title:$('title').value.trim(),body:$('body').value.trim(),answer:$('answer').value.trim(),explanation:$('explanation').value.trim(),logicSteps,sourceId,requiresImage,fromSolution:false,useSolutionLogic:true,materialKind:'problem-solution',provider,requestId,stageSeries:true};
+  const payload={title:$('title').value.trim(),body:$('body').value.trim(),answer:$('answer').value.trim(),explanation:$('explanation').value.trim(),logicSteps,sourceId,requiresImage,fromSolution:false,useSolutionLogic:true,materialKind:'problem-solution',provider,requestId,stageSeries:true,expectedStageCount:logicSteps.length};
   pendingJob={id:null,provider,payload};save();
-  await submitGeneration(payload);
-  await waitForGeneration(provider);
+  if(await submitGeneration(payload))await waitForGeneration(provider);
  }catch(e){generationError(e);}finally{setBusy(false);jobId=null;save();}
 };
 
@@ -522,6 +566,7 @@ $('continue-action').onclick=()=>{
   case 'solve':$('solve-problem').click();break;
   case 'generate':$('generate').click();break;
   case 'resume':resumeGeneration();break;
+  case 'select-solution':$('solution-file').click();break;
   default:$('question-file').click();
  }
 };
@@ -545,7 +590,7 @@ function appendReportHeading(parent,level,text,className=''){
 function appendReportSolution(parent,answer,explanation,steps,compact=false){
  appendReportHeading(parent,3,'정답 및 해설');
  const answerBox=document.createElement('div');answerBox.className='report-answer';const answerLabel=document.createElement('strong');answerLabel.textContent='정답';const answerText=document.createElement('span');answerText.textContent=answer||'미제공';answerBox.append(answerLabel,answerText);parent.append(answerBox);
- const explanationBox=document.createElement('div');explanationBox.className='report-explanation';renderProblemText(explanationBox,explanation||'해설이 제공되지 않았습니다.',true);parent.append(explanationBox);
+ const explanationBox=document.createElement('div');explanationBox.className='report-explanation';renderProblemText(explanationBox,explanation||'해설이 제공되지 않았습니다.',true,true);parent.append(explanationBox);
  if(steps?.length){appendReportHeading(parent,4,'풀이 단계');const list=document.createElement('ol');list.className='report-steps report-stage-explanation';for(const step of steps){const li=document.createElement('li');li.textContent=formatProblemMath(step);list.append(li);}parent.append(list);}
 }
 function reportPreviewSource(id){const image=$(id);return image?.getAttribute('src')||image?.src||'';}
@@ -557,8 +602,8 @@ function appendReportSourceImage(parent,heading,source,caption){
 function appendReportProblem(parent,label,r){
  r=prepareProblemDisplay(r);const section=document.createElement('section');section.className='report-section report-generated';appendReportHeading(section,2,label,'report-section-title');
  const title=document.createElement('p');title.className='report-problem-title';title.textContent=r.title;section.append(title);
- appendReportHeading(section,3,'문제');const body=document.createElement('div');body.className='report-problem-body';renderProblemText(body,r.body);section.append(body);
- const choices=document.createElement('div');choices.className='report-choices';renderProblemChoices(choices,r);section.append(choices);
+ appendReportHeading(section,3,'문제');const body=document.createElement('div');body.className='report-problem-body';renderProblemText(body,r.body,false,true);section.append(body);
+ const choices=document.createElement('div');choices.className='report-choices';renderProblemChoices(choices,r,true);section.append(choices);
  const needsVisual=r.requiresVisuals||r.graph||(r.diagrams||[]).length||(r.drawings||[]).length||(r.visualTemplates||[]).length;
  if(needsVisual){const canvas=document.createElement('canvas'),image=document.createElement('img');canvas.hidden=true;image.className='report-problem-image';image.alt=label+' 문제 그림';renderProblemToImage(r,false,canvas,image);section.append(image);}
  appendReportSolution(section,r.answer,r.explanation,r.steps,true);parent.append(section);
@@ -566,9 +611,9 @@ function appendReportProblem(parent,label,r){
 function fullReportData(){
  const ready=comparisonOutputs.filter(o=>o.state==='ready'&&o.result).sort((a,b)=>(a.stageNumber||0)-(b.stageNumber||0));
  if(!ready.length||ready.length!==comparisonOutputs.length)throw new Error('단계별 문제가 모두 완성된 뒤 저장해 주세요.');
- if(ready.some(o=>qualityState(o.result.quality)==='fail'))throw new Error('검사 오류가 있는 문제는 보고서로 저장할 수 없습니다. 오류를 먼저 수정해 주세요.');
+ if(ready.some(o=>!answerVerified(o.result.quality)))throw new Error('정답 독립 검산과 문항 검토가 끝나지 않은 문제는 보고서로 저장할 수 없습니다.');
  const reference=ready.at(-1).result;
- return {ready,reference,sourceProblem:reference.sourceProblem||$('body').value,sourceAnswer:reference.sourceAnswer||$('answer').value,sourceExplanation:reference.sourceExplanation||$('explanation').value,sourceSteps:(reference.sourceSteps?.length?reference.sourceSteps:readLogicSteps())};
+ return {ready,reference,sourceProblem:$('body').value||reference.sourceProblem,sourceAnswer:$('answer').value||reference.sourceAnswer,sourceExplanation:$('explanation').value||reference.sourceExplanation,sourceSteps:(readLogicSteps().some(Boolean)?readLogicSteps():reference.sourceSteps||[])};
 }
 function buildFullReport(){
  const {ready,reference,sourceProblem,sourceAnswer,sourceExplanation,sourceSteps}=fullReportData(),report=$('report-print');
@@ -576,20 +621,37 @@ function buildFullReport(){
  if(requiresImage&&!questionImage)throw new Error('원본 문제 이미지를 복구하지 못했습니다. 원본 파일을 다시 넣은 뒤 PDF를 저장해 주세요.');
  if(hasSolutionImage&&!solutionImage)throw new Error('원본 해설 이미지를 복구하지 못했습니다. 해설 파일을 다시 넣은 뒤 PDF를 저장해 주세요.');
  report.replaceChildren();const header=document.createElement('header');header.className='report-header';appendReportHeading(header,1,'EduMaster 단계별 문제 생성 보고서');const meta=document.createElement('p');meta.textContent=`입력 문제 1개 · 단계별 생성 문제 ${ready.length}개 · ${new Date().toLocaleString('ko-KR')}`;header.append(meta);const notice=document.createElement('p');notice.className='report-notice';notice.textContent='AI 생성 문항 · 교사 최종 검수 전';header.append(notice);report.append(header);
- const input=document.createElement('section');input.className='report-section report-input';appendReportHeading(input,2,'입력 문제와 입력 해설','report-section-title');appendReportSourceImage(input,'원본 문제 이미지',questionImage,'업로드한 원본 문제 이미지');const extracted=document.createElement('div');extracted.className='report-text-block';appendReportHeading(extracted,3,'추출한 입력 문제');const inputTitle=document.createElement('p');inputTitle.className='report-problem-title';inputTitle.textContent=$('title').value||'입력 문제';extracted.append(inputTitle);const source=document.createElement('div');source.className='report-problem-body';renderProblemText(source,sourceProblem);extracted.append(source);input.append(extracted);
- for(const figure of reference.figures||[]){const box=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=figure.dataUrl;img.alt=figure.caption||'입력 문제 그림';caption.textContent=figure.caption||'입력 문제 그림';box.append(img,caption);input.append(box);}
+ const input=document.createElement('section');input.className='report-section report-input';appendReportHeading(input,2,'입력 문제와 입력 해설','report-section-title');appendReportSourceImage(input,'원본 문제 이미지',questionImage,'업로드한 원본 문제 이미지');const extracted=document.createElement('div');extracted.className='report-text-block';appendReportHeading(extracted,3,'추출한 입력 문제');const inputTitle=document.createElement('p');inputTitle.className='report-problem-title';inputTitle.textContent=$('title').value||'입력 문제';extracted.append(inputTitle);const source=document.createElement('div');source.className='report-problem-body';renderProblemText(source,sourceProblem,false,true);extracted.append(source);input.append(extracted);
  appendReportSourceImage(input,'원본 해설 이미지',solutionImage,'업로드한 원본 해설 이미지');
  appendReportSolution(input,sourceAnswer,sourceExplanation,sourceSteps);report.append(input);
  for(const output of ready)appendReportProblem(report,output.stageLabel||`STEP ${output.stageNumber} 문제 및 해설`,output.result);
  return report;
 }
 async function waitForReportImages(report){
- const images=[...report.querySelectorAll('img')];await Promise.all(images.map(image=>image.complete&&image.naturalWidth?Promise.resolve():new Promise(resolve=>{const done=()=>resolve();image.addEventListener('load',done,{once:true});image.addEventListener('error',done,{once:true});setTimeout(done,5000);})));if(images.some(image=>!image.naturalWidth))throw new Error('보고서 원본 이미지 일부를 읽지 못했습니다. 원본을 다시 넣고 저장해 주세요.');
+ const images=[...report.querySelectorAll('img')];await Promise.all(images.map(image=>image.complete&&image.naturalWidth?Promise.resolve():new Promise(resolve=>{const done=()=>resolve();image.addEventListener('load',done,{once:true});image.addEventListener('error',done,{once:true});setTimeout(done,15000);})));if(images.some(image=>!image.naturalWidth))throw new Error('보고서 원본 이미지 일부를 읽지 못했습니다. 원본을 다시 넣고 저장해 주세요.');
+}
+async function reportHtmlForArchive(report){
+ await window.EduMath?.flush();
+ const clone=report.cloneNode(true),originalImages=[...report.querySelectorAll('img')],clonedImages=[...clone.querySelectorAll('img')];
+ for(let index=0;index<originalImages.length;index++){
+  const src=originalImages[index].src||originalImages[index].getAttribute('src')||'';if(!src.startsWith('blob:'))continue;
+  const blob=await fetch(src).then(response=>{if(!response.ok)throw new Error('원본 이미지를 PDF 저장용으로 읽지 못했습니다.');return response.blob();});
+  clonedImages[index].src=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('원본 이미지를 PDF에 넣지 못했습니다.'));reader.readAsDataURL(blob);});
+ }
+ clone.hidden=false;return clone.outerHTML;
+}
+async function saveFullReport(){
+ const button=$('save-report'),oldText=button.textContent;
+ try{button.disabled=true;button.textContent='PDF 생성 중…';$('status').textContent='전체 보고서를 서버 PDF로 저장하고 있습니다.';const report=buildFullReport();await waitForReportImages(report);const html=await reportHtmlForArchive(report);
+  const title=($('title').value||'EduMaster 단계별 문제 보고서').trim();const saved=await api('reports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,html})});
+  $('status').textContent=`PDF 저장 완료 · ${saved.title} · 저장된 PDF 목록에서 확인할 수 있습니다.`;
+ }catch(e){$('status').textContent='PDF 저장 실패 · '+e.message;}finally{button.textContent=oldText;applyExportState();}
 }
 async function printFullReport(){
- try{const report=buildFullReport();$('status').textContent='원본 문제·해설 이미지를 보고서에 넣고 있습니다.';await waitForReportImages(report);const oldTitle=document.title;document.body.classList.add('printing-report');report.hidden=false;document.title='EduMaster_전체_문제_보고서';const restore=()=>{document.body.classList.remove('printing-report');report.hidden=true;document.title=oldTitle;window.removeEventListener('afterprint',restore);};window.addEventListener('afterprint',restore);requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));$('status').textContent='인쇄 대상에서 브라우저의 ‘PDF로 저장’을 선택하세요. Microsoft Print to PDF는 글자 검색이 되지 않을 수 있습니다.';}catch(e){$('status').textContent=e.message;}
+ try{const report=buildFullReport();$('status').textContent='원본 문제·해설 이미지를 보고서에 넣고 있습니다.';await waitForReportImages(report);await window.EduMath?.flush();const oldTitle=document.title;document.body.classList.add('printing-report');report.hidden=false;document.title='EduMaster_전체_문제_보고서';const restore=()=>{document.body.classList.remove('printing-report');report.hidden=true;document.title=oldTitle;window.removeEventListener('afterprint',restore);};window.addEventListener('afterprint',restore);requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));$('status').textContent='인쇄 대상에서 브라우저의 ‘PDF로 저장’을 선택하세요. Microsoft Print to PDF는 글자 검색이 되지 않을 수 있습니다.';}catch(e){$('status').textContent=e.message;}
 }
 if($('report-pdf'))$('report-pdf').onclick=printFullReport;
+if($('save-report'))$('save-report').onclick=saveFullReport;
 
 // Problem Image Card Rendering
 function formatProblemMath(text){
@@ -597,7 +659,8 @@ function formatProblemMath(text){
  return String(text??'').replace(/\*\*([^*\n]+)\*\*/g,'$1').replace(/`([^`\n]+)`/g,'$1')
   .replace(/([A-Za-z])_\{?(\d+)\}?/g,(_,v,n)=>v+[...n].map(d=>sub[Number(d)]).join(''))
   .replace(/(?<![A-Za-z])([dVvxyqt])(\d+)(?=$|[^A-Za-z\d]|[dVvxyqt]\d)/g,(_,v,n)=>v+[...n].map(d=>sub[Number(d)]).join(''))
-  .replace(/\^(?:\{([+-]?\d+|[+-])\}|([+-]?\d+|[+-]))/g,(_,a,b)=>[...(a||b)].map(c=>sup[c]).join(''));
+  .replace(/\^(?:\{([+-]?\d+|[+-])\}|([+-]?\d+|[+-]))/g,(_,a,b)=>[...(a||b)].map(c=>sup[c]).join(''))
+  .replace(/\b(?:[A-Z][a-z]?\d+){1,4}[A-Z][a-z]?\d*\b|\b[A-Z][a-z]?[A-Z][a-z]?\d+\b/g,formula=>formula.replace(/(\d+)/g,n=>[...n].map(d=>sub[Number(d)]).join('')));
 }
 
 function problemTextBlocks(text){
@@ -641,30 +704,30 @@ function prepareProblemDisplay(r){
  return {...r,body:formatProblemMath(body),choices,choiceTable,answer:formatProblemMath(r.answer),explanation:formatProblemMath(r.explanation),steps:(r.steps||[]).map(s=>formatProblemMath(s).replace(/^[1-3][.)]\s+/,'')),sourceProblem:formatProblemMath(r.sourceProblem)};
 }
 
-function createProblemTable(table){
+function createProblemTable(table,skipMath=false){
  const wrapper=document.createElement('div');wrapper.className='problem-table-scroll';
  const el=document.createElement('table');el.className='problem-table';
  const head=document.createElement('thead'),heading=document.createElement('tr');
  for(const text of table.headers){const th=document.createElement('th');th.scope='col';th.textContent=formatProblemMath(text);heading.append(th);}head.append(heading);
  const body=document.createElement('tbody');
  for(const row of table.rows){const tr=document.createElement('tr');for(const text of row){const td=document.createElement('td');td.textContent=formatProblemMath(text);tr.append(td);}body.append(tr);}
- el.append(head,body);wrapper.append(el);return wrapper;
+ el.append(head,body);wrapper.append(el);if(!skipMath)window.EduMath?.schedule(wrapper);return wrapper;
 }
 
-function renderProblemText(el,text,sentences=false){
+function renderProblemText(el,text,sentences=false,skipMath=false){
  const children=[];
  for(const block of problemTextBlocks(formatProblemMath(text))){
-  if(block.type==='table'){children.push(createProblemTable(block));continue;}
+  if(block.type==='table'){children.push(createProblemTable(block,skipMath));continue;}
   const content=sentences?block.text.replace(/([.!?])\s+(?=[가-힣(])/g,'$1\n\n'):block.text;
   for(const para of content.split(/\n\s*\n/)){if(!para.trim())continue;const p=document.createElement('p');p.className='problem-paragraph';p.textContent=para.trim();children.push(p);}
  }
- el.replaceChildren(...children);
+ el.replaceChildren(...children);if(!skipMath)window.EduMath?.schedule(el);
 }
 
-function renderProblemChoices(el,r){
- if(r.choiceTable){el.replaceChildren(createProblemTable(r.choiceTable));return;}
+function renderProblemChoices(el,r,skipMath=false){
+ if(r.choiceTable){el.replaceChildren(createProblemTable(r.choiceTable,skipMath));return;}
  const list=document.createElement('ol');list.className='problem-choice-list';
- for(const [i,text] of (r.choices||[]).entries()){const li=document.createElement('li');li.textContent=['①','②','③','④','⑤'][i]+' '+text;list.append(li);}el.replaceChildren(list);
+ for(const [i,text] of (r.choices||[]).entries()){const li=document.createElement('li');li.textContent=['①','②','③','④','⑤'][i]+' '+text;list.append(li);}el.replaceChildren(list);if(!skipMath)window.EduMath?.schedule(el);
 }
 
 function problemExportText(r){
@@ -947,7 +1010,18 @@ function drawPointChargesDiagram(ctx, diag, x, y, width, height, fontMain) {
  ctx.restore();
 }
 
+let pendingPrimaryImageRender=Promise.resolve();
 function renderProblemToImage(r, includeAnswer = false, targetCanvas = null, targetImage = null) {
+ const primary=!targetCanvas;
+ if(primary){imageReady=false;if($('problem-image'))$('problem-image').removeAttribute('src');}
+ const task=(async()=>{
+  await window.EduMath?.preloadProblem(r);
+  return drawProblemToImage(r,includeAnswer,targetCanvas,targetImage);
+ })().catch(error=>{if(primary)$('status').textContent='문제 이미지 표현 실패 · '+error.message;return false;});
+ if(primary)pendingPrimaryImageRender=task;
+ return task;
+}
+function drawProblemToImage(r, includeAnswer = false, targetCanvas = null, targetImage = null) {
  const managesPrimaryImage=!targetCanvas;
  if(managesPrimaryImage){imageReady=false;if($('problem-image'))$('problem-image').removeAttribute('src');if($('copy-image-footer'))$('copy-image-footer').disabled=$('download-image-footer').disabled=true;}
  if (!r) return;
@@ -955,6 +1029,8 @@ function renderProblemToImage(r, includeAnswer = false, targetCanvas = null, tar
  const canvas = targetCanvas||$('problem-canvas');
  if (!canvas) return;
  const ctx = canvas.getContext('2d');
+ const nativeFillText=ctx.fillText.bind(ctx);
+ ctx.fillText=(value,x,y,...extra)=>window.EduMath?window.EduMath.drawCanvasText(ctx,nativeFillText,value,x,y,...extra):nativeFillText(value,x,y,...extra);
  const baseWidth = 900;
  const margin = 48;
  const contentWidth = baseWidth - margin * 2;
@@ -1214,6 +1290,7 @@ function renderProblemToImage(r, includeAnswer = false, targetCanvas = null, tar
  ctx.fillText(rightFoot, baseWidth - margin - rfW, y);
 
  // Convert to PNG and set to image element
+ ctx.fillText=nativeFillText;
  try {
   const dataUrl = canvas.toDataURL('image/png');
    const imgEl = targetImage||$('problem-image');
@@ -1262,7 +1339,7 @@ if ($('download-image-footer')) $('download-image-footer').onclick = downloadIma
 if ($('toggle-image-answer')) {
  $('toggle-image-answer').onchange = async() => {
   if (!result||busy||qualityChecking) return;
-  renderProblemToImage(result, $('toggle-image-answer').checked);await checkRenderedResult();
+  await renderProblemToImage(result, $('toggle-image-answer').checked);await checkRenderedResult();
  };
 }
 
@@ -1279,13 +1356,15 @@ try{
   $('provider').value=saved.provider==='gemma'?'gemma':saved.provider==='both'?'both':'deepseek';
   if(!$('provider').value)$('provider').value='deepseek';
   comparisonOutputs=saved.comparisonOutputs||[];
+  const restoredSteps=saved.logicSteps||saved.pendingJob?.payload?.logicSteps||[];
+  if(restoredSteps.length>MAX_LOGIC_STEPS){restoredStepGrouping=true;restoredOriginalStepCount=restoredSteps.length;saved.pendingJob=null;saved.result=null;comparisonOutputs=[];}
   if(saved.pendingJob&&['gemma','deepseek','both'].includes(saved.pendingJob.provider)&&(/^[a-f0-9]{32}$/.test(saved.pendingJob.id)||(/^[a-f0-9]{32}$/.test(saved.pendingJob.payload?.requestId)&&saved.pendingJob.payload.provider===saved.pendingJob.provider)))pendingJob=saved.pendingJob;
   requiresImage=legacy?!!saved.body:!!saved.requiresImage;
   if(legacy)saved.result=null;
-  for(const id of ['title','body','answer','explanation'])$(id).value=saved[id]||'';writeLogicSteps(saved.logicSteps||saved.pendingJob?.payload?.logicSteps||[]);
+  for(const id of ['title','body','answer','explanation'])$(id).value=saved[id]||'';writeLogicSteps(restoredSteps);
   if(saved.result){try{show(saved.result);}catch(e){feedback('저장된 결과의 그림을 표시할 수 없습니다',e.message+' · 기준 입력을 유지했으니 다시 생성해 주세요.',true);$('status').textContent=e.message;}}
   if(comparisonOutputs.length){renderComparisons(comparisonOutputs);$('output').hidden=true;}
-  if(requiresImage)$('file-info').textContent='원본 이미지도 생성에 사용합니다 · 보관 2시간, 만료 시 파일 재선택';
+  if(requiresImage){$('file-info').textContent='이전 분석 내용과 원본 이미지 상태를 확인하고 있습니다.';sourceReuseStatus('checking','이전 원본 확인 중','서버 보관본을 다시 사용할 수 있는지 확인합니다. 잠시만 기다려 주세요.');}
  }
 }catch{}
 
@@ -1297,18 +1376,19 @@ async function connect(){
  try{
   setBusy(false);
   if(!access)throw new Error('비밀번호를 입력해 주세요.');
-  const d=await loginStatus();
+  const d=await loginStatus();if(typeof applyModelAvailability==='function')applyModelAvailability(d);
   authenticated=true;
   $('disconnect').hidden=false;$('disconnect').textContent='로그아웃';
   if($('remember-access').checked){localStorage.setItem('edumaster-access',access);}else{localStorage.removeItem('edumaster-access');}
   sessionStorage.setItem('edumaster-access',access);
   $('lock-screen').hidden=true;$('main-studio').hidden=false;
   $('access-code').value='';$('auth-error').textContent='';
-  $('connection').textContent=d.ready?'● '+d.model+' 연결됨':'● 모델 연결 실패';
+  $('connection').textContent=d.ready?'● DeepSeek 서버 연결됨'+(d.gemmaAvailable?' · Gemma PC 연결됨':' · Gemma PC 꺼짐'):'● 모델 연결 실패';
   setBusy(false);
   if(!result){
    const hasRestoredBody=!!String($('body').value||'').trim();
-   if(pendingJob)feedback('진행 중이던 생성 결과가 있습니다','화면 상단의 ‘진행 결과 확인’을 누르면 새 요청 없이 기존 작업을 조회합니다.');
+   if(typeof restoredStepGrouping!=='undefined'&&restoredStepGrouping)feedback('세부 계산을 큰 학습 단계로 정리했습니다',`기존 ${restoredOriginalStepCount}개 STEP을 ${MAX_LOGIC_STEPS}개의 큰 단계로 묶었습니다. 내용을 확인한 뒤 단계별 문제를 다시 만들어 주세요.`);
+   else if(pendingJob)feedback('진행 중이던 생성 결과가 있습니다','화면 상단의 ‘진행 결과 확인’을 누르면 새 요청 없이 기존 작업을 조회합니다.');
    else if(hasRestoredBody&&typeof hasValidLogic==='function'&&hasValidLogic())feedback('기준 문제와 풀이 로직이 준비됐습니다','화면 상단의 ‘쌍둥이 문제 만들기’를 누르면 생성이 시작됩니다.');
    else if(hasRestoredBody)feedback('기준 문제가 준비됐습니다','화면 상단의 ‘풀이 단계 만들기’를 눌러 실제 풀이 순서를 정리하세요.');
    else feedback('1단계: 문제 이미지를 넣어 주세요',d.ready?'문제와 풀이 이미지를 넣으면 본문과 실제 풀이 순서를 읽습니다.':'모델 서버에 연결하지 못했습니다.',!d.ready);
@@ -1343,19 +1423,19 @@ $('retry-text-check').onclick=()=>recheckText();
 connect();
 
 async function restoreSourcePreview(){
- if(!requiresImage||!sourceId)return;const restoringId=sourceId;
+ if(!requiresImage||!sourceId){sourceReuseStatus(null);return;}const restoringId=sourceId;sourceReuseStatus('checking','이전 원본 확인 중','서버 보관본을 다시 사용할 수 있는지 확인합니다.');
  try{
   const d=await api('sources/'+restoringId+'?preview=true');if(sourceId!==restoringId)return;
   if(d.ready){
    sourceExpiresAt=d.expiresAt;
    if(d.previewDataUrls?.length)applySourcePreviews(d.previewDataUrls,d.previewMaterialRoles);
    else if(d.previewDataUrl){$('question-preview').src=d.previewDataUrl;$('question-preview').hidden=false;}
-   $('file-info').textContent='원본 이미지 복구 완료 · '+d.pageCount+'페이지 · 2시간 보관';save();
+   $('file-info').textContent='새로고침 전 원본을 서버에서 불러왔습니다 · '+d.pageCount+'페이지';sourceReuseStatus('reusable','서버 보관 원본 사용 중','새로 이미지를 넣지 않아도 됩니다. 현재 분석과 문제 생성에 이 원본을 그대로 사용합니다. '+sourceTimeText(d.expiresAt));save();
   } else {
-   $('file-info').textContent='원본 보관 만료 또는 이전 버전에서 유실 · 본문 유지 · 파일 재선택 필요';
+   $('file-info').textContent='분석된 텍스트는 남아 있지만 원본 이미지는 사용할 수 없습니다.';sourceReuseStatus('expired','원본 이미지 다시 필요','서버 보관 시간이 끝났습니다. 그림·표를 포함해 생성하려면 원본 이미지를 다시 선택하세요.');
    feedback('원본 파일을 한 번 다시 넣어 주세요','이전 버전에서 사라진 원본은 복구할 수 없습니다. 새로 넣은 파일은 서버 재시작 후에도 보관 시간 내 복구됩니다.',true);
   }
- }catch(e){$('file-info').textContent='원본 복구 연결 확인 필요 · '+e.message;}
+ }catch(e){$('file-info').textContent='원본 이미지 사용 가능 여부를 확인하지 못했습니다.';sourceReuseStatus('expired','원본 상태 확인 실패','서버 연결을 확인한 뒤 원본 이미지를 다시 선택하는 것이 안전합니다. '+e.message);}
 }
 
 updateInputFormat();if(!busy)$('generate').textContent=generationButtonText();globalThis.updateWorkflowState?.();
@@ -1382,7 +1462,7 @@ function openImageViewer(source){
 }
 function setupImageViewer(){
  const dialog=$('image-viewer');if(!dialog)return;
- const selector='#preview, #question-preview, #solution-preview, #problem-image, #result-figures img, .stage-problem-image';
+ const selector='#preview, #question-preview, #solution-preview, #problem-image, .stage-problem-image';
  document.addEventListener('click',event=>{const image=event.target.closest?.(selector);if(image)openImageViewer(image);});
  document.addEventListener('keydown',event=>{if(event.key!=='Enter'&&event.key!==' ')return;const image=event.target.closest?.(selector);if(image){event.preventDefault();openImageViewer(image);}});
  $('image-viewer-close').onclick=()=>dialog.close();
@@ -1394,4 +1474,3 @@ function setupImageViewer(){
  window.addEventListener('resize',()=>{if(dialog.open)sizeImageViewer();});
 }
 setupImageViewer();
-

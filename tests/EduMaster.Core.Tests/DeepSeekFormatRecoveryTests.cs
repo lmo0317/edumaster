@@ -44,7 +44,18 @@ public class DeepSeekFormatRecoveryTests
         using var http=new HttpClient(new Handler(_=>{calls++;var value=Valid(draft);value["inputFingerprint"]="other-input";return Task.FromResult(Envelope(value));}));
         await Assert.ThrowsAsync<InvalidDataException>(()=>new DeepSeekVisualGenerator(http).GenerateAsync(draft,"test-only"));Assert.Equal(1,calls);
     }
+    [Fact]public async Task OutputLimitRetriesOnceWithoutThinkingAndReturnsOnlyCompleteResult()
+    {
+        var draft=new ProblemDraft{Title="덧셈",Body="2+3의 값을 구하시오."};var calls=0;
+        using var http=new HttpClient(new Handler(async request=>{
+            var payload=JsonNode.Parse(await request.Content!.ReadAsStringAsync())!;calls++;
+            if(calls==2){Assert.Equal("disabled",payload["thinking"]!["type"]!.GetValue<string>());Assert.Null(payload["reasoning_effort"]);Assert.Contains("전체 2500자 이내",payload["messages"]![0]!["content"]!.GetValue<string>());}
+            return Envelope(Valid(draft),calls==1?"length":"stop");
+        }));
+        var result=await new DeepSeekVisualGenerator(http).GenerateAsync(draft,"test-only");
+        Assert.Equal(2,calls);Assert.Equal("③ 7",result.Answer);Assert.Contains("출력 한도 자동 재작성 API 1회",result.UsageSummary);
+    }
     private static JsonObject Valid(ProblemDraft draft)=>new(){["status"]="ready",["message"]="",["inputFingerprint"]=draft.Fingerprint(),["title"]="덧셈 변형",["body"]="3+4의 값을 구하시오.",["sourceLocation"]="기준 문제",["choices"]=new JsonArray("5","6","7","8","9"),["answerText"]="7",["explanation"]="3+4=7이다.",["steps"]=new JsonArray("두 수 확인","덧셈","결과 7 확인"),["changeSummary"]="2,3에서 3,4로 변형",["graph"]=null,["diagrams"]=new JsonArray(),["drawings"]=new JsonArray(),["visualRequirement"]="none"};
-    private static HttpResponseMessage Envelope(JsonObject value)=>new(HttpStatusCode.OK){Content=new StringContent(JsonSerializer.Serialize(new{choices=new[]{new{finish_reason="stop",message=new{content=value.ToJsonString()}}}}))};
+    private static HttpResponseMessage Envelope(JsonObject value,string finish="stop")=>new(HttpStatusCode.OK){Content=new StringContent(JsonSerializer.Serialize(new{choices=new[]{new{finish_reason=finish,message=new{content=value.ToJsonString()}}}}))};
     private sealed class Handler(Func<HttpRequestMessage,Task<HttpResponseMessage>> send):HttpMessageHandler{protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)=>send(request);}
 }

@@ -23,7 +23,7 @@ try {
             }
         }
         if($null -eq $tunnelProcess -or $tunnelProcess.HasExited){
-            $tunnelProcess=Start-Process ssh.exe -ArgumentList '-T -o BatchMode=yes -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -R 127.0.0.1:18282:127.0.0.1:18280 lmo0317@192.168.219.112 python3 /home/lmo0317/apps/edumaster/tunnel-guard.py' -WindowStyle Hidden -RedirectStandardError (Join-Path $logs 'tunnel-error.log') -RedirectStandardOutput (Join-Path $logs 'tunnel-out.log') -PassThru
+            $tunnelProcess=Start-Process ssh.exe -ArgumentList '-T -o BatchMode=yes -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -R 127.0.0.1:18283:127.0.0.1:8092 -R 127.0.0.1:18284:127.0.0.1:8091 lmo0317@192.168.219.112 python3 /home/lmo0317/apps/edumaster/tunnel-guard.py' -WindowStyle Hidden -RedirectStandardError (Join-Path $logs 'tunnel-error.log') -RedirectStandardOutput (Join-Path $logs 'tunnel-out.log') -PassThru
             $taskHealthFailures=0;$taskLastHealthCheck=[DateTime]::UtcNow
         }
         if($Watch -and ([DateTime]::UtcNow - $taskLastHealthCheck) -ge [TimeSpan]::FromSeconds(15)){

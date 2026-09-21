@@ -7,8 +7,13 @@ public sealed record QualityReport(string Version,QualityCheck[] Checks)
     public string? RenderHash {get;init;}
     public string? RenderReviewVersion {get;init;}
     public string State=>Checks.Any(c=>c.State=="fail")?"fail":Checks.Any(c=>c.State!="pass")?"review_required":"pass";
-    public bool CanExport=>State!="fail";
-    public const string CurrentVersion="quality-harness-v1";
+    public bool AnswerVerified=>State!="fail"
+        &&Checks.Any(c=>c.Id=="calculation"&&c.State=="pass"&&c.Method.StartsWith("code",StringComparison.Ordinal))
+        &&Checks.Where(c=>c.Id=="source-calculation").All(c=>c.State=="pass"&&c.Method.StartsWith("code",StringComparison.Ordinal))
+        &&Checks.Any(c=>c.Id=="conditions"&&c.State=="pass")
+        &&Checks.Any(c=>c.Id=="semantic-math"&&c.State=="pass");
+    public bool CanExport=>AnswerVerified;
+    public const string CurrentVersion="quality-harness-v4-verified-answer";
 }
 
 public static class ProblemQualityHarness
@@ -32,6 +37,18 @@ public static class ProblemQualityHarness
         Add("choices","보기·정답 연결",r.Choices.Length==5&&r.Choices.All(s=>!string.IsNullOrWhiteSpace(s))&&r.Choices.Select(Compact).Distinct().Count()==5&&r.Choices.Count(c=>Compact(c)==Compact(Regex.Replace(r.Answer,@"^[①②③④⑤]\s*","")))==1,"보기 5개·중복 문자열·정답 문자열 연결 검사. 수학적 동치 보기는 별도 검토");
         if(draft is not null)Add("input","입력 연결",r.InputId==draft.Id&&r.InputFingerprint==draft.Fingerprint(),"생성 결과와 원래 입력의 식별값 대조");
         var source=draft?.Body??r.SourceProblem;
+        var sourceResult=draft is null?r:r with{SourceProblem=draft.Body,SourceAnswer=draft.Answer,SourceExplanation=draft.Explanation};
+        try{
+            if(AcidBaseMixtureCheck.InspectSource(sourceResult) is { } sourceIonCheck)checks.Add(sourceIonCheck);
+            else if(ReactionMassCheck.Solve(sourceResult.SourceProblem) is { } sourceReaction){
+                var matches=string.IsNullOrWhiteSpace(sourceResult.SourceAnswer)||ReactionMassCheck.ReferenceAnswerMatches(sourceResult.SourceAnswer,sourceReaction);
+                checks.Add(new("source-calculation","입력 문제 풀이 검산",matches?"pass":"fail",matches?"원본 반응량을 코드로 계산해 입력 정답과 대조했습니다.":$"입력 정답 {sourceResult.SourceAnswer}이 독립 계산 {sourceReaction.Answer}과 다릅니다.","code-reaction-mass"));
+            }else if(!string.IsNullOrWhiteSpace(sourceResult.SourceAnswer)&&GasMixtureAtomCheck.Inspect(sourceResult with{Body=sourceResult.SourceProblem,Answer=sourceResult.SourceAnswer,Explanation=sourceResult.SourceExplanation}) is { } sourceGas)
+                checks.Add(sourceGas with{Id="source-calculation",Label="입력 문제 풀이 검산"});
+            else if(!partialLearningStage&&!string.IsNullOrWhiteSpace(sourceResult.SourceProblem))
+                checks.Add(new("source-calculation","입력 문제 풀이 검산","unknown","입력 문제의 정답과 풀이를 독립 계산기로 확인할 수 없습니다.","code"));
+        }catch(InvalidDataException e){checks.Add(new("source-calculation","입력 문제 풀이 검산","fail",e.Message,"code"));}
+        if(!partialLearningStage&&AcidBaseMixtureCheck.InspectOriginality(r) is { } originalityCheck)checks.Add(originalityCheck);
         if(ReactionMassCheck.NeedsQuantityReview(source))checks.Add(new("source-quantity","원본 용어 대조","fail","기준 문제에서 물질량/몰질량 판독 혼동이 의심됩니다. 질문을 임의로 바꾸지 말고 문제와 해설을 원본에 대조해야 합니다.","code"));
         if(!partialLearningStage)try{
             if(ReactionMassCheck.Solve(source) is not null&&ReactionMassCheck.Solve(r.Body) is null)checks.Add(new("source-reaction-type","원본 풀이 구조","fail","원본의 반응계수 b·상대 몰비 x·몰질량 질문이 다른 유형으로 바뀌었습니다. 원본 풀이와 같은 계산 구조로 다시 생성해야 합니다.","code"));
@@ -48,7 +65,7 @@ public static class ProblemQualityHarness
         try{
             var solved=ReactionMassCheck.Solve(r.Body);
             if(solved is not null){var verified=ReactionMassCheck.Verify(r);Add("calculation","독립 수치 검산",Compact(verified.Answer)==Compact(r.Answer),"지원 반응량 유형의 코드 계산과 정답 대조");}
-            else checks.Add(HeatingConcentrationCheck.Inspect(r)??new("calculation","독립 수치 검산","unknown","이 문항 유형의 독립 계산기는 아직 없습니다. AI 검토와 별개로 교사 검산이 필요합니다.","code"));
+            else checks.Add(AcidBaseMixtureCheck.Inspect(r)??GasMixtureAtomCheck.Inspect(r)??HeatingConcentrationCheck.Inspect(r)??new("calculation","독립 수치 검산","unknown","이 문항 유형의 독립 계산기는 아직 없습니다. AI 검토와 별개로 교사 검산이 필요합니다.","code"));
         }catch(Exception e)when(e is InvalidDataException or FormatException){Add("calculation","독립 수치 검산",false,e.Message);}
         foreach(var (id,label) in new[]{("language","문장·표현"),("conditions","조건·문제 성립"),("semantic-math","수치·단위·해설"),("visual-semantics","그림과 본문 관계")})checks.Add(new(id,label,"unknown","별도 AI 검토 대기","ai"));
         checks.Add(new("render","최종 PNG 대조","unknown","브라우저 렌더링 후 로컬 이미지 검토 대기","local-vision"));
@@ -57,6 +74,12 @@ public static class ProblemQualityHarness
     public static QualityReport Merge(QualityReport report,IEnumerable<QualityCheck> updates)
     {
         var map=updates.ToDictionary(c=>c.Id);var existing=report.Checks.Select(c=>c.Id).ToHashSet();return report with{Checks=report.Checks.Select(c=>map.GetValueOrDefault(c.Id,c)).Concat(map.Values.Where(c=>!existing.Contains(c.Id))).ToArray()};
+    }
+    public static QualityReport RefreshCompleted(SampleResult result)
+    {
+        var fresh=Inspect(result);if(result.Quality is not { } old)return fresh;
+        var code=fresh.Checks.Where(c=>c.Method.StartsWith("code",StringComparison.Ordinal));
+        return Merge(old,code) with{Version=QualityReport.CurrentVersion};
     }
     public static QualityReport RefreshPartialStage(SampleResult result)
     {

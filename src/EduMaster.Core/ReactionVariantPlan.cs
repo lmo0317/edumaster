@@ -5,7 +5,7 @@ namespace EduMaster.Core;
 // Supported input only. Numbers are calculated from this draft, never from a cached sample.
 public sealed record ReactionVariantPlan(string Body,string[] Choices,string Answer,ReactionMassSolution Solution,int MassScale)
 {
-    public const string Version="reaction-mass-plan-v2";
+    public const string Version="reaction-mass-plan-v4-verified-explanation-concise-steps";
     public static ReactionVariantPlan? Create(ProblemDraft draft)
     {
         if(draft.FromSolution||ScientificVisuals.NeedsVisuals(draft.Body))return null;
@@ -17,7 +17,7 @@ public sealed record ReactionVariantPlan(string Body,string[] Choices,string Ans
                 if(!ReactionMassCheck.ReferenceAnswerMatches(draft.Answer,original))throw new InvalidDataException($"원본 정답({draft.Answer})과 코드 검산({original.Answer})이 다릅니다. 문제·풀이 전사를 원본과 대조해 주세요.");
             }
             var seed=SHA256.HashData(Encoding.UTF8.GetBytes(draft.Fingerprint()));var scale=2+seed[0]%4;
-            var body=ReactionMassCheck.UniformMassVariantBody(draft.Body,scale,true);
+            var body=ReactionMassCheck.UniformMassVariantBody(draft.Body,scale,false);
             var solution=ReactionMassCheck.Solve(body)!;
             var values=new[]{.5,1,1.5,2,2.5}.Select(f=>ReactionMassCheck.FormatValue(solution.Value*f)).ToArray();
             var offset=seed[1]%5;var choices=Enumerable.Range(0,5).Select(i=>values[(i+offset)%5]).ToArray();
@@ -28,7 +28,8 @@ public sealed record ReactionVariantPlan(string Body,string[] Choices,string Ans
     }
     public SampleResult Apply(SampleResult result)=>result with{
         Body=Body,Choices=Choices,Answer=Answer,
-        ChangeSummary=$"원본의 모든 반응 전·후 질량을 {MassScale}배로 변형하고 상대 몰비와 물질의 관계를 유지했습니다. 남은 기체 종류는 직접 판단하도록 제시하지 않고 보기 순서를 바꾸었습니다.",
+        Explanation=Solution.Explanation,Steps=Solution.Steps,
+        ChangeSummary=$"원본의 모든 반응 전·후 질량을 {MassScale}배로 변형하고 상대 몰비·잔류 화학종·물질의 관계를 유지했으며 보기 순서를 바꾸었습니다.",
         GenerationNotice=$"{result.Model} 문장 초안 + 코드 반응량 템플릿 재구성·독립 검산 · 교사 확인 전",
         UsageSummary=result.UsageSummary.Contains(Version)?result.UsageSummary:result.UsageSummary+" · "+Version,
         Graph=null,Diagrams=[],Drawings=[],VisualTemplates=[],RequiresVisuals=false,

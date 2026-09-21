@@ -6,7 +6,7 @@ namespace EduMaster.Core;
 public sealed record ProblemDraft
 {
     public const int MinLogicSteps = 1;
-    public const int MaxLogicSteps = 12;
+    public const int MaxLogicSteps = 6;
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Title { get; init; } = "";
     public string Body { get; init; } = "";

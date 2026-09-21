@@ -4,7 +4,7 @@ namespace EduMaster.Core;
 
 // Narrow MVP: A + bB -> 2C + 2D, three mass rows and relative D/total fractions.
 // No question text, table values or answer are taken from a cached sample.
-public sealed record ReactionMassSolution(double MassRatio,int B,double Scale,double X,double Value,string Answer,string[] Steps);
+public sealed record ReactionMassSolution(double MassRatio,int B,double Scale,double X,double Value,string Answer,string Explanation,string[] Steps);
 public static class ReactionMassCheck
 {
     // Keep annotation text in the visible source, but do not treat handwriting
@@ -42,8 +42,8 @@ public static class ReactionMassCheck
         foreach(var row in rows){
             var rest=Regex.Replace(row[3],@"\s","");var relative=Regex.Replace(row[4],@"\s","");
             var match=Regex.Match(rest,@"^([AB])?(.*)w$");
-            var label=hideRemaining?"":match.Groups[1].Value+" ";
-            result.Add($"| {row[0]} | {Fraction(factor*Number(row[1]))}w | {Fraction(factor*Number(row[2]))}w | {label}({Fraction(factor*Number(match.Groups[2].Value))})w | {(relative.StartsWith('x')?"x":relative)} |");
+            var label=hideRemaining?"":match.Groups[1].Value+" ";var restValue=Fraction(factor*Number(match.Groups[2].Value));var formattedRest=restValue.Contains('/')?$"({restValue})w":restValue+"w";
+            result.Add($"| {row[0]} | {Fraction(factor*Number(row[1]))}w | {Fraction(factor*Number(row[2]))}w | {label}{formattedRest} | {(relative.StartsWith('x')?"x":relative)} |");
         }
         result.Add("(b/x) × (C의 몰질량 + D의 몰질량)/(B의 몰질량)은? (단, 실린더 속 기체의 온도와 압력은 일정하다.)");
         return string.Join("\n",result);
@@ -137,10 +137,27 @@ public static class ReactionMassCheck
             ?$"실험 I·II에서 A가 모두 반응했다고 가정하면 B/A 소비 질량비가 각각 {Fraction((rows[0].B-rows[0].Rest)/rows[0].A)}, {Fraction((rows[1].B-rows[1].Rest)/rows[1].A)}로 달라 모순이다. 따라서 두 실험에서는 B가 모두 반응한다. "
             :"남은 기체의 가능한 A/B 조합을 초기·잔류 질량과 공통 소비 질량비로 대조한다. ";
         var after=string.Join("; ",rows.Select((r,i)=>$"실험 {i+1}: "+(r.Remaining=='A'?$"A {Fraction(r.Rest)}w, B 0":$"A 0, B {Fraction(r.Rest)}w")+$", C+D {Fraction(r.A+r.B-r.Rest)}w"));
-        return new(ratio,b,scale,x,value,answer,[
-            $"STEP 1 · 한계 반응물: {proof}실험 I~III에 남는 기체는 {string.Join(", ",rows.Select(r=>r.Remaining))}이며 B/A 소비 질량비는 {Fraction(ratio)}이다.",
-            $"STEP 2 · 반응 후 질량·몰수: 질량 보존으로 {after}. A가 t mol 반응하면 C와 D는 각각 2t mol 생성된다. 계수비는 몰수비이므로 M_A/M_B = b/{Fraction(ratio)}이다.",
-            $"STEP 3 · 상대 몰비·몰질량: A가 남는 실험 {new[]{"Ⅰ","Ⅱ","Ⅲ"}[rows.IndexOf(knownA)]}의 D/전체 = {Fraction(2*knownA.ReactedA/(knownA.Rest+4*knownA.ReactedA))}이므로 공통 상댓값 배율 k = {Fraction(scale)}. B가 남는 실험 {new[]{"Ⅰ","Ⅱ","Ⅲ"}[rows.IndexOf(knownB)]}의 전체 몰수에 남은 B도 포함하면 b = {b}, 미지수 실험 {new[]{"Ⅰ","Ⅱ","Ⅲ"}[rows.IndexOf(unknown)]}에서 x = {Fraction(x)}이다. 질량 보존: (M_C+M_D)/M_B = (M_A/M_B+b)/2 = {Fraction(sum)}. 따라서 ({b}/{Fraction(x)}) × {Fraction(sum)} = {answer}."
+        var labels=new[]{"Ⅰ","Ⅱ","Ⅲ"};var knownALabel=labels[rows.IndexOf(knownA)];var knownBLabel=labels[rows.IndexOf(knownB)];var unknownLabel=labels[rows.IndexOf(unknown)];
+        var knownAFraction=2*knownA.ReactedA/(knownA.Rest+4*knownA.ReactedA);var knownBRelative=Number(knownB.Relative);
+        var bEquation=$"{Fraction(knownBRelative)} = {Fraction(scale)} × (2×{Fraction(knownB.ReactedA)})/(4×{Fraction(knownB.ReactedA)} + {Fraction(knownB.Rest)}×b/{Fraction(ratio)})";
+        var unknownDenominator=unknown.Remaining=='A'?unknown.Rest+4*unknown.ReactedA:unknown.Rest*b/ratio+4*unknown.ReactedA;
+        var explanation=$"""
+[STEP 1 · 한계 반응물과 소비 질량비]
+{proof}따라서 실험 I~III에 남는 기체는 차례로 {string.Join(", ",rows.Select(r=>r.Remaining))}이고, 모든 실험에 공통인 B/A 소비 질량비는 {Fraction(ratio)}이다.
+
+[STEP 2 · 반응 후 질량과 몰수]
+질량 보존을 적용하면 {after}. A가 t mol 반응할 때 반응식의 계수비에 따라 B는 bt mol 반응하고 C와 D는 각각 2t mol 생성된다. 소비 질량비 B/A = bM_B/M_A = {Fraction(ratio)}이므로 M_A/M_B = b/{Fraction(ratio)}이다.
+
+[STEP 3 · 몰분율 상댓값, 반응 계수와 최종값]
+A가 남는 실험 {knownALabel}에서 D의 몰분율은 (2×{Fraction(knownA.ReactedA)})/({Fraction(knownA.Rest)}+4×{Fraction(knownA.ReactedA)}) = {Fraction(knownAFraction)}이다. 표의 상댓값 {knownA.Relative}은 실제 몰분율에 공통 배율 k를 곱한 값이므로 {knownA.Relative} = k×{Fraction(knownAFraction)}, 따라서 k = {Fraction(scale)}이다.
+B가 남는 실험 {knownBLabel}에서는 남은 B의 몰수까지 전체 몰수에 포함해야 한다. 비례식 {bEquation}을 풀면 b = {b}이다.
+미지수 실험 {unknownLabel}의 D 몰분율은 (2×{Fraction(unknown.ReactedA)})/{Fraction(unknownDenominator)} = {Fraction(2*unknown.ReactedA/unknownDenominator)}이므로 x = {Fraction(scale)}×{Fraction(2*unknown.ReactedA/unknownDenominator)} = {Fraction(x)}이다.
+M_A/M_B = {b}/{Fraction(ratio)}이고, 반응 전후 질량 보존에서 (M_C+M_D)/M_B = (M_A/M_B+b)/2 = {Fraction(sum)}이다. 따라서 (b/x)×(M_C+M_D)/M_B = ({b}/{Fraction(x)})×{Fraction(sum)} = {answer}이다.
+""";
+        return new(ratio,b,scale,x,value,answer,explanation,[
+            $"STEP 1 · 가능한 한계 반응물을 실험끼리 비교해 남는 기체를 {string.Join(", ",rows.Select(r=>r.Remaining))}로 결정하고 공통 B/A 소비 질량비 {Fraction(ratio)}을 구한다.",
+            $"STEP 2 · 질량 보존과 반응 계수비로 반응 후 질량·몰수를 정리하고 M_A/M_B = b/{Fraction(ratio)}을 얻는다.",
+            $"STEP 3 · 실험 {knownALabel}에서 k={Fraction(scale)}, 실험 {knownBLabel}에서 b={b}, 실험 {unknownLabel}에서 x={Fraction(x)}를 차례로 구한 뒤 최종값 {answer}을 계산한다."
         ]);
     }
     public static SampleResult Verify(SampleResult result)
@@ -149,7 +166,7 @@ public static class ReactionMassCheck
         var matches=result.Choices.Select((c,i)=>(c,i)).Where(p=>Math.Abs(Number(p.c)-solved.Value)<1e-7).ToArray();
         if(matches.Length!=1)throw new InvalidDataException("검산한 정답과 보기가 일치하지 않습니다. 다시 생성해 주세요.");
         return result with{Answer=new[]{"①","②","③","④","⑤"}[matches[0].i]+" "+result.Choices[matches[0].i],
-            Explanation=string.Join("\n",solved.Steps),Steps=solved.Steps,
+            Explanation=solved.Explanation,Steps=solved.Steps,
             GenerationNotice="AI 문항 초안 + 반응량 표·상대 몰비·정답 계산 검증 · 교사 확인 전"};
     }
     public static void VerifyUniformMassScale(string original,string variant)

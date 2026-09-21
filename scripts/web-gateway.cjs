@@ -1,9 +1,9 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=path.join(__dirname,'public');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.txt':'text/plain; charset=utf-8'};
-const assets=new Set(['index.html','style.css','app.js','samples/reaction.png','samples/reaction-original.png','samples/reaction-reconstructed.png','samples/structure.png','samples/graph.png','samples/example.txt']);
-const security={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.txt':'text/plain; charset=utf-8'};
+const assets=new Set(['index.html','style.css','app.js','math-config.js','math-render.js','vendor/mathjax/tex-svg.js','vendor/mathjax/input/tex/extensions/mhchem.js','result/index.html','result/result.css','result/result.js','samples/reaction.png','samples/reaction-original.png','samples/reaction-reconstructed.png','samples/structure.png','samples/graph.png','samples/killer-chemistry-question-solution.jpeg','samples/example.txt']);
+const security={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"};
 http.createServer((req,res)=>{
   let url;try{url=new URL(req.url,'http://localhost');}catch{res.writeHead(400).end();return;}
   if(url.pathname.startsWith('/api/')){
@@ -16,6 +16,8 @@ http.createServer((req,res)=>{
   }
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405).end();return;}
   let relative;try{relative=decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g,'')||'index.html';}catch{res.writeHead(400).end();return;}
+  if(relative==='result'&&!url.pathname.endsWith('/')){res.writeHead(308,{Location:'result/',...security}).end();return;}
+  if(relative==='result')relative='result/index.html';
   if(!assets.has(relative)){res.writeHead(404,security).end();return;}
   fs.stat(path.join(root,relative),(error,stat)=>{
     if(error){res.writeHead(404,security).end();return;}

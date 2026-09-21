@@ -49,8 +49,10 @@ public class ProblemSolutionMaterialTests
         var read=ProblemSolutionMaterial.Parse(JsonSerializer.Serialize(new{body=ReactionVariantPlanTests.Source,answer="② 2/5",explanation="I에서는 B가 한계지만 II에서는 A가 한계라고 잘못 판독한 긴 풀이 설명입니다.",steps=new[]{"I에서는 B, II에서는 A가 한계", "질량과 몰수", "상댓값 계산"},uncertainties=Array.Empty<string>()}));
         var verified=read.WithVerifiedLogic();
         Assert.Equal(ReactionMassCheck.Solve(ReactionVariantPlanTests.Source)!.Steps,verified.Steps);
-        Assert.Equal(read.Explanation,verified.Explanation);
-        Assert.Contains("II에서는 A가 한계",verified.Explanation);
+        Assert.Equal(ReactionMassCheck.Solve(ReactionVariantPlanTests.Source)!.Explanation,verified.Explanation);
+        Assert.DoesNotContain("II에서는 A가 한계",verified.Explanation);
+        Assert.Contains("M_A/M_B = b/3",verified.Explanation);
+        Assert.Contains("b = 3",verified.Explanation);
         Assert.Contains(verified.Uncertainties,x=>x.Contains("독립 계산")&&x.Contains("교정"));
     }
     [Fact]public void ReaderAndDraftPreserveAnActualFourStepSolution(){
@@ -60,6 +62,14 @@ public class ProblemSolutionMaterialTests
         Assert.Equal(4,material.Steps.Length);
         var verified=material.WithVerifiedLogic();Assert.Equal(steps,verified.Steps);
         new ProblemDraft{Title="4단계 기준",Body=verified.Body,Answer=verified.Answer,Explanation=verified.Explanation,Steps=verified.Steps,UseSolutionLogic=true}.Validate();
+    }
+    [Fact]public void ReaderConsolidatesElevenMicroStepsIntoAtMostSixLearningStages(){
+        var steps=Enumerable.Range(1,11).Select(number=>$"세부 계산 {number}").ToArray();
+        var body="여러 조건과 계산식을 차례로 적용해 하나의 값을 구하는 일반 과학 문제이며, 제시된 풀이에는 계산식이 세부 줄로 나뉘어 있다.";
+        var material=ProblemSolutionMaterial.Parse(JsonSerializer.Serialize(new{body,answer="③ 7",explanation="조건을 확인한 뒤 여러 식을 순서대로 계산하고 마지막에 원래 조건에 대입하여 정답을 검산하는 상세한 풀이이다.",steps,uncertainties=Array.Empty<string>()}));
+        Assert.Equal(ProblemDraft.MaxLogicSteps,material.Steps.Length);
+        Assert.Contains("세부 계산 1",material.Steps[0]);Assert.Contains("세부 계산 11",material.Steps[^1]);
+        Assert.Contains(material.Uncertainties,item=>item.Contains("11개")&&item.Contains("6개의 큰 학습 단계"));
     }
     [Fact]public void SupportedThreeStepReactionCollapsesASeparateFinalSubstitution(){
         var splitSteps=new[]{"한계 반응물 판별","반응 후 질량과 몰수","상댓값과 반응계수 계산","최종 식에 수치를 대입"};

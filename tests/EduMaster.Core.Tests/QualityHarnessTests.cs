@@ -13,7 +13,20 @@ public class QualityHarnessTests
     [Fact]public void NumericHeatingChecksUnitsRoundingAndAnswer(){var r=Heating() with{Body="2 M NaOH 수용액을 가열한다. (가)의 밀도는 1.08 g/mL, (나)의 밀도는 1.06 g/mL이다. NaOH의 몰질량은 40 g/mol이고 물의 증발은 무시한다. 몰농도와 몰랄 농도는?",Choices=["1.96 M, 2 m","1.96 M, 2.04 m","2.00 M, 2 m","2.04 M, 2 m","1.96 M, 1.96 m"],Answer="① 1.96 M, 2 m"};Assert.Equal("pass",HeatingConcentrationCheck.Inspect(r)!.State);Assert.Equal("fail",HeatingConcentrationCheck.Inspect(r with{Answer="③ "+r.Choices[2]})!.State);}
     [Fact]public void EquivalentDuplicateAnswersAreNotAccepted(){var r=Heating();var cs=r.Choices.ToArray();cs[0]="100d2/(50d1) ; 2/(d1 - 0.08)";Assert.Equal("fail",HeatingConcentrationCheck.Inspect(r with{Choices=cs})!.State);}
     [Fact]public void EvaporationOrUnsupportedMathIsNotClaimedVerified(){var r=Heating();Assert.Null(HeatingConcentrationCheck.Inspect(r with{Body=r.Body.Replace("물의 증발은 무시한다.","물이 증발한다.")}));Assert.Null(HeatingConcentrationCheck.Inspect(r with{Choices=["sqrt(d1)","1","2","3","4"]}));}
-    [Fact]public void FailedChecksBlockExportAndUnknownChecksRemainVisible(){var r=Heating();var ok=ProblemQualityHarness.Inspect(r);Assert.Equal("review_required",ok.State);Assert.True(ok.CanExport);Assert.Contains(ok.Checks,c=>c.Id=="render"&&c.State=="unknown");var bad=ProblemQualityHarness.Inspect(r with{Answer="⑤ "+r.Choices[4]});Assert.Equal("fail",bad.State);Assert.False(bad.CanExport);}
+    [Fact]public void FailedChecksBlockExportAndUnknownChecksRemainVisible(){var r=Heating();var ok=ProblemQualityHarness.Inspect(r);Assert.Equal("review_required",ok.State);Assert.False(ok.CanExport);Assert.Contains(ok.Checks,c=>c.Id=="render"&&c.State=="unknown");var bad=ProblemQualityHarness.Inspect(r with{Answer="⑤ "+r.Choices[4]});Assert.Equal("fail",bad.State);Assert.False(bad.CanExport);}
+    [Fact]public void AiAgreementCannotReplaceIndependentAnswerVerification(){
+        var checks=new QualityCheck[]{
+            new("calculation","독립 수치 검산","pass","AI가 맞다고 답함","ai-deepseek-fallback"),
+            new("conditions","조건","pass","조건 확인","ai-deepseek"),
+            new("semantic-math","해설","pass","계산 확인","ai-deepseek"),
+            new("render","PNG","unknown","이미지 검사 대기","local-vision")};
+        var aiOnly=new QualityReport(QualityReport.CurrentVersion,checks);
+        Assert.False(aiOnly.AnswerVerified);Assert.False(aiOnly.CanExport);
+        var independent=aiOnly with{Checks=checks.Select(c=>c.Id=="calculation"?c with{Method="code-acid-base"}:c).ToArray()};
+        Assert.True(independent.AnswerVerified);Assert.True(independent.CanExport);
+        var unverifiedSource=independent with{Checks=independent.Checks.Append(new("source-calculation","원본","unknown","원본 검산 불가","code")).ToArray()};
+        Assert.False(unverifiedSource.CanExport);
+    }
     [Fact]public void MissingDrawingAndMismatchedInputAreFailures(){var r=Heating();var d=new ProblemDraft{Title="입력",Body="다른 문제"};var report=ProblemQualityHarness.Inspect(r with{RequiresVisuals=true},d);Assert.Contains(report.Checks,c=>c.Id=="visual-data"&&c.State=="fail");Assert.Contains(report.Checks,c=>c.Id=="input"&&c.State=="fail");}
     [Fact]public void ReactionMassContradictionIsCaughtEvenWhenQuestionAndUnknownChange(){
         const string body="""
@@ -57,6 +70,26 @@ STEP 1의 한계 반응물을 고르면?
         Assert.Contains(refreshed.Checks,c=>c.Id=="render"&&c.State=="unknown");
         Assert.DoesNotContain(refreshed.Checks,c=>c.State=="fail");
     }
+    [Fact]public void CachedPartialStageCannotPreserveAiFallbackAsIndependentCalculation(){
+        var r=Heating() with{Body="XY2와 X2Z4의 원자 수 비로 몰수 비를 구한다.",Answer="④ "+Heating().Choices[3]};
+        var old=new QualityReport(QualityReport.CurrentVersion,[
+            new("calculation","독립 수치 검산","pass","AI가 계산을 다시 확인함","ai-deepseek-fallback"),
+            new("render","최종 PNG 대조","pass","PNG 보기와 일치","local-vision-qwen3vl")]);
+        var restored=ProblemQualityHarness.RefreshPartialStage(r with{Quality=old});
+        Assert.Contains(restored.Checks,c=>c.Id=="calculation"&&c.State=="unknown"&&c.Method=="code");
+        Assert.False(restored.CanExport);
+        Assert.Contains(restored.Checks,c=>c.Id=="render"&&c.State=="pass");
+    }
+    [Fact]public void CachedFullTwinCannotPreserveAiFallbackAsIndependentCalculation(){
+        var r=Heating() with{Body="XY2와 X2Z4의 원자 수 비로 몰수 비를 구한다."};
+        var old=new QualityReport(QualityReport.CurrentVersion,[
+            new("calculation","독립 수치 검산","pass","AI가 수치를 검토함","ai-deepseek-fallback"),
+            new("render","최종 PNG 대조","pass","PNG가 읽힘","local-vision-qwen3vl")]);
+        var restored=ProblemQualityHarness.RefreshCompleted(r with{Quality=old});
+        Assert.Contains(restored.Checks,c=>c.Id=="calculation"&&c.State=="unknown"&&c.Method=="code");
+        Assert.False(restored.CanExport);
+        Assert.Contains(restored.Checks,c=>c.Id=="render"&&c.State=="pass");
+    }
     [Fact]public void PartialLimitingReactantProblemRejectsAnswerClueInTable(){
         var draft=new ProblemDraft{Title="기준 · STEP 1",Body=ReactionVariantPlanTests.Source,Answer="",Explanation="한계 반응물을 판별한다.",Steps=["한계 반응물 가정과 여러 실험의 모순 비교"],UseSolutionLogic=true,SkipDeterministicPlan=true,LogicScope="중간 단계"};
         var body="""
@@ -96,7 +129,14 @@ A(g) + 2B(g) → 2C(g) + 2D(g)
         var second=Envelope(new{decisions=new[]{new{id="conditions",upheld=false,evidence="여러 실험 비교는 allowedSteps에 명시되어 있다"}}});
         using var http=new HttpClient(new SequenceReplyHandler(first,second));var reviewed=await new QualityReviewClient(http).ReviewTextAsync(r,draft,"deepseek","https://api.deepseek.com","deepseek-flash","test");
         Assert.Contains(reviewed.Quality!.Checks,c=>c.Id=="conditions"&&c.State=="pass"&&c.Method=="ai-deepseek-appeal");
-        Assert.Contains(reviewed.Quality.Checks,c=>c.Id=="calculation"&&c.State=="pass"&&c.Method=="ai-deepseek-fallback");
+        Assert.Contains(reviewed.Quality.Checks,c=>c.Id=="calculation"&&c.State=="unknown"&&c.Method=="code");
+    }
+    [Fact]public async Task FullTwinFalseMathClaimIsIndependentlyRecheckedWithExplanation(){
+        var r=Heating() with{Explanation="XY₂의 질량은 x+2y이다. x=t, y=2t이므로 5t이다."};
+        var first=Envelope(new{checks=new[]{new{id="language",state="pass",evidence="정상"},new{id="conditions",state="pass",evidence="조건 정상"},new{id="semantic-math",state="fail",evidence="XY₂의 질량은 6t여야 한다"},new{id="visual-semantics",state="pass",evidence="그림 불필요"}}});
+        var second=Envelope(new{decisions=new[]{new{id="semantic-math",upheld=false,evidence="XY₂는 x+2y=t+4t=5t이므로 첫 검토의 6t 주장이 틀렸다"}}});
+        using var http=new HttpClient(new SequenceReplyHandler(first,second));var reviewed=await new QualityReviewClient(http).ReviewTextAsync(r,null,"deepseek","https://api.deepseek.com","deepseek-flash","test");
+        Assert.Contains(reviewed.Quality!.Checks,c=>c.Id=="semantic-math"&&c.State=="pass"&&c.Method=="ai-deepseek-appeal");
     }
     [Fact]public async Task VerifiedReactionTwinIsNotFailedBecauseAllMassesWereScaled(){
         var draft=new ProblemDraft{Title="기준",Body=ReactionVariantPlanTests.Source,Answer="② 2/5",Explanation="검증 풀이",Steps=ReactionMassCheck.Solve(ReactionVariantPlanTests.Source)!.Steps,UseSolutionLogic=true};
@@ -116,6 +156,11 @@ A(g) + 2B(g) → 2C(g) + 2D(g)
 """)));}
     [Fact]public void HugeOrNonPngInputRejected(){Assert.Throws<ArgumentException>(()=>RenderedImageInput.Decode("data:image/jpeg;base64,AAAA"));Assert.Throws<ArgumentException>(()=>RenderedImageInput.Decode("data:image/png;base64,AAAA"));}
     [Fact]public async Task ImageReviewMustReturnObservedChoicesBeforeItCanPass(){var r=Heating();using var http=new HttpClient(new ReplyHandler(Envelope(new{state="pass",evidence="글자 일치",observedChoices=r.Choices.Select((s,i)=>"①②③④⑤"[i]+" "+s.Replace("d1","d₁").Replace("d2","d₂")).ToArray(),observedLabels=Array.Empty<string>()})));Assert.Equal("pass",(await new QualityReviewClient(http).ReviewRenderedAsync(r,[1],false)).State);using var badHttp=new HttpClient(new ReplyHandler(Envelope(new{state="pass",evidence="검사 완료",observedChoices=new[]{"999","2","3","4","5"},observedLabels=Array.Empty<string>()})));Assert.Equal("unknown",(await new QualityReviewClient(badHttp).ReviewRenderedAsync(r,[1],false)).State);using var missingHttp=new HttpClient(new ReplyHandler(Envelope(new{state="pass",evidence="모두 정상"})));Assert.Equal("unknown",(await new QualityReviewClient(missingHttp).ReviewRenderedAsync(r,[1],false)).State);}
+    [Fact]public async Task PassingImageIsNotDowngradedWhenModelListsHeadingsInsteadOfShortDrawingLabels(){
+        var r=Heating() with{Drawings=[new ProblemDrawing("비커 A",1000,300,"용액",[new DrawingElement("text",[100,100],"A",24,false)])]};
+        using var http=new HttpClient(new ReplyHandler(Envelope(new{state="pass",evidence="그림과 보기 5개가 명확히 보임",observedChoices=r.Choices,observedLabels=new[]{"실험 과정"}})));
+        Assert.Equal("pass",(await new QualityReviewClient(http).ReviewRenderedAsync(r,[1],false)).State);
+    }
     private static byte[] Envelope(object content,string finish="stop")=>JsonSerializer.SerializeToUtf8Bytes(new{choices=new[]{new{finish_reason=finish,message=new{content=JsonSerializer.Serialize(content)}}}});
     private sealed class Handler:HttpMessageHandler{protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken t)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));}
     private sealed class CaptureHandler:HttpMessageHandler{public string? Payload;protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken t){Payload=await r.Content!.ReadAsStringAsync(t);return new(HttpStatusCode.ServiceUnavailable);}}
