@@ -52,3 +52,37 @@ test('rule selection: global always, topic rules only for similar problems', () 
   const ids = selectRules([g, chem, bio, pending], material).map((r) => r.id);
   assert.deepEqual(ids, [g.id, chem.id]);
 });
+
+const { proposeStepAlignment, refreshStepCountNote } = require('../server/pipeline');
+const four = [
+  { marker: 'step1', title: 'I의 한계 반응물', work: 'a', result: 'B' },
+  { marker: 'step2', title: '몰수 정리', work: 'b', result: 'n' },
+  { marker: 'step3', title: 'x 구하기', work: 'c', result: 'x=15' },
+  { marker: 'step3', title: 'b 구하기', work: 'd', result: 'b=3' },
+];
+
+test('extra STEPs are merged to the teacher\'s step markers without a model call when markers decide it', async () => {
+  const noModel = { json: () => { throw new Error('should not call the model'); } };
+  const p = await proposeStepAlignment({ llm: noModel }, { steps: four, stepMarkers: ['step1', 'step2', 'step3'] });
+  assert.equal(p.steps.length, 3);
+  assert.equal(p.steps[2].work, 'c\n\nd');
+  assert.equal(p.steps[2].result, 'b=3');
+  assert.equal(p.summary, 'STEP 3+4 → STEP 3');
+  assert.equal(await proposeStepAlignment({ llm: noModel }, { steps: four.slice(0, 3), stepMarkers: ['step1', 'step2', 'step3'] }), null);
+});
+
+test('when markers are missing the grouping comes from the model and is validated', async () => {
+  const steps = four.map((s) => ({ ...s, marker: '' }));
+  const good = { json: async () => ({ data: { groups: [{ steps: [1] }, { steps: [2, 3], title: '몰수와 x' }, { steps: [4] }] } }) };
+  const p = await proposeStepAlignment({ llm: good }, { steps, stepMarkers: [], solutionStepCount: 3 });
+  assert.equal(p.steps[1].title, '몰수와 x');
+  const bad = { json: async () => ({ data: { groups: [{ steps: [1, 3] }, { steps: [2] }, { steps: [4] }] } }) };
+  await assert.rejects(proposeStepAlignment({ llm: bad }, { steps, solutionStepCount: 3 }), /묶지 못했습니다/);
+});
+
+test('the STEP-count warning follows the current steps', () => {
+  const m = refreshStepCountNote({ steps: four, stepMarkers: ['step1', 'step2', 'step3'], uncertainties: ['다른 경고'] });
+  assert.equal(m.uncertainties.length, 2);
+  const fixed = refreshStepCountNote({ ...m, steps: four.slice(0, 3) });
+  assert.deepEqual(fixed.uncertainties, ['다른 경고']);
+});

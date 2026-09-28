@@ -28,6 +28,7 @@ function normalizeMaterial(data) {
   const problem = normalizeProblem(data?.problem);
   if (problem.text.length < 5) throw Object.assign(new Error('문제 본문을 읽지 못했습니다.'), { status: 422 });
   const steps = arr(data?.steps).map((s) => ({
+    marker: str(s?.marker, 40),
     title: str(s?.title, 300), purpose: str(s?.purpose, 1000), technique: str(s?.technique, 1500),
     work: str(s?.work, 8000), result: str(s?.result, 1500),
   })).filter((s) => s.title || s.work).slice(0, 10);
@@ -43,6 +44,83 @@ function normalizeMaterial(data) {
     finalCheck: str(data?.finalCheck, 4000),
     uncertainties: arr(data?.uncertainties).map((u) => str(u, 500)).filter(Boolean).slice(0, 20),
     stepMarkers: arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean).slice(0, 10),
+    solutionStepCount: Number.parseInt(data?.solutionStepCount, 10) || 0,
+  };
+}
+
+// ---------------------------------------------------------------- STEP count vs. the teacher's step markers
+
+const STEP_COUNT_NOTE = /^(해설의 단계 표시는|교정 단계에서 해설의 STEP 표시를)/;
+const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[^0-9]/g, ''), 10) || 0;
+
+/** How many STEPs the teacher's solution has, if the solution shows step markers. */
+function targetStepCount(material) {
+  return material.stepMarkers?.length || material.solutionStepCount || 0;
+}
+
+/** Recomputes the STEP-count warning after the steps changed. */
+function refreshStepCountNote(material) {
+  const target = targetStepCount(material);
+  const notes = (material.uncertainties || []).filter((u) => !STEP_COUNT_NOTE.test(u));
+  if (target && target !== material.steps.length) {
+    notes.push(`해설의 단계 표시는 ${target}개${material.stepMarkers?.length ? `(${material.stepMarkers.join(', ')})` : ''}인데 정리한 STEP은 ${material.steps.length}개입니다.`);
+  }
+  return { ...material, uncertainties: notes };
+}
+
+/** Groups from each step's own marker (step1, step1, step2 …), or null when the markers can't decide. */
+function groupsFromMarkers(steps, target) {
+  const nums = steps.map((s) => markerNumber(s.marker));
+  if (nums.some((n) => n < 1 || n > target)) return null;
+  for (let i = 1; i < nums.length; i++) if (nums[i] < nums[i - 1]) return null;
+  if (new Set(nums).size !== target) return null;
+  return Array.from({ length: target }, (_, g) => ({ steps: nums.map((n, i) => (n === g + 1 ? i + 1 : 0)).filter(Boolean), title: '' }));
+}
+
+function validGroups(groups, stepCount, target) {
+  if (!Array.isArray(groups) || groups.length !== target) return false;
+  const flat = groups.flatMap((g) => g.steps);
+  return flat.length === stepCount && flat.every((n, i) => n === i + 1);
+}
+
+function mergeGroups(steps, groups) {
+  return groups.map((g) => {
+    const part = g.steps.map((n) => steps[n - 1]);
+    if (part.length === 1) return part[0];
+    const join = (k, sep) => part.map((s) => s[k]).filter(Boolean).join(sep);
+    return {
+      marker: part[0].marker,
+      title: str(g.title, 300) || join('title', ' / '),
+      purpose: join('purpose', ' / '),
+      technique: join('technique', '\n'),
+      work: join('work', '\n\n'),
+      result: part[part.length - 1].result || join('result', ' / '),
+    };
+  });
+}
+
+/**
+ * Proposes STEPs matching the teacher's step markers. Uses the markers when they decide the grouping,
+ * otherwise one small text-only model call. Returns null when nothing needs to change.
+ */
+async function proposeStepAlignment({ llm, budget, jobId, signal }, material) {
+  const target = targetStepCount(material);
+  const steps = material.steps;
+  if (!target || target >= steps.length) return null;
+  let groups = groupsFromMarkers(steps, target);
+  if (!groups) {
+    const { data } = await llm.json({
+      purpose: 'regroup', jobId, budget, signal, effort: 'off', maxTokens: 3000,
+      system: prompts.REGROUP_SYSTEM, text: prompts.regroupText(steps, target, material.stepMarkers),
+    });
+    groups = arr(data?.groups).map((g) => ({ steps: arr(g?.steps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0), title: str(g?.title, 300) }));
+  }
+  if (!validGroups(groups, steps.length, target)) {
+    throw Object.assign(new Error('STEP을 해설 단계에 맞게 묶지 못했습니다. 수정 화면에서 "위 STEP과 합치기"로 직접 합쳐 주세요.'), { status: 422 });
+  }
+  return {
+    steps: mergeGroups(steps, groups),
+    summary: groups.map((g, i) => (g.steps.length > 1 ? `STEP ${g.steps.join('+')} → STEP ${i + 1}` : null)).filter(Boolean).join(', '),
   };
 }
 
@@ -125,16 +203,22 @@ async function analyzeMaterial(ctx, material) {
     const { applied, unresolved } = applyFixes(result, arr(check?.fixes).slice(0, 30));
     result.proofread = applied;
     result.uncertainties.push(...unresolved);
-    const counted = Number.parseInt(check?.solutionStepCount, 10) || 0;
-    if (counted && !result.stepMarkers.length && counted !== result.steps.length) result.uncertainties.push(`교정 단계에서 해설의 STEP 표시를 ${counted}개로 셌는데 정리한 STEP은 ${result.steps.length}개입니다. STEP 구분을 확인해 주세요.`);
+    result.solutionStepCount = Number.parseInt(check?.solutionStepCount, 10) || result.solutionStepCount;
   } catch (e) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
     result.uncertainties.push('원본 대조(교정) 단계를 건너뛰었습니다: ' + e.message);
   }
-  if (result.stepMarkers.length && result.stepMarkers.length !== result.steps.length) {
-    result.uncertainties.push(`해설의 단계 표시는 ${result.stepMarkers.length}개(${result.stepMarkers.join(', ')})인데 정리한 STEP은 ${result.steps.length}개입니다. 합치거나 나눠 주세요.`);
+  // The teacher's solution decides the STEP count: merge extra STEPs automatically and say so.
+  try {
+    const proposal = await proposeStepAlignment({ llm, budget, jobId: ctx.job.id, signal }, result);
+    if (proposal) {
+      result.steps = proposal.steps;
+      result.proofread.push(`해설의 단계 표시(${targetStepCount(result)}개)에 맞춰 STEP을 합쳤습니다: ${proposal.summary}`);
+    }
+  } catch (e) {
+    if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError' && e.status !== 422) throw e;
   }
-  return result;
+  return refreshStepCountNote(result);
 }
 
 // ---------------------------------------------------------------- generation
@@ -270,4 +354,4 @@ function pickRules(store, material) {
   return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
 }
 
-module.exports = { applyFixes, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

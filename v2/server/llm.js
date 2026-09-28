@@ -37,8 +37,24 @@ function extractJson(text) {
   if (fence) body = fence[1].trim();
   const start = body.indexOf('{'); const end = body.lastIndexOf('}');
   if (start < 0 || end <= start) throw new LlmFormatError('모델 응답에서 JSON을 찾지 못했습니다.');
-  try { return JSON.parse(body.slice(start, end + 1)); }
+  const json = body.slice(start, end + 1);
+  try { return restoreLatex(JSON.parse(json)); } catch { /* try the LaTeX-escape repair below */ }
+  // Models often forget to double LaTeX backslashes: "\ce{A}" is an invalid JSON escape. Double every
+  // backslash that does not start a valid JSON escape, then parse again.
+  try { return restoreLatex(JSON.parse(json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\'))); }
   catch (e) { throw new LlmFormatError('모델 응답 JSON을 읽지 못했습니다: ' + e.message); }
+}
+
+// "\frac", "\times", "\rightarrow", "\beta" written with a single backslash are *valid* JSON escapes
+// (form feed, tab, carriage return, backspace) and silently corrupt the text. None of those control
+// characters belong in our content, so turn them back into a LaTeX backslash.
+function restoreLatex(value) {
+  if (typeof value === 'string') {
+    return value.replace(/\f/g, '\\f').replace(/\x08/g, '\\b').replace(/\r(?=[a-zA-Z])/g, '\\r').replace(/\t(?=[a-zA-Z])/g, '\\t');
+  }
+  if (Array.isArray(value)) return value.map(restoreLatex);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, restoreLatex(v)]));
+  return value;
 }
 
 const PROVIDERS = {

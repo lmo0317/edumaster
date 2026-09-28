@@ -71,3 +71,14 @@ test('Gemma is reported unavailable when its endpoint is down', async () => {
   const { llm } = llmFor('http://127.0.0.1:9/v1');
   assert.equal((await llm.gemmaStatus(true)).available, false);
 });
+
+test('model JSON with single-backslash LaTeX is repaired instead of failing or corrupting text', () => {
+  const { extractJson } = require('../server/llm');
+  // String.raw: these are the exact characters a model sends.
+  // invalid escape (\c) → repaired
+  assert.deepEqual(extractJson(String.raw`{"title":"$\ce{A}$의 몰질량"}`), { title: String.raw`$\ce{A}$의 몰질량` });
+  // valid-but-wrong escapes (\f, \t, \r, \b) → restored as LaTeX
+  assert.equal(extractJson(String.raw`{"w":"$\frac{1}{2}\times 3 \rightarrow \beta$"}`).w, String.raw`$\frac{1}{2}\times 3 \rightarrow \beta$`);
+  // properly doubled backslashes and real newlines are untouched
+  assert.equal(extractJson(String.raw`{"w":"$\\frac{1}{2}$\n다음 줄"}`).w, String.raw`$\frac{1}{2}$` + '\n다음 줄');
+});

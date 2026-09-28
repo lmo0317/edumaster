@@ -300,7 +300,8 @@
       <div class="row"><h2 style="margin:0">분석 결과</h2><span class="spacer"></span>
         <button class="small" id="edit">수정</button><button class="small" id="reanalyze">다시 분석</button><button class="small danger" id="del">삭제</button></div>
       <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${m.solutionSource === 'ai' ? '<span class="chip warn">해설 없음 → AI가 만든 풀이</span>' : '<span class="chip ok">교사 해설 기반</span>'} <span class="chip">분석: ${PROVIDER_LABEL[m.analyzedWith] || 'DeepSeek'}</span> ${m.teacherEditedAt ? '<span class="chip">교사 수정됨</span>' : ''}</p>
-      ${m.uncertainties?.length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
+      ${m.steps.length > (m.stepMarkers?.length || m.solutionStepCount || 99) ? `<div class="note warn row"><span style="flex:1">해설의 단계 표시는 ${m.stepMarkers?.length || m.solutionStepCount}개인데 정리한 STEP은 ${m.steps.length}개입니다.</span><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : ''}
+      ${m.uncertainties?.filter((u) => !u.startsWith('해설의 단계 표시는')).length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.filter((u) => !u.startsWith('해설의 단계 표시는')).map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
       ${m.proofread?.length ? `<details data-k="proof"><summary>원본 대조로 자동 교정한 곳 ${m.proofread.length}건</summary><div class="inner"><ul class="small">${m.proofread.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div></details>` : ''}
       ${m.annotations?.length ? `<div class="note info"><b>문제 조건에서 뺀 필기·표시</b><ul>${m.annotations.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
       <h3>문제</h3><div class="rich">${rich(m.problem.text)}</div>
@@ -312,6 +313,14 @@
       ${m.techniques?.length ? `<h3>변형 문제에서 재사용할 핵심 기법</h3><div class="rich">${m.techniques.map((t) => `<p class="bullet">• ${rich(t).replace(/^<p>|<\/p>$/g, '')}</p>`).join('')}</div>` : ''}
       ${m.finalCheck ? `<h3>정답 재확인</h3><div class="rich">${rich(m.finalCheck)}</div>` : ''}`;
     $('#edit').addEventListener('click', () => editAnalysis(m));
+    $('#align')?.addEventListener('click', guard(async (e) => {
+      e.target.disabled = true; e.target.textContent = '합치는 중…';
+      try {
+        const saved = await api('POST', `/api/materials/${m.id}/align-steps`);
+        toast(`STEP을 ${saved.steps.length}개로 합쳤습니다.`);
+        renderMaterial({ ...saved, jobs: m.jobs }, false);
+      } finally { if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '해설 단계에 맞춰 합치기'; } }
+    }));
     $('#reanalyze').addEventListener('click', guard(async () => {
       const note = prompt('다시 분석할 때 AI에게 알려 줄 점 (선택)', m.note || '');
       if (note === null) return;

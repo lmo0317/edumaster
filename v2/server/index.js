@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS } = require('./llm');
+const { createLlm, PROVIDERS, Budget } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule } = require('./learning');
@@ -175,7 +175,7 @@ function createApp(options = {}) {
     const body = await readBody(req, 512 * 1024);
     const merged = pipeline.normalizeMaterial({ ...m, ...body, problem: { ...m.problem, ...body.problem } });
     if (!merged.steps.length) throw fail(400, 'STEP이 하나 이상 있어야 합니다.');
-    return store.materials.put({ ...m, ...merged, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() });
+    return store.materials.put(pipeline.refreshStepCountNote({ ...m, ...merged, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() }));
   });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
     getMaterial(id);
@@ -190,6 +190,17 @@ function createApp(options = {}) {
     const provider = await chooseProvider(body.provider);
     store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
     return { jobId: jobs.analyze(m, provider).id };
+  });
+  // Merges extra STEPs to match the teacher's step markers (for materials analyzed before auto-merge).
+  route('POST', /^\/api\/materials\/([a-f0-9]+)\/align-steps$/, async (req, res, [id]) => {
+    const m = getMaterial(id);
+    if (m.status !== 'ready') throw fail(409, '분석이 끝난 자료만 정리할 수 있습니다.');
+    const provider = apiKey || cfg.llmMode === 'mock' ? 'deepseek' : 'gemma';
+    const budget = new Budget({ maxCalls: 2, maxTokens: 30000 });
+    const proposal = await pipeline.proposeStepAlignment({ llm: { json: (args) => llm.json({ ...args, provider }) }, budget, jobId: 'align-' + id }, m);
+    if (!proposal) return m;
+    const saved = pipeline.refreshStepCountNote({ ...m, steps: proposal.steps, proofread: [...(m.proofread || []), `해설의 단계 표시에 맞춰 STEP을 합쳤습니다: ${proposal.summary}`] });
+    return store.materials.put(saved);
   });
   route('GET', /^\/api\/files\/([a-f0-9]+)$/, (req, res, [id]) => {
     const found = store.files.find(id);
@@ -311,6 +322,7 @@ function createApp(options = {}) {
       }
       throw fail(404, '없는 API입니다.');
     } catch (e) {
+      if (e.name === 'LlmFormatError') Object.assign(e, { status: 502, message: 'AI 응답 형식을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.' });
       const status = e.status || 500;
       if (status >= 500) console.error(req.method, url.pathname, e);
       if (!res.headersSent) send(res, status, { error: status >= 500 && !e.status ? '서버 오류가 발생했습니다: ' + e.message : e.message });

@@ -153,3 +153,23 @@ test('model choice: Gemma runs every call of the job and is free; refused while 
     assert.match((await res.json()).error, /Gemma/);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s step markers', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const created = await s.call('POST', '/api/materials', { problemImage: image });
+    await s.waitJob(created.data.jobId);
+    const id = created.data.material.id;
+    const m = (await s.call('GET', `/api/materials/${id}`)).data;
+    const split = [...m.steps.slice(0, 2), { ...m.steps[2], title: '앞부분', marker: '' }, { ...m.steps[2], title: '뒷부분', marker: '' }];
+    const put = await s.call('PUT', `/api/materials/${id}`, { steps: split, stepMarkers: ['step1', 'step2', 'step3'] });
+    assert.equal(put.data.steps.length, 4);
+    assert.ok(put.data.uncertainties.some((u) => u.startsWith('해설의 단계 표시는')));
+    const aligned = await s.call('POST', `/api/materials/${id}/align-steps`);
+    assert.equal(aligned.status, 200, JSON.stringify(aligned.data));
+    assert.equal(aligned.data.steps.length, 3);
+    assert.ok(!aligned.data.uncertainties.some((u) => u.startsWith('해설의 단계 표시는')));
+    assert.ok(aligned.data.proofread.some((p) => p.includes('STEP 3+4')));
+  } finally { await s.close(); }
+});

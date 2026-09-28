@@ -36,7 +36,7 @@ ${FORMAT}
 {"title":"짧은 제목","subject":"화학|생명과학|물리학|지구과학|수학|기타","topic":"단원/유형",
  "problem":{"text":"...","choices":["..."],"answer":2,"figure":""},
  "annotations":["..."],"solutionSource":"provided|ai",
- "steps":[{"title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
+ "steps":[{"marker":"이 STEP이 속한 해설의 단계 표시(예: step1). 표시가 없으면 빈 문자열","title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
  "techniques":["..."],"finalCheck":"...","uncertainties":["..."],
  "stepMarkers":["해설에 인쇄된 단계 표시를 그대로, 예: step1, step2, step3 (없으면 빈 배열)"]}
 - steps의 개수는 stepMarkers의 개수와 같아야 한다 (stepMarkers가 있을 때).
@@ -50,6 +50,21 @@ const PROOFREAD_SYSTEM = `너는 교정자다. 이미지에 인쇄된 원본과,
 - solutionStepCount: 해설 이미지에 인쇄된 step 표시(step1, step2 ...)의 개수. 없으면 0.
 - 오류가 없으면 fixes는 빈 배열.
 반환 JSON: {"fixes":[{"field":"problem.text","wrong":"...","right":"...","reason":"..."}],"solutionStepCount":3}`;
+
+const REGROUP_SYSTEM = `너는 풀이 정리 편집자다. 정리된 풀이 STEP 목록을 교사 해설에 인쇄된 단계 수에 맞게 묶는다.
+- 순서를 바꾸지 않고, 이웃한 STEP끼리만 묶는다. 모든 STEP은 정확히 한 묶음에 들어간다.
+- 각 묶음이 해설의 한 단계와 같은 논리 단위가 되게 한다 (예: 같은 값을 구하는 계산이 둘로 나뉘었다면 합친다).
+- title에는 묶음 전체가 결정하는 것을 한 문장으로 쓴다 (해설의 단계 제목이 있으면 그것).
+반환 JSON: {"groups":[{"steps":[1],"title":"..."},{"steps":[2],"title":"..."},{"steps":[3,4],"title":"..."}]}`;
+
+function regroupText(steps, count, markers) {
+  return [
+    `[해설에 인쇄된 단계 수] ${count}개${markers?.length ? ' (' + markers.join(', ') + ')' : ''}`,
+    '[정리된 STEP 목록]',
+    steps.map((s, i) => `STEP ${i + 1}${s.marker ? ' [' + s.marker + ']' : ''}. ${s.title}\n  결정하는 것: ${s.purpose || ''}\n  결론: ${s.result || ''}`).join('\n'),
+    `\n이 ${steps.length}개 STEP을 ${count}개 묶음으로 나눠 JSON만 반환하라.`,
+  ].join('\n');
+}
 
 function proofreadText(fields) {
   return '[옮겨 적은 필드]\n' + JSON.stringify(fields, null, 1) + '\n\n이미지와 대조해 JSON만 반환하라.';
@@ -230,7 +245,7 @@ function repairText({ material, stage, total, mode, rules, item, failures, blind
 }
 
 module.exports = {
-  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText,
+  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText,
   GENERATE_SYSTEM, generateText,
   SOLVE_SYSTEM, solveText,
   REPAIR_SYSTEM, repairText,
