@@ -316,9 +316,9 @@
         <p class="muted small">수식은 $...$ 안에 LaTeX로, 표는 | 로 구분한 Markdown 표로 적습니다. 여기서 고친 내용이 생성의 기준이 됩니다.</p>
         <div class="cols cols-title"><div><label>제목</label><input type="text" name="title" value="${esc(m.title)}"></div>
           <div><label>과목</label><input type="text" name="subject" value="${esc(m.subject)}"></div><div><label>유형</label><input type="text" name="topic" value="${esc(m.topic)}"></div></div>
-        <label>문제 본문</label><textarea class="code" name="text" rows="12">${esc(m.problem.text)}</textarea>
+        <label>문제 본문</label><textarea class="code" name="text" rows="12" data-preview>${esc(m.problem.text)}</textarea><div class="preview rich"></div>
         <label>그림 설명</label><textarea class="code" name="figure" rows="2">${esc(m.problem.figure)}</textarea>
-        <div class="cols cols-3-1"><div><label>선택지 (한 줄에 하나)</label><textarea class="code" name="choices" rows="5">${esc(m.problem.choices.join('\n'))}</textarea></div>
+        <div class="cols cols-3-1"><div><label>선택지 (한 줄에 하나)</label><textarea class="code" name="choices" rows="5" data-preview="lines">${esc(m.problem.choices.join('\n'))}</textarea><div class="preview rich"></div></div>
           <div><label>정답 번호</label><input type="text" name="answer" value="${m.problem.answer || ''}"></div></div>
         <h3>풀이 STEP</h3>
         <div id="steps">${steps.map((s, i) => `
@@ -328,10 +328,22 @@
             <label>제목</label><input type="text" data-f="title" value="${esc(s.title)}">
             <label>결정하는 것</label><input type="text" data-f="purpose" value="${esc(s.purpose)}">
             <label>핵심 기법</label><textarea class="code" data-f="technique" rows="2">${esc(s.technique)}</textarea>
-            <label>풀이</label><textarea class="code" data-f="work" rows="6">${esc(s.work)}</textarea>
+            <label>풀이</label><textarea class="code" data-f="work" rows="6" data-preview>${esc(s.work)}</textarea><div class="preview rich"></div>
             <label>결론</label><input type="text" data-f="result" value="${esc(s.result)}"></div>`).join('')}</div>
         <button class="small" id="add">STEP 추가</button>
         <label>핵심 기법 (한 줄에 하나)</label><textarea class="code" name="techniques" rows="3">${esc((m.techniques || []).join('\n'))}</textarea>`;
+      // Live preview under LaTeX fields so the teacher sees the rendered result while fixing it.
+      $$('[data-preview]', el).forEach((ta) => {
+        const box = ta.nextElementSibling;
+        const draw = () => {
+          box.innerHTML = ta.dataset.preview === 'lines'
+            ? ta.value.split('\n').filter((l) => l.trim()).map((l, i) => `<p>${circled(i + 1)} ${inlineRich(l)}</p>`).join('')
+            : rich(ta.value);
+        };
+        let timer;
+        ta.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 250); });
+        draw();
+      });
       const sync = () => $$('.edit-step', el).forEach((box) => { const s = steps[box.dataset.i]; $$('[data-f]', box).forEach((f) => { s[f.dataset.f] = f.value; }); });
       $$('.edit-step [data-act]', el).forEach((b) => b.addEventListener('click', () => {
         sync();
@@ -493,7 +505,7 @@
       ${code.values?.length ? `<pre class="values">${esc(code.values.join('\n'))}</pre>` : ''}
       <h3>독립 풀이 ${blind.answer ? chip({ ok: ['정답 일치', 'ok'], bad: ['정답 불일치', 'bad'] }, blind.match ? 'ok' : 'bad') : ''}</h3>
       <p class="muted small">정답과 해설을 보지 않은 별도 호출이 문제만 보고 풀었습니다.</p>
-      <div class="kv"><div class="k">고른 답</div><div>${blind.answer ? circled(blind.answer) : '없음'} ${esc(blind.answerValue || '')} ${blind.confident === false ? '<span class="chip warn">확신 낮음</span>' : ''}</div>
+      <div class="kv"><div class="k">고른 답</div><div>${blind.answer ? circled(blind.answer) : '없음'} ${inlineRich(blind.answerValue || '')} ${blind.confident === false ? '<span class="chip warn">확신 낮음</span>' : ''}</div>
         <div class="k">필요했던 STEP</div><div>${(blind.stepsUsed || []).join(', ') || '-'} ${v.coverage ? `(목표: ${v.coverage.expected.join(', ')}) ${chip({ pass: ['범위 일치', 'ok'], warn: ['범위 확인', 'warn'] }, v.coverage.status)}` : ''}</div></div>
       ${blind.issues?.length ? `<div class="note warn"><b>독립 풀이가 지적한 점</b><ul>${blind.issues.map((i) => `<li>[${esc(i.type)}] ${inlineRich(i.detail)}</li>`).join('')}</ul></div>` : ''}
       ${blind.solution ? `<details data-k="blind"><summary>독립 풀이 전문</summary><div class="inner rich">${rich(blind.solution)}</div></details>` : ''}`;

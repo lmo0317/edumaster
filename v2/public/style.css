@@ -13,7 +13,7 @@
   --bad: #b3261e;
   --bad-soft: #fdecea;
   --radius: 10px;
-  --font: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --font: "Pretendard", "Segoe UI", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -31,7 +31,9 @@ a.btn { display: inline-block; border: 1px solid var(--line); background: var(--
 a.btn:hover { border-color: #b9c2d3; }
 input[type=text], input[type=password], textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
 textarea { min-height: 80px; resize: vertical; }
-textarea.code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+textarea.code { font-family: ui-monospace, Consolas, "Malgun Gothic", monospace; font-size: 13px; }
+.preview { border: 1px dashed var(--line); border-top: 0; border-radius: 0 0 8px 8px; padding: 6px 10px; background: #fbfcfe; font-size: 14px; margin-top: -4px; }
+.preview:empty { display: none; }
 label { display: block; font-weight: 600; margin: 10px 0 4px; font-size: 14px; }
 label.inline { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; margin: 4px 14px 4px 0; }
 
