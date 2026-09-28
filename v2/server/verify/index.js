@@ -24,14 +24,24 @@ function normalize(verification, choiceCount) {
   return { spec: { program, free, answer: String(verification.answer ?? '').trim(), choices, checks } };
 }
 
-function runWorker(spec, timeoutMs = 4000) {
+// The 4-second limit covers the model-written program only. Loading mathjs in a fresh worker can itself take
+// seconds when several checks start at once, so startup has its own, looser limit.
+function runWorker(spec, timeoutMs = 4000, startupMs = 30000) {
   return new Promise((resolve) => {
     const worker = new Worker(path.join(__dirname, 'math-worker.js'), {
-      workerData: spec,
       resourceLimits: { maxOldGenerationSizeMb: 96, maxYoungGenerationSizeMb: 32 },
     });
-    const timer = setTimeout(() => { worker.terminate(); resolve({ ok: false, error: '검산 프로그램이 시간 제한(4초)을 넘었습니다.' }); }, timeoutMs);
-    worker.once('message', (m) => { clearTimeout(timer); worker.terminate(); resolve(m); });
+    let timer = setTimeout(() => { worker.terminate(); resolve({ ok: false, error: '검산 실행기를 시작하지 못했습니다 (서버가 바쁨).' }); }, startupMs);
+    worker.on('message', (m) => {
+      clearTimeout(timer);
+      if (m?.ready) {
+        timer = setTimeout(() => { worker.terminate(); resolve({ ok: false, error: '검산 프로그램이 시간 제한(4초)을 넘었습니다.' }); }, timeoutMs);
+        worker.postMessage(spec);
+        return;
+      }
+      worker.terminate();
+      resolve(m);
+    });
     worker.once('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: '검산 실행 오류: ' + e.message }); });
   });
 }

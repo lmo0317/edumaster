@@ -92,4 +92,6 @@ function run(spec) {
   return { ok: true, mode, trials: results };
 }
 
-parentPort.postMessage(run(workerData));
+// Loading mathjs happens above; tell the parent we are ready so only the program's own run is timed.
+parentPort.once('message', (spec) => parentPort.postMessage(run(spec)));
+parentPort.postMessage({ ready: true });

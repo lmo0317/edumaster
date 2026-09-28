@@ -33,7 +33,7 @@ function createJobs({ store, llm, config }) {
       // Every model call in this job goes to the provider the teacher picked.
       llm: { ...llm, json: (args) => llm.json({ ...args, provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
-      maxRepairs: 1,
+      maxRepairs: 2,
       save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); store.jobs.put(job); extraSave?.(); },
       log(message) { job.log = [...(job.log || []), { t: new Date().toISOString(), message }].slice(-200); ctx.save(); },
     };

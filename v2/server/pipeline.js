@@ -266,6 +266,34 @@ async function blindSolve(ctx, item, material, rules, compareOriginal) {
 
 const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revealed']);
 
+// Table rows as number signatures: "| Ⅰ | $8w$ | $6w$ | ..." -> "8w,6w". Only the first two data cells
+// (the given amounts) are compared, so a row reusing an earlier experiment's inputs is caught.
+function tableRows(text) {
+  const rows = [];
+  for (const line of String(text || '').split('\n')) {
+    if (!/^\s*\|/.test(line) || /^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').slice(1)
+      .map((c) => c.replace(/\\ce\{[^}]*\}|\$|\s|\\,/g, '').replace(/\\(d?frac)\{(\d+)\}\{(\d+)\}/g, '$2/$3'))
+      .filter((c) => /\d/.test(c) && c.length <= 24);
+    if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(',') });
+  }
+  return rows;
+}
+
+/** Experiment rows whose given amounts match the original's or (for the final problem) an earlier problem's. */
+function numbersReused(item, prior, material) {
+  const mine = tableRows(item.problem.text);
+  if (!mine.length) return [];
+  const notes = [];
+  const compare = (text, whose) => {
+    const theirs = new Set(tableRows(text).map((r) => r.sig));
+    for (const r of mine) if (theirs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
+  };
+  compare(material.problem.text, '원본');
+  if (item.stage.kind === 'twin') for (const other of prior) if (other.problem && other.index !== item.index) compare(other.problem.text, `앞 문제(${other.label})`);
+  return [...new Set(notes)];
+}
+
 // The final problem repeating a practice problem (same question, choices or answer) is copying, not integrating.
 function repeatsPrior(item, prior) {
   const norm = (s) => String(s || '').replace(/\s+/g, '').replace(/[.?!]/g, '');
@@ -305,6 +333,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
     ...blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`),
     ...(integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
+    ...numbersReused(item, prior, material),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
@@ -342,7 +371,11 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   // A STEP-range mismatch is the teacher's core requirement, so it also earns the single repair;
   // if it remains afterwards it is only a warning (the blind solver's STEP tagging can be noisy).
   const repairReasons = (c) => [...c.hard, ...c.coverageNotes.map((n) => 'STEP 범위: ' + n), ...c.designNotes.map((n) => '문제 설계: ' + n)];
+  // Up to ctx.maxRepairs repairs, but a further one only when the previous repair changed what is wrong;
+  // the same complaints twice means the model is stuck, so stop and show them to the teacher.
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
+    if (round > 0 && same(repairReasons(check), item.attempts[item.attempts.length - 1].failures)) break;
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
     ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중`);
@@ -389,4 +422,4 @@ function pickRules(store, material) {
   return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
 }
 
-module.exports = { repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
