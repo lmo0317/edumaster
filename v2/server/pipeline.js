@@ -243,11 +243,11 @@ function coverage(stage, stepCount, used) {
   return { status: notes.length ? 'warn' : 'pass', expected, used, notes };
 }
 
-async function blindSolve(ctx, item, material, rules) {
+async function blindSolve(ctx, item, material, rules, compareOriginal) {
   ctx.log(`${item.label}: 독립 풀이로 검토 중`);
   const { data } = await ctx.llm.json({
     purpose: 'solve', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000,
-    system: prompts.SOLVE_SYSTEM, text: prompts.solveText({ item, material, rules }),
+    system: prompts.SOLVE_SYSTEM, text: prompts.solveText({ item, material, rules, compareOriginal }),
   });
   const choiceCount = item.problem.choices.length;
   return {
@@ -258,16 +258,21 @@ async function blindSolve(ctx, item, material, rules) {
     stepsUsed: arr(data?.stepsUsed).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0),
     issues: arr(data?.issues).map((i) => ({ type: str(i?.type, 30) || 'other', detail: str(i?.detail, 600) })).filter((i) => i.detail).slice(0, 10),
     rules: arr(data?.rules).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id),
+    conditions: arr(data?.conditions).map((c) => ({ text: str(c?.text, 300), used: c?.used !== false })).filter((c) => c.text).slice(0, 30),
+    variation: ['numbers-only', 'structural'].includes(data?.variation) ? data.variation : 'n/a',
+    variationNote: str(data?.variationNote, 600),
   };
 }
 
 const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revealed']);
 
-async function verifyItem(ctx, item, material, rules) {
+async function verifyItem(ctx, item, material, rules, mode) {
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
-  const blind = await blindSolve(ctx, item, material, rules);
+  // For an integrated final problem the solver also sees the original, to tell a real redesign from new numbers.
+  const integratedFinal = item.stage.kind === 'twin' && mode === 'integrated';
+  const blind = await blindSolve(ctx, item, material, rules, integratedFinal);
   const hard = [];
   const soft = [];
   if (code.status === 'fail') hard.push(...code.reasons.map((r) => '코드 검산: ' + r));
@@ -279,6 +284,12 @@ async function verifyItem(ctx, item, material, rules) {
   for (const issue of blind.issues) (BLOCKING_ISSUES.has(issue.type) ? hard : soft).push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
   const cov = coverage(item.stage, material.steps.length, blind.stepsUsed);
   soft.push(...cov.notes);
+  // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
+  const designNotes = [
+    ...blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`),
+    ...(integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
+  ];
+  soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
     const judged = blind.rules.find((b) => b.id === r.id);
@@ -286,7 +297,7 @@ async function verifyItem(ctx, item, material, rules) {
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
-    hard, soft, coverageNotes: cov.notes,
+    hard, soft, coverageNotes: cov.notes, designNotes,
     verification: {
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
       blind,
@@ -310,10 +321,10 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];
   item.status = 'verifying'; ctx.save();
 
-  let check = await verifyItem(ctx, item, material, rules);
+  let check = await verifyItem(ctx, item, material, rules, mode);
   // A STEP-range mismatch is the teacher's core requirement, so it also earns the single repair;
   // if it remains afterwards it is only a warning (the blind solver's STEP tagging can be noisy).
-  const repairReasons = (c) => [...c.hard, ...c.coverageNotes.map((n) => 'STEP 범위: ' + n)];
+  const repairReasons = (c) => [...c.hard, ...c.coverageNotes.map((n) => 'STEP 범위: ' + n), ...c.designNotes.map((n) => '문제 설계: ' + n)];
   for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
@@ -325,7 +336,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
     });
     Object.assign(item, normalizeGenerated(fixed));
     item.status = 'verifying'; ctx.save();
-    check = await verifyItem(ctx, item, material, rules);
+    check = await verifyItem(ctx, item, material, rules, mode);
   }
   item.verification = check.verification;
   item.problems = check.hard;
