@@ -345,7 +345,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
-    ctx.log(`${item.label}: 검토에서 발견된 ${check.hard.length}건 수정 중`);
+    ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중`);
     const { data: fixed } = await ctx.llm.json({
       purpose: 'repair', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
       system: prompts.REPAIR_SYSTEM,
