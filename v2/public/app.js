@@ -7,12 +7,22 @@
   let routeToken = 0;
 
   // ------------------------------------------------------------------ api
+  class NetworkError extends Error {}
   async function api(method, url, body) {
-    const res = await fetch(url.replace(/^\//, ''), {
-      method, credentials: 'same-origin',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(url.replace(/^\//, ''), {
+        method, credentials: 'same-origin',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      // "Failed to fetch": no response at all (Wi-Fi drop, sleep, server restart). Work on the server continues.
+      throw new NetworkError('서버와 연결이 잠시 끊겼습니다. 인터넷 연결을 확인하고 다시 시도해 주세요. 진행 중이던 작업은 서버에서 계속됩니다.');
+    }
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new NetworkError('서버가 잠시 응답하지 않습니다 (재시작 중일 수 있음). 잠시 후 다시 시도해 주세요.');
+    }
     let data = null;
     try { data = await res.json(); } catch { /* non-json */ }
     if (res.status === 401 && !url.endsWith('/login')) { showLogin(); throw new Error('로그인이 필요합니다.'); }
@@ -32,6 +42,36 @@
   // Polling naps can be cut short after the user starts something, so the screen updates right away.
   let wake = () => {};
   const nap = (ms) => new Promise((r) => { const t = setTimeout(r, ms); wake = () => { clearTimeout(t); r(); }; });
+
+  // Keeps a screen refreshing until `tick` returns true or the user leaves. A dropped request only shows a
+  // "reconnecting" banner and retries with a growing delay; it never replaces the screen with an error.
+  function connectionBanner(show) {
+    let el = document.getElementById('conn');
+    if (!show) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'conn'; el.className = 'conn';
+      el.textContent = '서버와 연결이 잠시 끊겨 다시 연결하는 중입니다… (작업은 서버에서 계속 진행됩니다)';
+      document.body.appendChild(el);
+    }
+  }
+  async function poll(alive, interval, tick) {
+    let failures = 0;
+    while (alive()) {
+      await nap(failures ? Math.min(30000, 2000 * 2 ** (failures - 1)) : interval());
+      if (!alive()) break;
+      try {
+        const done = await tick();
+        failures = 0; connectionBanner(false);
+        if (done) break;
+      } catch (e) {
+        if (!(e instanceof NetworkError)) { connectionBanner(false); throw e; }
+        failures++; connectionBanner(true);
+      }
+    }
+    if (!alive()) connectionBanner(false);
+  }
+  window.addEventListener('online', () => wake());
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   // Upper bound at DeepSeek Flash peak prices ($0.30 / 1M input, $1.20 / 1M output).
   const cost = (u, provider) => (provider === 'gemma' ? 0 : ((u.paidInput ?? u.input ?? 0) * 0.30 + (u.paidOutput ?? u.output ?? 0) * 1.20) / 1e6);
@@ -143,7 +183,12 @@
       else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
       else { setNav('home'); await homeView(); }
     } catch (e) {
-      if (alive() && e.message !== '로그인이 필요합니다.') view.innerHTML = `<div class="panel"><div class="note bad">${esc(e.message)}</div><a href="#/">처음으로</a></div>`;
+      if (alive() && e.message !== '로그인이 필요합니다.') {
+        view.innerHTML = `<div class="panel"><div class="note bad">${esc(e.message)}</div><div class="row"><button class="primary" id="retry">다시 시도</button><a href="#/">처음으로</a></div></div>`;
+        $('#retry').addEventListener('click', () => route());
+        // After a dropped connection, reload this screen by itself once the network is back.
+        if (e instanceof NetworkError) window.addEventListener('online', () => { if (alive()) route(); }, { once: true });
+      }
     }
   }
   window.addEventListener('hashchange', route);
@@ -253,17 +298,16 @@
     if (m.status === 'analyzing') {
       view.innerHTML = `<h1>${esc(m.title)}</h1><div class="grid2"><div class="panel">${originals(m.images)}</div>
         <div class="panel"><h2>분석 중 ${chip(MAT_STATUS, 'analyzing')}</h2><p class="muted">원본 문제를 옮겨 적고, 해설의 풀이 방법을 STEP으로 정리하고 있습니다. 보통 1~3분 걸립니다. 이 화면을 닫아도 서버에서 계속 진행됩니다.</p><div class="log" id="log"></div></div></div>`;
-      while (alive()) {
-        await sleep(2500);
-        if (!alive()) return;
+      await poll(alive, () => 2500, async () => {
         m = await api('GET', '/api/materials/' + id);
         const job = m.jobs.filter((j) => j.type === 'analyze')[0];
         if (job && $('#log')) {
           const full = await api('GET', '/api/jobs/' + job.id);
           $('#log').innerHTML = (full.log || []).map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('') + `<div>${tokens(full.usage, full.options?.provider)}</div>`;
         }
-        if (m.status !== 'analyzing') return alive() && materialView(id, alive);
-      }
+        return m.status !== 'analyzing';
+      });
+      if (alive()) materialView(id, alive);
       return;
     }
     if (m.status === 'failed' || !m.steps) {
@@ -487,13 +531,11 @@
     };
     await refresh();
     draw();
-    while (alive()) {
-      const active = ['queued', 'running'].includes(job.status) || regenerating.length;
-      await nap(active ? 2000 : 15000);
-      if (!alive()) return;
+    await poll(alive, () => (['queued', 'running'].includes(job.status) || regenerating.length ? 2000 : 15000), async () => {
       await refresh();
       if (alive()) draw();
-    }
+      return false;
+    });
   }
 
   function jobHead(job, regenerating) {

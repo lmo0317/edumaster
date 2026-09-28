@@ -173,3 +173,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .provider span { display: flex; flex-direction: column; }
 .provider small { color: var(--muted); font-size: 12.5px; }
 .provider.off { opacity: .55; cursor: not-allowed; }
+
+/* shown while polling cannot reach the server */
+.conn { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 40; background: var(--warn-soft); color: #5c3b00; border: 1px solid #f0d49a; border-radius: 8px; padding: 8px 14px; font-size: 13.5px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); max-width: calc(100% - 24px); }
