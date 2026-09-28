@@ -116,3 +116,40 @@ test('budget stops a job instead of overspending', async () => {
     assert.equal(resumed.status, 200);
   } finally { await s.close(); }
 });
+
+test('model choice: Gemma runs every call of the job and is free; refused while the PC is off', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const status = (await s.call('GET', '/api/status')).data;
+    assert.equal(status.providers.gemma.available, true);
+    const created = await s.call('POST', '/api/materials', { problemImage: image, provider: 'gemma' });
+    const analysis = await s.waitJob(created.data.jobId);
+    assert.equal(analysis.options.provider, 'gemma');
+    const material = (await s.call('GET', `/api/materials/${created.data.material.id}`)).data;
+    assert.equal(material.analyzedWith, 'gemma');
+    const gen = await s.call('POST', '/api/generations', { materialId: material.id, stages: [{ kind: 'twin' }], provider: 'gemma' });
+    const job = await s.waitJob(gen.data.jobId);
+    assert.equal(job.status, 'done', job.error);
+    assert.equal(job.options.provider, 'gemma');
+    const usage = (await s.call('GET', '/api/usage')).data;
+    assert.ok(usage.all.calls > 0);
+    assert.equal(usage.all.paidInput, 0, 'Gemma calls are not billed');
+  } finally { await s.close(); }
+
+  // Real (non-mock) mode with the Gemma tunnel down: the choice is refused before anything runs.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
+  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  const app = createApp({ dataDir, llmMode: 'deepseek', gemma: { endpoint: 'http://127.0.0.1:9/v1', timeoutMs: 1000, maxOutputTokens: 100 } });
+  await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
+  try {
+    const base = `http://127.0.0.1:${app.server.address().port}`;
+    const login = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'test-code' }) });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const st = await (await fetch(base + '/api/status', { headers: { cookie } })).json();
+    assert.equal(st.providers.gemma.available, false);
+    const res = await fetch(base + '/api/materials', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ problemImage: image, provider: 'gemma' }) });
+    assert.equal(res.status, 409);
+    assert.match((await res.json()).error, /Gemma/);
+  } finally { await new Promise((r) => app.server.close(r)); }
+});

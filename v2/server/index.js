@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm } = require('./llm');
+const { createLlm, PROVIDERS } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule } = require('./learning');
@@ -83,11 +83,27 @@ function createApp(options = {}) {
   const routes = [];
   const route = (method, pattern, handler, { open = false } = {}) => routes.push({ method, pattern, handler, open });
 
-  route('GET', /^\/api\/status$/, (req) => ({
-    version: VERSION, authenticated: Boolean(sessionOf(req)), llm: cfg.llmMode,
-    deepseekConfigured: Boolean(apiKey), visionModel: cfg.deepseek.visionModel, textModel: cfg.deepseek.textModel,
-    activeJobs: jobs.activeCount(),
-  }), { open: true });
+  route('GET', /^\/api\/status$/, async (req) => {
+    const gemma = await llm.gemmaStatus();
+    return {
+      version: VERSION, authenticated: Boolean(sessionOf(req)), llm: cfg.llmMode,
+      deepseekConfigured: Boolean(apiKey), visionModel: cfg.deepseek.visionModel, textModel: cfg.deepseek.textModel,
+      providers: {
+        deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
+        gemma: { label: PROVIDERS.gemma.label, available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
+      },
+      activeJobs: jobs.activeCount(),
+    };
+  }, { open: true });
+
+  // Picks the provider for a new job and refuses Gemma while the PC is off.
+  const chooseProvider = async (value) => {
+    const provider = value === 'gemma' ? 'gemma' : 'deepseek';
+    if (provider === 'gemma' && !(await llm.gemmaStatus(true)).available) {
+      throw fail(409, 'Gemma(PC)가 꺼져 있어 사용할 수 없습니다. DeepSeek을 선택하거나 PC를 켠 뒤 다시 시도해 주세요.');
+    }
+    return provider;
+  };
 
   route('POST', /^\/api\/login$/, async (req, res) => {
     const ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
@@ -131,6 +147,7 @@ function createApp(options = {}) {
   route('POST', /^\/api\/materials$/, async (req) => {
     const body = await readBody(req, Math.ceil(cfg.maxUploadBytes * 1.4));
     if (!body.problemImage) throw fail(400, '문제 이미지를 넣어 주세요.');
+    const provider = await chooseProvider(body.provider);
     const problem = store.files.saveDataUrl(body.problemImage);
     const sameImage = Boolean(body.sameImage);
     const solution = !sameImage && body.solutionImage ? store.files.saveDataUrl(body.solutionImage) : null;
@@ -145,7 +162,7 @@ function createApp(options = {}) {
         views: { problem: views(body.problemViews), solution: solution ? views(body.solutionViews) : [] },
       },
     });
-    const job = jobs.analyze(material);
+    const job = jobs.analyze(material, provider);
     return { material: materialSummary(material), jobId: job.id };
   });
   route('GET', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
@@ -170,8 +187,9 @@ function createApp(options = {}) {
     const m = getMaterial(id);
     if (m.status === 'analyzing') throw fail(409, '이미 분석 중입니다.');
     const body = await readBody(req, 8192);
+    const provider = await chooseProvider(body.provider);
     store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
-    return { jobId: jobs.analyze(m).id };
+    return { jobId: jobs.analyze(m, provider).id };
   });
   route('GET', /^\/api\/files\/([a-f0-9]+)$/, (req, res, [id]) => {
     const found = store.files.find(id);
@@ -190,9 +208,10 @@ function createApp(options = {}) {
     const items = buildItems(stages, material.steps.length, body.perStage);
     const mode = body.mode === 'integrated' ? 'integrated' : 'numeric';
     const effort = ['low', 'high'].includes(body.effort) ? body.effort : 'low';
+    const provider = await chooseProvider(body.provider);
     const rules = pipeline.pickRules(store, material);
     const { images, ...snapshot } = material;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, perStage: items.length / stages.length } });
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {
@@ -241,7 +260,12 @@ function createApp(options = {}) {
   }));
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();
-    const sum = (list) => list.reduce((a, r) => ({ calls: a.calls + 1, input: a.input + (r.input || 0), output: a.output + (r.output || 0), total: a.total + (r.total || 0) }), { calls: 0, input: 0, output: 0, total: 0 });
+    // paidInput/paidOutput exclude Gemma, which runs free on the teacher's PC.
+    const sum = (list) => list.reduce((a, r) => {
+      const paid = r.provider !== 'gemma';
+      return { calls: a.calls + 1, input: a.input + (r.input || 0), output: a.output + (r.output || 0), total: a.total + (r.total || 0),
+        paidInput: a.paidInput + (paid ? r.input || 0 : 0), paidOutput: a.paidOutput + (paid ? r.output || 0 : 0) };
+    }, { calls: 0, input: 0, output: 0, total: 0, paidInput: 0, paidOutput: 0 });
     const day = new Date(Date.now() - 86400000).toISOString();
     return { all: sum(rows), last24h: sum(rows.filter((r) => r.createdAt > day)), recent: rows.slice(0, 50) };
   });

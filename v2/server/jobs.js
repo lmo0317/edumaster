@@ -27,8 +27,11 @@ function createJobs({ store, llm, config }) {
   function context(job, controller, extraSave) {
     const budget = new Budget(job.budget);
     Object.assign(budget, { calls: job.usage?.calls || 0, input: job.usage?.input || 0, output: job.usage?.output || 0, reasoning: job.usage?.reasoning || 0, total: job.usage?.total || 0 });
+    const provider = job.options?.provider === 'gemma' ? 'gemma' : 'deepseek';
     const ctx = {
-      store, llm, job, budget, signal: controller.signal,
+      store, job, budget, signal: controller.signal, provider,
+      // Every model call in this job goes to the provider the teacher picked.
+      llm: { ...llm, json: (args) => llm.json({ ...args, provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       maxRepairs: 1,
       save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); store.jobs.put(job); extraSave?.(); },
@@ -45,7 +48,7 @@ function createJobs({ store, llm, config }) {
         const result = await pipeline.analyzeMaterial(ctx, material);
         const current = store.materials.get(material.id);
         // A title the teacher typed wins over the one the model suggests.
-        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
+        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, analyzedWith: ctx.provider, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
         ctx.log('분석 완료');
       } catch (e) {
         store.materials.put({ ...store.materials.get(material.id), status: 'failed', error: e.message });
@@ -115,7 +118,7 @@ function createJobs({ store, llm, config }) {
   }
 
   return {
-    analyze(material) { return create('analyze', { materialId: material.id, title: material.title }, 'analyze'); },
+    analyze(material, provider = 'deepseek') { return create('analyze', { materialId: material.id, title: material.title, options: { provider } }, 'analyze'); },
     generate({ material, items, rules, options }) {
       return create('generate', { materialId: material.id, title: material.title, material, items, rules, options }, 'generate');
     },
@@ -124,7 +127,7 @@ function createJobs({ store, llm, config }) {
       if ([...running.keys()].some((id) => { const j = store.jobs.get(id); return j?.type === 'regenerate' && j.parentJobId === parent.id; })) {
         throw Object.assign(new Error('이 세트의 다른 문제를 다시 만드는 중입니다.'), { status: 409 });
       }
-      return create('regenerate', { parentJobId: parent.id, itemIndex, feedback, materialId: parent.materialId, title: parent.title }, 'regenerate');
+      return create('regenerate', { parentJobId: parent.id, itemIndex, feedback, materialId: parent.materialId, title: parent.title, options: { provider: parent.options?.provider || 'deepseek', effort: parent.options?.effort } }, 'regenerate');
     },
     resume(job) {
       if (!['interrupted', 'failed', 'cancelled'].includes(job.status) || job.type !== 'generate') throw Object.assign(new Error('이어서 진행할 수 없는 작업입니다.'), { status: 409 });

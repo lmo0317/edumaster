@@ -164,3 +164,12 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drop { min-height: 110px; }
 }
+
+/* model picker */
+.providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.provider { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0; font-weight: 400; cursor: pointer; background: #fff; }
+.provider:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.provider input { margin-top: 4px; }
+.provider span { display: flex; flex-direction: column; }
+.provider small { color: var(--muted); font-size: 12.5px; }
+.provider.off { opacity: .55; cursor: not-allowed; }

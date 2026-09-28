@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const [base, codeFile, problemPath, solutionPath, mode = 'numeric'] = process.argv.slice(2);
+const provider = process.env.EDUMASTER_E2E_PROVIDER || 'deepseek'; // deepseek | gemma
 if (!base || !codeFile || !problemPath) { console.error('usage: node scripts/e2e-real.js <baseUrl> <accessCodeFile> <problem> [solution] [mode]'); process.exit(2); }
 let cookie = '';
 async function call(method, url, body) {
@@ -28,7 +29,7 @@ async function wait(id) {
 
 (async () => {
   await call('POST', '/api/login', { code: fs.readFileSync(codeFile, 'utf8').trim() });
-  const created = await call('POST', '/api/materials', { title: 'e2e 몰질량', problemImage: dataUrl(problemPath), solutionImage: solutionPath ? dataUrl(solutionPath) : null, problemViews: views(problemPath), solutionViews: solutionPath ? views(solutionPath) : [] });
+  const created = await call('POST', '/api/materials', { title: 'e2e 몰질량', problemImage: dataUrl(problemPath), solutionImage: solutionPath ? dataUrl(solutionPath) : null, problemViews: views(problemPath), solutionViews: solutionPath ? views(solutionPath) : [], provider });
   const analysis = await wait(created.jobId);
   console.log('\nanalysis:', analysis.status, analysis.error || '', JSON.stringify(analysis.usage));
   const m = await call('GET', `/api/materials/${created.material.id}`);
@@ -37,7 +38,7 @@ async function wait(id) {
   console.log('PROBLEM TEXT:\n' + m.problem.text);
   console.log('PROOFREAD:', JSON.stringify(m.proofread || []));
   if (mode === 'analyze') return;
-  const gen = await call('POST', '/api/generations', { materialId: m.id, mode });
+  const gen = await call('POST', '/api/generations', { materialId: m.id, mode, provider });
   const job = await wait(gen.jobId);
   console.log('\ngeneration:', job.status, job.error || '', JSON.stringify(job.usage));
   for (const item of job.items) {

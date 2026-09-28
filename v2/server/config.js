@@ -23,6 +23,12 @@ module.exports = {
     textModel: env.EDUMASTER_TEXT_MODEL || 'deepseek-flash',
     timeoutMs: int('EDUMASTER_LLM_TIMEOUT_MS', 420000),
   },
+  // Local Gemma on the teacher's PC, reached through the existing SSH tunnel (same endpoint v1 uses).
+  gemma: {
+    endpoint: (env.EDUMASTER_GEMMA_ENDPOINT || 'http://127.0.0.1:18283/v1').replace(/\/+$/, ''),
+    timeoutMs: int('EDUMASTER_GEMMA_TIMEOUT_MS', 1200000),
+    maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 8192),
+  },
   // Hard limits per job. A job never exceeds either one; it stops and reports instead.
   budget: {
     analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 4),
