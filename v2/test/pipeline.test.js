@@ -86,3 +86,20 @@ test('the STEP-count warning follows the current steps', () => {
   const fixed = refreshStepCountNote({ ...m, steps: four.slice(0, 3) });
   assert.deepEqual(fixed.uncertainties, ['다른 경고']);
 });
+
+test('duplicated marker lists (one per STEP) still resolve to the real step count and merge', async () => {
+  const { targetStepCount } = require('../server/pipeline');
+  const five = [
+    { marker: 'step1', title: 'a', work: '1' }, { marker: 'step1', title: 'b', work: '2' },
+    { marker: 'step2', title: 'c', work: '3' }, { marker: 'step3', title: 'd', work: '4' }, { marker: 'step3', title: 'e', work: '5' },
+  ];
+  const m = { steps: five, stepMarkers: ['step1', 'step1', 'step2', 'step3', 'step3'], solutionStepCount: 3 };
+  assert.equal(targetStepCount(m), 3);
+  const noModel = { json: () => { throw new Error('should not call the model'); } };
+  const p = await proposeStepAlignment({ llm: noModel }, m);
+  assert.equal(p.steps.length, 3);
+  assert.equal(p.summary, 'STEP 1+2 → STEP 1, STEP 4+5 → STEP 3');
+  const view = refreshStepCountNote(m);
+  assert.deepEqual(view.stepMarkers, ['step1', 'step2', 'step3']);
+  assert.equal(view.targetSteps, 3);
+});

@@ -43,7 +43,7 @@ function normalizeMaterial(data) {
     techniques: arr(data?.techniques).map((t) => str(t, 500)).filter(Boolean).slice(0, 12),
     finalCheck: str(data?.finalCheck, 4000),
     uncertainties: arr(data?.uncertainties).map((u) => str(u, 500)).filter(Boolean).slice(0, 20),
-    stepMarkers: arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean).slice(0, 10),
+    stepMarkers: [...new Set(arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean))].slice(0, 10),
     solutionStepCount: Number.parseInt(data?.solutionStepCount, 10) || 0,
   };
 }
@@ -55,17 +55,23 @@ const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[
 
 /** How many STEPs the teacher's solution has, if the solution shows step markers. */
 function targetStepCount(material) {
-  return material.stepMarkers?.length || material.solutionStepCount || 0;
+  // Models sometimes list one marker per STEP ("step1, step1, step2, step3, step3"), so count distinct
+  // markers — from the marker list and from each STEP's own marker — and fall back to the proofreader's count.
+  const distinct = (list) => new Set(list.map((m) => markerNumber(m) || String(m).trim()).filter(Boolean)).size;
+  return Math.max(distinct(material.stepMarkers || []), distinct((material.steps || []).map((s) => s.marker).filter(Boolean)))
+    || material.solutionStepCount || 0;
 }
 
 /** Recomputes the STEP-count warning after the steps changed. */
 function refreshStepCountNote(material) {
   const target = targetStepCount(material);
   const notes = (material.uncertainties || []).filter((u) => !STEP_COUNT_NOTE.test(u));
+  const markers = [...new Set(material.stepMarkers || [])];
   if (target && target !== material.steps.length) {
-    notes.push(`해설의 단계 표시는 ${target}개${material.stepMarkers?.length ? `(${material.stepMarkers.join(', ')})` : ''}인데 정리한 STEP은 ${material.steps.length}개입니다.`);
+    notes.push(`해설의 단계 표시는 ${target}개${markers.length === target ? `(${markers.join(', ')})` : ''}인데 정리한 STEP은 ${material.steps.length}개입니다.`);
   }
-  return { ...material, uncertainties: notes };
+  // targetSteps is what the screen compares against (it offers the one-click merge when STEPs exceed it).
+  return { ...material, stepMarkers: markers, targetSteps: target, uncertainties: notes };
 }
 
 /** Groups from each step's own marker (step1, step1, step2 …), or null when the markers can't decide. */
@@ -90,7 +96,8 @@ function mergeGroups(steps, groups) {
     const join = (k, sep) => part.map((s) => s[k]).filter(Boolean).join(sep);
     return {
       marker: part[0].marker,
-      title: str(g.title, 300) || join('title', ' / '),
+      // The first STEP of a marker group usually carries the solution's printed step heading.
+      title: str(g.title, 300) || part[0].title,
       purpose: join('purpose', ' / '),
       technique: join('technique', '\n'),
       work: join('work', '\n\n'),
@@ -197,7 +204,7 @@ async function analyzeMaterial(ctx, material) {
     result.problem.choices.forEach((c, i) => { fields[`problem.choices[${i}]`] = c; });
     result.steps.forEach((s, i) => { for (const k of ['title', 'work', 'result']) fields[`steps[${i}].${k}`] = s[k]; });
     const { data: check } = await llm.json({
-      purpose: 'proofread', jobId: ctx.job.id, budget, signal, vision: true, effort: 'low', maxTokens: 16000,
+      purpose: 'proofread', jobId: ctx.job.id, budget, signal, vision: true, effort: 'low', maxTokens: 32000,
       system: prompts.PROOFREAD_SYSTEM, text: prompts.proofreadText(fields), images,
     });
     const { applied, unresolved } = applyFixes(result, arr(check?.fixes).slice(0, 30));

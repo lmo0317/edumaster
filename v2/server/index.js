@@ -167,7 +167,8 @@ function createApp(options = {}) {
   });
   route('GET', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
     const m = getMaterial(id);
-    return { ...m, jobs: store.jobs.all().filter((j) => j.materialId === id).map(jobSummary) };
+    const view = m.status === 'ready' && m.steps ? pipeline.refreshStepCountNote(m) : m;
+    return { ...view, jobs: store.jobs.all().filter((j) => j.materialId === id).map(jobSummary) };
   });
   route('PUT', /^\/api\/materials\/([a-f0-9]+)$/, async (req, res, [id]) => {
     const m = getMaterial(id);

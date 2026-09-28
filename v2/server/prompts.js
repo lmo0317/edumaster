@@ -38,7 +38,7 @@ ${FORMAT}
  "annotations":["..."],"solutionSource":"provided|ai",
  "steps":[{"marker":"이 STEP이 속한 해설의 단계 표시(예: step1). 표시가 없으면 빈 문자열","title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
  "techniques":["..."],"finalCheck":"...","uncertainties":["..."],
- "stepMarkers":["해설에 인쇄된 단계 표시를 그대로, 예: step1, step2, step3 (없으면 빈 배열)"]}
+ "stepMarkers":["해설에 인쇄된 단계 표시를 인쇄된 순서대로 한 번씩만, 예: step1, step2, step3 (STEP마다 반복하지 않는다. 없으면 빈 배열)"]}
 - steps의 개수는 stepMarkers의 개수와 같아야 한다 (stepMarkers가 있을 때).
 - problem.text에는 선택지(①~⑤)를 넣지 않는다. 선택지는 choices에만.`;
 
