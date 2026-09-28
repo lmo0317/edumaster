@@ -1,8 +1,8 @@
 **/bin/
 **/obj/
 artifacts/
-tools/cache/
-tools/models/
+**/tools/cache/
+**/tools/models/
 TestResults/
 *.user
 tmp/
@@ -17,3 +17,6 @@ __pycache__/
 .vscode/
 Thumbs.db
 
+
+# v1 build outputs, deploy binaries and browser profiles (never committed before the v1/ move)
+v1/output/

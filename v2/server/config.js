@@ -1,0 +1,36 @@
+'use strict';
+const path = require('node:path');
+
+const root = path.resolve(__dirname, '..');
+const env = process.env;
+const int = (name, fallback) => {
+  const value = Number.parseInt(env[name] ?? '', 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+module.exports = {
+  root,
+  publicDir: path.join(root, 'public'),
+  dataDir: path.resolve(env.EDUMASTER_DATA_DIR || path.join(root, 'data')),
+  host: env.EDUMASTER_HOST || '127.0.0.1',
+  port: int('EDUMASTER_PORT', 18290),
+  // nginx strips "/edumasterv2/" before proxying; the cookie still has to be scoped to it.
+  cookiePath: env.EDUMASTER_COOKIE_PATH || '/',
+  llmMode: env.EDUMASTER_LLM || 'deepseek', // "deepseek" | "mock"
+  deepseek: {
+    baseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+    visionModel: env.EDUMASTER_VISION_MODEL || 'deepseek-flash',
+    textModel: env.EDUMASTER_TEXT_MODEL || 'deepseek-flash',
+    timeoutMs: int('EDUMASTER_LLM_TIMEOUT_MS', 420000),
+  },
+  // Hard limits per job. A job never exceeds either one; it stops and reports instead.
+  budget: {
+    analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 4),
+    analyzeTokens: int('EDUMASTER_ANALYZE_TOKENS', 120000),
+    generateCalls: int('EDUMASTER_GENERATE_CALLS', 24),
+    generateTokens: int('EDUMASTER_GENERATE_TOKENS', 600000),
+    regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 5),
+    regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 150000),
+  },
+  maxUploadBytes: int('EDUMASTER_MAX_UPLOAD_BYTES', 14 * 1024 * 1024),
+};

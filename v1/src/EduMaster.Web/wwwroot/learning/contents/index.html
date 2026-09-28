@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EduMaster · 학습 내용 보기</title><link rel="stylesheet" href="../learning.css?v=9"><link rel="stylesheet" href="contents.css?v=1"><link rel="stylesheet" href="../../ui.css?v=20260928_v2">
+</head>
+<body class="em-app app-contents">
+<header class="app-header"><div class="app-header-inner"><a class="app-brand" href="../../" aria-label="EduMaster 메인으로"><span class="app-logo" aria-hidden="true">E</span><span class="app-brand-text"><strong>EduMaster</strong><small>교사용 문제 제작 스튜디오</small></span></a><nav class="app-nav" aria-label="주요 메뉴"><a href="../../">메인</a><a href="../../create/">문제 생성</a><a href="../../learning/" aria-current="page">피드백</a><a href="../../system/">시스템 설명</a></nav></div></header>
+<main class="app-content">
+ <div class="intro"><a class="back-link" href="../">← 피드백으로 돌아가기</a><p class="eyebrow">승인된 학습 자료</p><h1>학습 내용 보기</h1><p>선생님이 <strong>반영 승인</strong>한 피드백만 표시합니다. 풀이 방식 선호는 관련 있을 때 참고하고, 나머지 피드백은 유사한 문제를 만들 때 참고합니다. 모델 자체를 재학습한 기록은 아닙니다.</p></div>
+ <section id="login" class="card login" hidden><h2>비밀번호 확인</h2><form id="login-form"><input id="password" type="password" autocomplete="current-password" placeholder="접속 비밀번호" required><button>학습 내용 보기</button></form><p id="login-error" role="alert"></p></section>
+ <section id="workspace" hidden><div class="contents-toolbar"><strong id="count">승인된 내용 0개</strong><button id="refresh" type="button">새로고침</button></div><p id="status" role="status"></p><div class="card filter-card"><label for="category">종류</label><select id="category"><option value="">전체</option><option value="method">풀이 방식·선생님 선호</option><option value="condition">문제 조건</option><option value="answer">정답</option><option value="solution">해설·계산</option><option value="visual">표·그림</option><option value="wording">문장·표현</option><option value="other">기타</option></select><label for="search">내용 검색</label><input id="search" type="search" placeholder="문제 제목이나 학습 내용 검색"></div><div id="contents-list" class="contents-list"></div></section>
+</main>
+<footer class="app-footer"><span>EduMaster</span><span>문제 생성 · 교사 검토 · 피드백 반영</span></footer><script src="contents.js?v=1"></script></body></html>

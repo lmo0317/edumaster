@@ -1,0 +1,19 @@
+{
+  "name": "edumaster-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "EduMaster v2 — 교사 풀이 로직을 보존하는 단계별 변형 문제 생성기",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "EDUMASTER_LLM=mock node server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "katex": "^0.16.47",
+    "mathjs": "^13.2.3"
+  }
+}
