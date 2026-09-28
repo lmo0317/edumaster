@@ -266,7 +266,21 @@ async function blindSolve(ctx, item, material, rules, compareOriginal) {
 
 const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revealed']);
 
-async function verifyItem(ctx, item, material, rules, mode) {
+// The final problem repeating a practice problem (same question, choices or answer) is copying, not integrating.
+function repeatsPrior(item, prior) {
+  const norm = (s) => String(s || '').replace(/\s+/g, '').replace(/[.?!]/g, '');
+  const question = (p) => norm(p.text.split('\n').filter((l) => l.trim()).pop());
+  const choiceSet = (p) => p.choices.map(norm).sort().join('|');
+  const notes = [];
+  for (const other of prior) {
+    if (!other.problem || other.index === item.index) continue;
+    if (question(other.problem) === question(item.problem)) notes.push(`앞 문제(${other.label})와 질문이 같습니다.`);
+    if (item.problem.choices.length && choiceSet(other.problem) === choiceSet(item.problem)) notes.push(`앞 문제(${other.label})와 선택지가 같습니다.`);
+  }
+  return notes;
+}
+
+async function verifyItem(ctx, item, material, rules, mode, prior = []) {
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
@@ -283,11 +297,14 @@ async function verifyItem(ctx, item, material, rules, mode) {
   }
   for (const issue of blind.issues) (BLOCKING_ISSUES.has(issue.type) ? hard : soft).push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
   const cov = coverage(item.stage, material.steps.length, blind.stepsUsed);
+  // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
+  if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
   soft.push(...cov.notes);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
     ...blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`),
     ...(integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
+    ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
@@ -321,7 +338,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];
   item.status = 'verifying'; ctx.save();
 
-  let check = await verifyItem(ctx, item, material, rules, mode);
+  let check = await verifyItem(ctx, item, material, rules, mode, prior);
   // A STEP-range mismatch is the teacher's core requirement, so it also earns the single repair;
   // if it remains afterwards it is only a warning (the blind solver's STEP tagging can be noisy).
   const repairReasons = (c) => [...c.hard, ...c.coverageNotes.map((n) => 'STEP 범위: ' + n), ...c.designNotes.map((n) => '문제 설계: ' + n)];
@@ -336,7 +353,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
     });
     Object.assign(item, normalizeGenerated(fixed));
     item.status = 'verifying'; ctx.save();
-    check = await verifyItem(ctx, item, material, rules, mode);
+    check = await verifyItem(ctx, item, material, rules, mode, prior);
   }
   item.verification = check.verification;
   item.problems = check.hard;
@@ -372,4 +389,4 @@ function pickRules(store, material) {
   return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
 }
 
-module.exports = { applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

@@ -56,7 +56,9 @@ function solved(text) {
   const lines = text.split('\n');
   const choices = lines.filter((l) => /^\d\) /.test(l)).map((l) => l.slice(3).trim());
   const index = choices.indexOf(String(a + b)) + 1;
-  return { solution: `$${a}+${b}=${a + b}$`, answer: index, answerValue: String(a + b), confident: true, stepsUsed: [1], issues: [], rules: [] };
+  // Report every STEP listed in the reference list as used (a real solver of the final problem would).
+  const stepsUsed = [...text.matchAll(/^STEP (\d+)\./gm)].map((m) => Number(m[1]));
+  return { solution: `$${a}+${b}=${a + b}$`, answer: index, answerValue: String(a + b), confident: true, stepsUsed, issues: [], rules: [] };
 }
 
 function mock(messages) {
