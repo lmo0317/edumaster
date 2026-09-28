@@ -40,6 +40,7 @@
   const JOB_STATUS = { queued: ['대기 중', 'run'], running: ['진행 중', 'run'], done: ['완료', 'ok'], failed: ['실패', 'bad'], cancelled: ['취소됨', ''], interrupted: ['중단됨', 'warn'] };
   const ITEM_STATUS = { pending: ['대기', ''], generating: ['설계 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['수정 중', 'run'], passed: ['검증 통과', 'ok'], warning: ['통과 · 확인할 점', 'warn'], needs_review: ['교사 검토 필요', 'bad'], failed: ['실패', 'bad'] };
   const MAT_STATUS = { analyzing: ['분석 중', 'run'], ready: ['분석 완료', 'ok'], failed: ['분석 실패', 'bad'] };
+  const inlineRich = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
   const chip = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
   const TARGET = { problem: '문제', solution: '해설', design: '설계', all: '전체' };
   const KIND = { do: '할 것', dont: '하지 말 것', feedback: '피드백' };
@@ -156,7 +157,7 @@
       <div class="panel">
         <h2>1. 원본 문제와 해설 넣기</h2>
         <p class="muted small">문제 이미지는 필수, 해설 이미지는 선택입니다. 해설을 넣으면 그 풀이 방법(보조 문자, 가정·모순, 비교 순서)을 그대로 STEP으로 정리하고, 없으면 AI가 먼저 풀이를 만듭니다. 이미지를 끌어 놓거나 클릭하거나 Ctrl+V로 붙여 넣으세요.</p>
-        <div class="grid2" style="grid-template-columns:1fr 1fr">
+        <div class="cols cols-2">
           <div><label>문제 이미지 (필수)</label><div class="drop" id="drop-problem"><span class="muted">문제 이미지를 넣어 주세요</span></div></div>
           <div><label>해설 이미지 (선택)</label><div class="drop" id="drop-solution"><span class="muted">교사 해설 이미지 (선택)</span></div>
             <label class="inline"><input type="checkbox" id="same"> 한 이미지에 문제와 해설이 함께 있음</label></div>
@@ -286,8 +287,8 @@
         <button class="small" id="edit">수정</button><button class="small" id="reanalyze">다시 분석</button><button class="small danger" id="del">삭제</button></div>
       <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${m.solutionSource === 'ai' ? '<span class="chip warn">해설 없음 → AI가 만든 풀이</span>' : '<span class="chip ok">교사 해설 기반</span>'} ${m.teacherEditedAt ? '<span class="chip">교사 수정됨</span>' : ''}</p>
       ${m.uncertainties?.length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
-      ${m.proofread?.length ? `<details data-k="proof"><summary>원본 대조로 자동 교정한 곳 ${m.proofread.length}건</summary><div class="inner"><ul class="small">${m.proofread.map((u) => `<li>${esc(u)}</li>`).join('')}</ul></div></details>` : ''}
-      ${m.annotations?.length ? `<div class="note info"><b>문제 조건에서 뺀 필기·표시</b><ul>${m.annotations.map((u) => `<li>${esc(u)}</li>`).join('')}</ul></div>` : ''}
+      ${m.proofread?.length ? `<details data-k="proof"><summary>원본 대조로 자동 교정한 곳 ${m.proofread.length}건</summary><div class="inner"><ul class="small">${m.proofread.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div></details>` : ''}
+      ${m.annotations?.length ? `<div class="note info"><b>문제 조건에서 뺀 필기·표시</b><ul>${m.annotations.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
       <h3>문제</h3><div class="rich">${rich(m.problem.text)}</div>
       ${m.problem.figure ? `<div class="note info"><b>그림 설명</b><div class="rich">${rich(m.problem.figure)}</div></div>` : ''}
       ${choicesHtml(m.problem)}
@@ -313,11 +314,11 @@
       el.innerHTML = `
         <div class="row"><h2 style="margin:0">분석 결과 수정</h2><span class="spacer"></span><button class="small" id="cancel">취소</button><button class="small primary" id="save">저장</button></div>
         <p class="muted small">수식은 $...$ 안에 LaTeX로, 표는 | 로 구분한 Markdown 표로 적습니다. 여기서 고친 내용이 생성의 기준이 됩니다.</p>
-        <div class="grid2" style="grid-template-columns:2fr 1fr 1fr"><div><label>제목</label><input type="text" name="title" value="${esc(m.title)}"></div>
+        <div class="cols cols-title"><div><label>제목</label><input type="text" name="title" value="${esc(m.title)}"></div>
           <div><label>과목</label><input type="text" name="subject" value="${esc(m.subject)}"></div><div><label>유형</label><input type="text" name="topic" value="${esc(m.topic)}"></div></div>
         <label>문제 본문</label><textarea class="code" name="text" rows="12">${esc(m.problem.text)}</textarea>
         <label>그림 설명</label><textarea class="code" name="figure" rows="2">${esc(m.problem.figure)}</textarea>
-        <div class="grid2" style="grid-template-columns:3fr 1fr"><div><label>선택지 (한 줄에 하나)</label><textarea class="code" name="choices" rows="5">${esc(m.problem.choices.join('\n'))}</textarea></div>
+        <div class="cols cols-3-1"><div><label>선택지 (한 줄에 하나)</label><textarea class="code" name="choices" rows="5">${esc(m.problem.choices.join('\n'))}</textarea></div>
           <div><label>정답 번호</label><input type="text" name="answer" value="${m.problem.answer || ''}"></div></div>
         <h3>풀이 STEP</h3>
         <div id="steps">${steps.map((s, i) => `
@@ -373,11 +374,11 @@
       <label>만들 문제</label>
       <div>${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 누적 연습`}</label>`).join('')}
         <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 쌍둥이 문제 (STEP 1~${n} 전체)</label></div>
-      ${focus.length ? `<div>${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k} 집중 연습 (STEP 1~${k - 1} 결과를 조건으로 제공)</label>`).join('')}</div>` : ''}
+      ${focus.length ? `<div>${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k} 집중 연습 (${k === 2 ? 'STEP 1' : `STEP 1~${k - 1}`} 결과를 조건으로 제공)</label>`).join('')}</div>` : ''}
       <label>최종 문제 방식</label>
       <div><label class="inline"><input type="radio" name="mode" value="numeric" checked> 단순 수치 변형 — 원본과 같은 구조, 새 수치</label>
         <label class="inline"><input type="radio" name="mode" value="integrated"> 통합 변형 — 앞 연습 문제의 아이디어를 실제로 엮은 새 구조</label></div>
-      <div class="grid2" style="grid-template-columns:1fr 1fr">
+      <div class="cols cols-2">
         <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
         <div><label>모델 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
       </div>
@@ -466,7 +467,7 @@
         <span class="spacer"></span>
         ${['queued', 'running'].includes(job.status) ? '<button id="cancel" class="danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="primary">남은 문제 이어서 만들기</button>' : ''}
-        <a href="report.html?job=${job.id}" target="_blank" rel="noopener"><button>학습지·PDF 보기</button></a>
+        <a class="btn" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF 보기</a>
         ${['queued', 'running'].includes(job.status) ? '' : '<button id="delete" class="danger small">세트 삭제</button>'}
       </div>
       <details data-k="log"><summary>진행 기록 (${(job.log || []).length})</summary><div class="inner"><div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div></div></details>
@@ -494,7 +495,7 @@
       <p class="muted small">정답과 해설을 보지 않은 별도 호출이 문제만 보고 풀었습니다.</p>
       <div class="kv"><div class="k">고른 답</div><div>${blind.answer ? circled(blind.answer) : '없음'} ${esc(blind.answerValue || '')} ${blind.confident === false ? '<span class="chip warn">확신 낮음</span>' : ''}</div>
         <div class="k">필요했던 STEP</div><div>${(blind.stepsUsed || []).join(', ') || '-'} ${v.coverage ? `(목표: ${v.coverage.expected.join(', ')}) ${chip({ pass: ['범위 일치', 'ok'], warn: ['범위 확인', 'warn'] }, v.coverage.status)}` : ''}</div></div>
-      ${blind.issues?.length ? `<div class="note warn"><b>독립 풀이가 지적한 점</b><ul>${blind.issues.map((i) => `<li>[${esc(i.type)}] ${esc(i.detail)}</li>`).join('')}</ul></div>` : ''}
+      ${blind.issues?.length ? `<div class="note warn"><b>독립 풀이가 지적한 점</b><ul>${blind.issues.map((i) => `<li>[${esc(i.type)}] ${inlineRich(i.detail)}</li>`).join('')}</ul></div>` : ''}
       ${blind.solution ? `<details data-k="blind"><summary>독립 풀이 전문</summary><div class="inner rich">${rich(blind.solution)}</div></details>` : ''}`;
   }
 
@@ -510,15 +511,15 @@
       <div class="body">
         ${item.status === 'failed' ? `<div class="note bad">${esc(item.error || '생성하지 못했습니다.')}</div>` : ''}
         ${!p ? `<p class="muted">${running ? '만드는 중입니다…' : item.status === 'pending' ? '차례를 기다리는 중입니다.' : ''}</p>` : `
-          ${item.problems?.length ? `<div class="note bad"><b>교사 검토 필요 — 자동 검증에서 해결되지 않은 점</b><ul>${item.problems.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-          ${item.warnings?.length ? `<div class="note warn"><b>확인할 점</b><ul>${item.warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+          ${item.problems?.length ? `<div class="note bad"><b>교사 검토 필요 — 자동 검증에서 해결되지 않은 점</b><ul>${item.problems.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul></div>` : ''}
+          ${item.warnings?.length ? `<div class="note warn"><b>확인할 점</b><ul>${item.warnings.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul></div>` : ''}
           <div class="rich">${rich(p.text)}</div>
           ${p.figure ? `<div class="note info"><b>그림</b><div class="rich">${rich(p.figure)}</div></div>` : ''}
           ${choicesHtml(p)}`}
       </div>
       ${p ? `
       <details data-k="sol" open><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
-        ${(item.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${esc(s.title)}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
+        ${(item.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${rich(s.title).replace(/^<p>|<\/p>$/g, '')}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
         ${item.solution?.summary ? `<p><b>정리</b> ${rich(item.solution.summary).replace(/^<p>|<\/p>$/g, '')}</p>` : ''}</div></details>
       <details data-k="design"><summary>설계 의도</summary><div class="inner"><div class="rich">${rich(item.designNote || '')}</div><p class="small muted">사용한 원본 STEP: ${(item.usesSteps || []).join(', ')}</p></div></details>
       <details data-k="verify"><summary>검증 상세</summary><div class="inner">${verificationHtml(v)}</div></details>
@@ -526,7 +527,7 @@
       ${item.history?.length ? `<details data-k="hist"><summary>이전 버전 (${item.history.length})</summary><div class="inner">${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 피드백: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}</div></details>` : ''}
       ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
       <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 / 다시 만들기</summary><div class="inner">
-        <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="cols cols-3">
           <div><label>대상</label><select name="target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
           <div><label>종류</label><select name="kind"><option value="feedback">피드백</option><option value="do">앞으로 할 것</option><option value="dont">앞으로 하지 말 것</option></select></div>
           <div><label>적용 범위</label><select name="scope"><option value="topic">비슷한 유형의 문제에 적용</option><option value="global">모든 문제에 항상 적용</option></select></div>
@@ -568,7 +569,7 @@
         ${r.status !== 'rejected' ? '<button class="small" data-act="reject">반려</button>' : ''}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div></div>`;
     view.innerHTML = `<h1>지침·피드백</h1>
       <div class="panel"><h2>전체 생성 지침 추가</h2><p class="muted small">모든 문제 생성에 항상 붙습니다. 각 문제 결과의 '교사 지침 적용'에서 어떻게 지켰는지 확인할 수 있습니다.</p>
-        <div class="grid2" style="grid-template-columns:1fr 1fr"><div><label>종류</label><select id="nk"><option value="do">할 것</option><option value="dont">하지 말 것</option></select></div>
+        <div class="cols cols-2"><div><label>종류</label><select id="nk"><option value="do">할 것</option><option value="dont">하지 말 것</option></select></div>
           <div><label>대상</label><select id="nt"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계</option></select></div></div>
         <label>내용</label><textarea id="ntext" placeholder="예: 원본 해설이 보조 문자를 쓰면 변형 해설에서도 같은 문자와 순서를 쓴다."></textarea>
         <div class="row" style="margin-top:8px"><span class="spacer"></span><button class="primary" id="add">추가</button></div></div>

@@ -29,7 +29,7 @@
       ${withOriginal ? `
         <h2>원본 문제</h2>
         <img class="orig-img" src="api/files/${m.images.problem}" alt="원본 문제">
-        ${m.images.solution && !m.images.sameImage ? `<img class="orig-img" src="api/files/${m.images.solution}" alt="원본 해설">` : ''}
+        ${m.images.solution && !m.images.sameImage ? `<h2>원본 해설</h2><img class="orig-img" src="api/files/${m.images.solution}" alt="원본 해설">` : ''}
         <h2>원본 풀이 로직 — STEP ${m.steps.length}개</h2>
         ${m.steps.map((s, i) => `<div class="step"><div class="head"><span class="badge">STEP ${i + 1}</span>${strip(rich(s.title))}</div>
           ${s.technique ? `<div class="meta"><b>핵심 기법</b> ${strip(rich(s.technique))}</div>` : ''}<div class="rich">${rich(s.work)}</div>
@@ -42,7 +42,7 @@
         ${choices(i.problem)}</div>`).join('')}
       ${withSolution ? `<div class="page-break"></div><h2>정답과 해설</h2>
         ${items.map((i, n) => `<div class="ans"><div class="qhead">${n + 1}. 정답 ${i.problem.answer ? circled(i.problem.answer) : ''} <span class="tag muted small">${esc(i.label)}</span>${flag(i)}</div>
-          ${(i.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">STEP ${s.step}</span>` : ''}${esc(s.title)}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
+          ${(i.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">STEP ${s.step}</span>` : ''}${strip(rich(s.title))}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
           ${i.solution?.summary ? `<p><b>정리</b> ${strip(rich(i.solution.summary))}</p>` : ''}</div>`).join('')}` : ''}`;
     document.title = `${m.title} 학습지`;
   }

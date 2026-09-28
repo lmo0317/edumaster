@@ -43,7 +43,9 @@ function createJobs({ store, llm, config }) {
       if (!material) throw new Error('자료를 찾지 못했습니다.');
       try {
         const result = await pipeline.analyzeMaterial(ctx, material);
-        store.materials.put({ ...store.materials.get(material.id), ...result, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
+        const current = store.materials.get(material.id);
+        // A title the teacher typed wins over the one the model suggests.
+        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
         ctx.log('분석 완료');
       } catch (e) {
         store.materials.put({ ...store.materials.get(material.id), status: 'failed', error: e.message });

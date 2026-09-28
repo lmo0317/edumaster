@@ -138,6 +138,7 @@ function createApp(options = {}) {
     const material = store.materials.put({
       id: newId(), createdAt: new Date().toISOString(), status: 'analyzing',
       title: String(body.title || '').trim().slice(0, 120) || '새 문제',
+      titleFromUser: Boolean(String(body.title || '').trim()),
       note: String(body.note || '').trim().slice(0, 1000),
       images: {
         problem: problem.id, solution: sameImage ? problem.id : solution?.id || null, sameImage,

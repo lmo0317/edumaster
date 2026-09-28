@@ -3,8 +3,16 @@
 (function () {
   const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // Korean inside a formula would be typeset as math italics with its spaces dropped
+  // ("전체기체의양"); wrap each Korean phrase in \text{} so it keeps the body font and spacing.
+  // "\ " (escaped space) between Korean words is folded into the same \text{} run.
+  function hangulAsText(tex) {
+    return tex.replace(/[가-힣]+(?:(?:\s|\\ )+[가-힣]+)*/g, (run) => `\\text{${run.replace(/\\ /g, ' ')}}`);
+  }
+
   function renderMath(tex, display) {
     if (!window.katex) return escape(display ? `$$${tex}$$` : `$${tex}$`);
+    tex = hangulAsText(tex);
     try {
       return window.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'html' });
     } catch { return escape(tex); }
