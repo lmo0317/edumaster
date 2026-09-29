@@ -114,3 +114,8 @@ test('choices that name two values ("3w, 12w") are compared as pairs', async () 
   const wrong = await codeCheck({ program, answer: 'ans', free: ['w'], choices }, { answer: 4, choiceCount: 5 });
   assert.equal(wrong.status, 'fail');
 });
+
+test('C-style && and || in checks are read as and / or', async () => {
+  const r = await codeCheck({ program: ['a = 4', 'b = 12', 'ans = 3'], answer: 'ans', choices: ['1', '2', '3', '4', '5'], checks: [{ expr: 'a == 4 && b == 12', desc: 'both' }, { expr: 'a == 5 || b == 12', desc: 'either' }] }, { answer: 3, choiceCount: 5 });
+  assert.equal(r.status, 'pass', r.reasons.join());
+});

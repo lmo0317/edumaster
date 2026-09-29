@@ -35,7 +35,8 @@ function normalize(verification, choiceCount) {
   if (!verification || typeof verification !== 'object') return { error: '검산 프로그램이 없습니다.' };
   const list = (v) => (Array.isArray(v) ? v : []);
   // Python-style True/False (Gemma writes them) are mathjs true/false.
-  const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
+  // C-style && and || (Qwen writes them) are mathjs and / or.
+  const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/&&/g, ' and ').replace(/\|\|/g, ' or ');
   const program = list(verification.program).flatMap((s) => assignments(logic(s).trim())).filter(Boolean);
   if (!program.length) return { error: '검산 프로그램이 비어 있습니다.' };
   if (program.length > MAX_LINES) return { error: `검산 프로그램이 너무 깁니다 (${program.length}줄).` };
