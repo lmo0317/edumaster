@@ -27,7 +27,11 @@ module.exports = {
   gemma: {
     endpoint: (env.EDUMASTER_GEMMA_ENDPOINT || 'http://127.0.0.1:18283/v1').replace(/\/+$/, ''),
     timeoutMs: int('EDUMASTER_GEMMA_TIMEOUT_MS', 1200000),
-    maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 12288),
+    // The PC model now runs with a 49k context (v1/scripts/start-local-model.ps1), so answers can be longer.
+    maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 24576),
+    // Thinking on for design and review calls (a quick check: without it Gemma 12B got a 1:3 limiting-reagent
+    // question wrong, with it right). Reading calls stay without thinking.
+    thinking: env.EDUMASTER_GEMMA_THINKING !== '0',
   },
   // Claude over the Anthropic API (key in data/anthropic-api-key.txt, never in the repo).
   claude: {

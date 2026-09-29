@@ -70,6 +70,9 @@ async function main() {
     }
   };
   await call('POST', '/api/login', { code: 'eval' });
+  // The PC provider serves whichever local model is loaded; keep its name so runs of different models differ.
+  const status = await call('GET', '/api/status');
+  const modelOf = (provider) => (provider === 'gemma' ? status.providers?.gemma?.model || 'gemma' : provider);
 
   const results = [];
   for (const name of caseNames) {
@@ -78,7 +81,7 @@ async function main() {
     const solution = spec.solution ? path.join(casesDir, name, spec.solution) : null;
     for (const provider of providers) {
       const started = Date.now();
-      const row = { case: name, title: spec.title, provider, stage, mode };
+      const row = { case: name, title: spec.title, provider, model: modelOf(provider), stage, mode };
       process.stdout.write(`\n[${name} · ${provider}] 분석 중…`);
       try {
         const created = await call('POST', '/api/materials', {
@@ -133,7 +136,7 @@ function report(results) {
     `- 프롬프트 버전: ${PROMPT_VERSION}`,
     `- 학습 상태(RAG): ${learning.used === 'none' ? '끔 (--no-learning)' : `교사 지침 ${learning.rules}개 · 판독 교정 ${learning.corrections}개`}`, '',
     '| 사례 | 모델 | 분석 | 생성 | 분석 비용 | 생성 비용 | 시간 |', '|---|---|---|---|---|---|---|',
-    ...results.map((r) => `| ${r.case} | ${r.provider} | ${pct(r.analysis)} | ${pct(r.generation)} | ${usageText(r.analysisUsage, r.provider)} | ${usageText(r.generationUsage, r.provider)} | ${r.minutes}분 |`),
+    ...results.map((r) => `| ${r.case} | ${r.model && r.model !== r.provider ? r.model : r.provider} | ${pct(r.analysis)} | ${pct(r.generation)} | ${usageText(r.analysisUsage, r.provider)} | ${usageText(r.generationUsage, r.provider)} | ${r.minutes}분 |`),
     '',
   ];
   for (const r of results) {

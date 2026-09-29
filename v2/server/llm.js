@@ -119,7 +119,7 @@ function fixShape(data, shape) {
 
 const PROVIDERS = {
   deepseek: { label: 'DeepSeek V4 Flash' },
-  gemma: { label: 'Gemma 4 12B (PC)' },
+  gemma: { label: 'PC 모델' },
   relay: { label: 'Claude Opus 5.5 (세션 중계)' },
   claude: { label: 'Claude Opus 5.5' },
 };
@@ -186,14 +186,14 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     return JSON.parse(raw);
   }
 
-  async function sendGemma({ messages, maxTokens, signal }) {
+  async function sendGemma({ messages, maxTokens, effort, signal }) {
     const status = await gemmaStatus();
     if (!status.available) throw Object.assign(new Error('Gemma(PC)에 연결할 수 없습니다. PC가 켜져 있고 Gemma가 실행 중인지 확인해 주세요.'), { status: 503 });
     // Same settings v1 used for the local model: no thinking, JSON-constrained output, output fits the 32k context.
     const payload = {
       model: status.model, messages, stream: false, temperature: 0.2,
       max_tokens: Math.min(maxTokens, config.gemma.maxOutputTokens),
-      chat_template_kwargs: { enable_thinking: false },
+      chat_template_kwargs: { enable_thinking: Boolean(config.gemma.thinking) && effort !== 'off' },
       response_format: { type: 'json_object' },
     };
     const { response, raw } = await postJson(config.gemma.endpoint + '/chat/completions', {}, payload, config.gemma.timeoutMs, signal, 'Gemma 응답 시간이 초과되었습니다.');
@@ -306,7 +306,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       try {
         const tokens = attempt ? Math.min(maxTokens * 2, 128000) : maxTokens;
         envelope = mode === 'mock' ? await mock(messages)
-          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, signal })
+          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
@@ -355,4 +355,13 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   return { json, mode, gemmaStatus };
 }
 
-module.exports = { PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+// The PC provider serves whichever local model is loaded; name it from the model id llama-server reports.
+function pcModelLabel(id) {
+  const s = String(id || '').toLowerCase();
+  if (/qwen3\.6/.test(s)) return 'Qwen 3.6-35B (PC)';
+  if (/gemma-4-26b/.test(s)) return 'Gemma 4 26B (PC)';
+  if (/gemma-4-12b/.test(s)) return 'Gemma 4 12B (PC)';
+  return id ? `${id} (PC)` : 'PC 모델';
+}
+
+module.exports = { pcModelLabel, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

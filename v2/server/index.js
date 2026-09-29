@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
@@ -92,7 +92,7 @@ function createApp(options = {}) {
       deepseekConfigured: Boolean(apiKey), visionModel: cfg.deepseek.visionModel, textModel: cfg.deepseek.textModel,
       providers: {
         deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
-        gemma: { label: PROVIDERS.gemma.label, available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
+        gemma: { label: pcModelLabel(gemma.model), available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
         ...(claudeKey && cfg.claude.selectable ? { claude: { label: PROVIDERS.claude.label, available: true, note: '유료 · 품질 가장 높음 · DeepSeek보다 비쌈' } } : {}),
         ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
       },

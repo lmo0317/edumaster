@@ -31,7 +31,7 @@ function llmFor(url, overrides = {}) {
   const config = {
     llmMode: 'deepseek',
     deepseek: { baseUrl: url, visionModel: 'v', textModel: 't', timeoutMs: 5000 },
-    gemma: { endpoint: url, timeoutMs: 5000, maxOutputTokens: 1234 },
+    gemma: { endpoint: url, timeoutMs: 5000, maxOutputTokens: 1234, thinking: true },
     ...overrides,
   };
   return { llm: createLlm({ config, store, apiKey: 'test-key', mock: null }), store };
@@ -49,9 +49,11 @@ test('DeepSeek and Gemma requests go out with the right settings and usage is re
     assert.deepEqual(b.data, { ok: true });
     assert.equal(fake.seen[1].model, 'fake-gemma');
     assert.equal(fake.seen[1].max_tokens, 1234, 'Gemma output is capped to fit its context');
-    assert.equal(fake.seen[1].chat_template_kwargs.enable_thinking, false);
-    assert.equal(budget.calls, 2);
-    assert.deepEqual(store.usage.all().map((r) => r.provider).sort(), ['deepseek', 'gemma']);
+    assert.equal(fake.seen[1].chat_template_kwargs.enable_thinking, true, 'the PC model thinks on design/review calls');
+    await llm.json({ provider: 'gemma', purpose: 'p', jobId: 'j', budget, system: 's', text: 't', effort: 'off' });
+    assert.equal(fake.seen[2].chat_template_kwargs.enable_thinking, false, 'reading calls stay without thinking');
+    assert.equal(budget.calls, 3);
+    assert.deepEqual([...new Set(store.usage.all().map((r) => r.provider))].sort(), ['deepseek', 'gemma']);
   } finally { fake.server.close(); }
 });
 
