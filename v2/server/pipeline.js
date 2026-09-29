@@ -294,6 +294,12 @@ function numbersReused(item, prior, material) {
   return [...new Set(notes)];
 }
 
+/** Row signatures the new problem must avoid: the original's, and (for the final problem) earlier problems'. */
+function usedRowsFor(item, prior, material) {
+  const texts = [material.problem.text, ...(item.stage.kind === 'twin' ? prior.filter((p) => p.problem).map((p) => p.problem.text) : [])];
+  return [...new Set(texts.flatMap((t) => tableRows(t).map((r) => r.sig)))];
+}
+
 // The final problem repeating a practice problem (same question, choices or answer) is copying, not integrating.
 function repeatsPrior(item, prior) {
   const norm = (s) => String(s || '').replace(/\s+/g, '').replace(/[.?!]/g, '');
@@ -361,7 +367,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   const { data } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
-    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous }),
+    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, usedRows: usedRowsFor(item, prior, material) }),
   });
   Object.assign(item, normalizeGenerated(data));
   item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];

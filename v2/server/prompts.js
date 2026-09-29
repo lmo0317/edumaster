@@ -194,8 +194,11 @@ function rulesBlock(rules) {
     `- (${r.id}) [${r.kind === 'dont' ? '하지 말 것' : r.kind === 'do' ? '할 것' : '피드백'}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`).join('\n');
 }
 
-function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous }) {
+function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [] }) {
   const parts = [materialBlock(material), stageInstruction(stage, total, mode), priorBlock(prior), rulesBlock(rules)];
+  if (usedRows.length) {
+    parts.push('\n[이미 쓴 실험 수치 — 표의 어느 행에서도 이 (반응 전 두 값) 조합을 다시 쓰지 않는다]\n' + usedRows.join(' / '));
+  }
   if (variantNo > 1) parts.push(`\n같은 단계의 ${variantNo}번째 문제다. 앞 단계 문제 중 같은 단계 문제와 수치·구조가 겹치지 않게 만든다.`);
   if (previous) {
     parts.push('\n[직전에 만든 이 문제와 교사 피드백 — 피드백을 반영해 다시 만든다]\n' + JSON.stringify({ problem: previous.problem, solution: previous.solution }, null, 0));
@@ -207,7 +210,7 @@ function generateText({ material, stage, total, mode, prior, rules, variantNo, e
 
 const SOLVE_SYSTEM = `너는 문제를 처음 보는 최상위권 학생이자 검토자다. 주어진 문제만 보고 직접 풀어 정답을 고른다.
 - 출제자의 정답이나 해설은 주어지지 않는다. 스스로 끝까지 계산한다.
-- stepsUsed에는 그 STEP의 핵심 기법 없이는 답을 낼 수 없었던 원본 STEP 번호만 적는다 (아래 STEP 목록 기준). 다른 방법으로도 쉽게 풀리는데 편해서 쓴 STEP, 쓰지 않은 STEP은 넣지 않는다.
+- stepsUsed는 네 풀이 방식이 아니라 원본 STEP 기법 기준으로 판정한다: 원본 STEP 목록의 기법만 써서 이 문제를 풀 때 꼭 필요한 최소한의 STEP 번호만 적는다. 예를 들어 원본 STEP 1의 기법(질량비 비교, 가정→모순)만으로 답이 나오면, 네가 몰수·몰질량 비를 도입해 풀었더라도 stepsUsed는 [1]이다. 앞 STEP의 결론이 문제에 주어져 있으면 그 STEP은 넣지 않는다.
 - issues에는 실제 결함만 적는다: ambiguous(답이 하나로 정해지지 않음), contradiction(조건 모순), missing(조건 부족), unnecessary(풀이에 안 쓰이는 조건), revealed(추론해야 할 결론을 문제가 미리 알려줌), ugly(손계산이 어려운 수), other. 결함이 없으면 빈 배열.
 - 가정→모순 판정 풀이에서 '반증하기 위한 가정'은 결함이 아니다.
 - rules: 문제(발문·조건·선택지) 설계에 관한 교사 지침만 판정한다. 해설에 관한 지침은 넣지 않는다.
