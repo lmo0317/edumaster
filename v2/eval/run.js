@@ -34,6 +34,7 @@ function views(file) {
 
 async function main() {
   const dataDir = path.join(__dirname, '.work', stamp);
+  process.env.EDUMASTER_KEEP_RAW = '1'; // every model answer is kept under .work/<stamp>/llm-raw
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'eval\n');
   const keyFile = args.key || path.join(root, 'data', 'deepseek-api-key.txt');

@@ -411,6 +411,13 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       const finish = choice?.finish_reason;
       store.usage.put({ ...record, durationMs: Date.now() - started, ...usage, outcome: finish || 'unknown' });
       const raw = choice?.message?.content || '';
+      // Evaluation runs keep every answer so a check that failed can be traced to what the model actually wrote.
+      if (process.env.EDUMASTER_KEEP_RAW === '1') {
+        try {
+          fs.mkdirSync(path.join(store.dataDir, 'llm-raw'), { recursive: true });
+          fs.writeFileSync(path.join(store.dataDir, 'llm-raw', `${record.createdAt.replace(/[:.]/g, '')}-${purpose}.txt`), `finish=${finish}\n\n${raw}`);
+        } catch { /* diagnostics only */ }
+      }
       try {
         if (finish === 'length') throw new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.');
         if (finish === 'repeat') throw new LlmFormatError('모델이 같은 내용을 반복해서 중간에 멈췄습니다.');
