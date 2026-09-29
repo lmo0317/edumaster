@@ -121,6 +121,7 @@ const PROVIDERS = {
   deepseek: { label: 'DeepSeek V4 Flash' },
   gemma: { label: 'Gemma 4 12B (PC)' },
   relay: { label: 'Claude Opus 5.5 (세션 중계)' },
+  claude: { label: 'Claude Opus 5.5' },
 };
 
 // POST JSON with our own timeout and the job's cancel signal.
@@ -147,7 +148,7 @@ function postJson(url, headers, payload, timeoutMs, signal, timeoutMessage) {
   });
 }
 
-function createLlm({ config, store, apiKey, mock }) {
+function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   const mode = config.llmMode;
 
   // Gemma runs on the teacher's PC and reaches the server through an SSH tunnel, so it can be off.
@@ -206,6 +207,50 @@ function createLlm({ config, store, apiKey, mock }) {
 
   // Relay: write the exact request (system prompt, user text, images in order) to a file and wait for an
   // answer file. Same prompts and same pipeline as the API providers; only who answers differs.
+  // Claude over the Anthropic Messages API. Our messages are OpenAI-style (system first, image_url data URLs),
+  // so they are converted; the answer is returned in the same envelope the other providers use.
+  function toClaude(messages) {
+    const blocks = (content) => (typeof content === 'string' ? content : content.map((part) => {
+      if (part.type === 'text') return { type: 'text', text: part.text };
+      const m = /^data:(image\/[a-z]+);base64,(.*)$/s.exec(part.image_url.url);
+      return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+    }));
+    return { system: messages[0].content, messages: messages.slice(1).map((m) => ({ role: m.role, content: blocks(m.content) })) };
+  }
+  async function sendClaude({ messages, maxTokens, effort, signal }) {
+    if (!claudeKey) throw Object.assign(new Error('서버에 Anthropic API 키가 설정되지 않았습니다.'), { status: 503 });
+    const { system, messages: turns } = toClaude(messages);
+    const budget = effort === 'high' ? 16000 : 4000;
+    const payload = { model: config.claude.model, system, messages: turns, max_tokens: Math.min(Math.max(maxTokens, effort === 'off' ? 1024 : budget + 8000), config.claude.maxOutputTokens) };
+    if (effort === 'off') payload.temperature = 0;
+    else payload.thinking = { type: 'enabled', budget_tokens: budget };
+    const headers = { 'x-api-key': claudeKey, 'anthropic-version': '2023-06-01' };
+    // Rate limits on a small plan: wait and try again a few times instead of failing the job.
+    for (let attempt = 0; ; attempt++) {
+      const { response, raw } = await postJson(config.claude.baseUrl + '/v1/messages', headers, payload, config.claude.timeoutMs, signal, 'Claude 응답 시간이 초과되었습니다.');
+      if (response.ok) {
+        const data = JSON.parse(raw);
+        const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+        const u = data.usage || {};
+        const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+        return {
+          choices: [{ finish_reason: data.stop_reason === 'max_tokens' ? 'length' : 'stop', message: { content: text } }],
+          usage: { prompt_tokens: input, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
+        };
+      }
+      if ((response.status === 429 || response.status === 529) && attempt < 4) {
+        await new Promise((r) => setTimeout(r, (config.claude.retryDelaysMs || [5000, 15000, 30000, 60000])[attempt]));
+        if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
+        continue;
+      }
+      const hint = /credit balance/i.test(raw) ? 'Anthropic 계정 크레딧이 부족합니다. 콘솔의 결제 설정에서 크레딧을 충전해 주세요.'
+        : response.status === 401 ? 'Anthropic API 키가 올바르지 않습니다.'
+        : response.status === 429 ? 'Claude 요청 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.'
+        : `Claude 오류 (${response.status})`;
+      throw Object.assign(new Error(hint), { status: 502, detail: raw.slice(0, 300) });
+    }
+  }
+
   async function sendRelay({ messages, purpose, signal }) {
     const dir = config.relay.dir;
     if (!dir) throw Object.assign(new Error('중계 모델이 설정되지 않았습니다.'), { status: 503 });
@@ -249,7 +294,7 @@ function createLlm({ config, store, apiKey, mock }) {
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     let messages = [{ role: 'system', content: system }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -263,6 +308,7 @@ function createLlm({ config, store, apiKey, mock }) {
         envelope = mode === 'mock' ? await mock(messages)
           : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, signal })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
+          : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
         store.usage.put({ ...record, durationMs: Date.now() - started, outcome: 'error' });

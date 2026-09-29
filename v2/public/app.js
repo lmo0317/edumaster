@@ -74,9 +74,11 @@
   window.addEventListener('online', () => wake());
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   // Upper bound at DeepSeek Flash peak prices ($0.30 / 1M input, $1.20 / 1M output).
-  const cost = (u, provider) => (provider === 'gemma' ? 0 : ((u.paidInput ?? u.input ?? 0) * 0.30 + (u.paidOutput ?? u.output ?? 0) * 1.20) / 1e6);
+  // USD per million tokens (input, output); Gemma runs free on the teacher's PC, the relay records no tokens.
+  const PRICE = { deepseek: [0.30, 1.20], claude: [4, 20] };
+  const cost = (u, provider = 'deepseek') => (PRICE[provider] ? ((u.paidInput ?? u.input ?? 0) * PRICE[provider][0] + (u.paidOutput ?? u.output ?? 0) * PRICE[provider][1]) / 1e6 : 0);
   const tokens = (u, provider) => u ? `모델 호출 ${u.calls}회 · ${Number(u.total || 0).toLocaleString()}토큰 · ${provider === 'gemma' ? '무료(Gemma)' : provider === 'relay' ? '토큰 집계 없음(세션 중계)' : `최대 약 $${cost(u, provider).toFixed(3)}`}` : '';
-  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'Gemma', relay: 'Claude Opus 5.5' };
+  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'Gemma', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
   const loadStatus = async () => (statusCache = await api('GET', '/api/status'));

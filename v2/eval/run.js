@@ -38,6 +38,8 @@ async function main() {
   fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'eval\n');
   const keyFile = args.key || path.join(root, 'data', 'deepseek-api-key.txt');
   if (fs.existsSync(keyFile)) fs.copyFileSync(keyFile, path.join(dataDir, 'deepseek-api-key.txt'));
+  const claudeKeyFile = args['claude-key'] || path.join(root, 'data', 'anthropic-api-key.txt');
+  if (fs.existsSync(claudeKeyFile)) fs.copyFileSync(claudeKeyFile, path.join(dataDir, 'anthropic-api-key.txt'));
   // Measure the system as it runs: the teacher's approved rules and reading corrections come along (RAG).
   // --no-learning measures the bare prompts, so the two runs show what retrieval adds.
   const learningFrom = args['learning-from'] || path.join(root, 'data');
@@ -120,6 +122,7 @@ function usageText(u, provider) {
   if (!u) return '-';
   if (provider === 'gemma') return `${u.calls}회 · 무료`;
   if (provider === 'relay') return `${u.calls}회 · 집계 없음`;
+  if (provider === 'claude') return `${u.calls}회 · ${Number(u.total).toLocaleString()}토큰 · $${(((u.input || 0) * 4 + (u.output || 0) * 20) / 1e6).toFixed(2)}`;
   return `${u.calls}회 · ${Number(u.total).toLocaleString()}토큰 · ≤$${(((u.input || 0) * 0.3 + (u.output || 0) * 1.2) / 1e6).toFixed(2)}`;
 }
 

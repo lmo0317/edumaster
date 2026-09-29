@@ -28,7 +28,7 @@ function createJobs({ store, llm, config }) {
   function context(job, controller, extraSave) {
     const budget = new Budget(job.budget);
     Object.assign(budget, { calls: job.usage?.calls || 0, input: job.usage?.input || 0, output: job.usage?.output || 0, reasoning: job.usage?.reasoning || 0, total: job.usage?.total || 0 });
-    const provider = ['gemma', 'relay'].includes(job.options?.provider) ? job.options.provider : 'deepseek';
+    const provider = ['gemma', 'relay', 'claude'].includes(job.options?.provider) ? job.options.provider : 'deepseek';
     const ctx = {
       store, job, budget, signal: controller.signal, provider,
       // Every model call in this job goes to the provider the teacher picked.

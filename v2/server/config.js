@@ -29,6 +29,16 @@ module.exports = {
     timeoutMs: int('EDUMASTER_GEMMA_TIMEOUT_MS', 1200000),
     maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 12288),
   },
+  // Claude over the Anthropic API (key in data/anthropic-api-key.txt, never in the repo).
+  claude: {
+    baseUrl: env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
+    model: env.EDUMASTER_CLAUDE_MODEL || 'claude-opus-5-5',
+    timeoutMs: int('EDUMASTER_CLAUDE_TIMEOUT_MS', 600000),
+    maxOutputTokens: int('EDUMASTER_CLAUDE_MAX_OUTPUT', 32000),
+    // Shown in the teacher's model picker only when turned on (it costs several times DeepSeek); the eval
+    // runner can use it either way.
+    selectable: env.EDUMASTER_CLAUDE_SELECTABLE === '1',
+  },
   // "relay" provider: each model request is written to this folder and answered by an outside agent
   // (used to run the same pipeline with a model that has no API key here, e.g. Claude in a Claude Code session).
   relay: {

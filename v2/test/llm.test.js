@@ -162,3 +162,48 @@ test('a forgotten closing brace (real DeepSeek bio analysis #2, 2026-09-29) is p
   const ok = { problem: { text: 't', answer: 1 }, solution: { steps: [{ step: 1 }], summary: 's' }, verification: { program: ['a=1'], answer: 'a' } };
   assert.deepEqual(fixShape(JSON.parse(JSON.stringify(ok)), SHAPES.generate), { data: ok, moved: [] });
 });
+
+test('Claude (Anthropic API): system and images converted, usage recorded, rate limit retried, credit error explained', async () => {
+  const seen = []; let calls = 0;
+  const server = http.createServer((req, res) => {
+    let body = ''; req.on('data', (c) => { body += c; }); req.on('end', () => {
+      calls++; seen.push({ headers: req.headers, url: req.url, body: JSON.parse(body) });
+      if (calls === 1) { res.writeHead(429); res.end('{"type":"error"}'); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ content: [{ type: 'thinking', thinking: '...' }, { type: 'text', text: '{"ok":true}' }], stop_reason: 'end_turn', usage: { input_tokens: 100, output_tokens: 40, cache_read_input_tokens: 20 } }));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-llm-')));
+    const config = { llmMode: 'deepseek', deepseek: { baseUrl: url, visionModel: 'v', textModel: 't', timeoutMs: 5000 }, gemma: { endpoint: url, timeoutMs: 5000, maxOutputTokens: 1000 },
+      claude: { baseUrl: url, model: 'claude-opus-5-5', timeoutMs: 5000, maxOutputTokens: 32000, retryDelaysMs: [1, 1, 1, 1] } };
+    const llm = createLlm({ config, store, apiKey: 'd', claudeKey: 'test-claude-key', mock: null });
+    const image = { dataUrl: 'data:image/jpeg;base64,' + Buffer.from('img').toString('base64'), label: '[문제 이미지]' };
+    const budget = new Budget({ maxCalls: 5, maxTokens: 100000 });
+    const { data, usage } = await llm.json({ provider: 'claude', purpose: 'p', jobId: 'j', budget, system: '시스템 지시', text: '본문', images: [image], vision: true, effort: 'low' });
+    assert.deepEqual(data, { ok: true });
+    assert.equal(calls, 2, 'the 429 was retried');
+    const req = seen[1];
+    assert.equal(req.url, '/v1/messages');
+    assert.equal(req.headers['x-api-key'], 'test-claude-key');
+    assert.equal(req.body.system, '시스템 지시');
+    assert.equal(req.body.model, 'claude-opus-5-5');
+    assert.deepEqual(req.body.messages[0].content.map((b) => b.type), ['text', 'text', 'image']);
+    assert.equal(req.body.messages[0].content[2].source.media_type, 'image/jpeg');
+    assert.equal(req.body.thinking.type, 'enabled');
+    assert.ok(req.body.max_tokens > req.body.thinking.budget_tokens);
+    assert.equal(usage.input, 120, 'cache reads count as input');
+    assert.equal(usage.output, 40);
+    assert.equal(store.usage.all()[0].provider, 'claude');
+  } finally { server.close(); }
+  // No credit on the account: a clear message, not a raw 400.
+  const broke = http.createServer((req, res) => { res.writeHead(400); res.end('{"type":"error","error":{"message":"Your credit balance is too low to access the Anthropic API."}}'); });
+  await new Promise((r) => broke.listen(0, '127.0.0.1', r));
+  try {
+    const url = `http://127.0.0.1:${broke.address().port}`;
+    const llm = createLlm({ config: { llmMode: 'deepseek', deepseek: {}, gemma: { endpoint: url }, claude: { baseUrl: url, model: 'm', timeoutMs: 5000, maxOutputTokens: 1000 } }, store: openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-llm-'))), apiKey: '', claudeKey: 'k', mock: null });
+    await assert.rejects(llm.json({ provider: 'claude', purpose: 'p', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1000 }), system: 's', text: 't', effort: 'off' }), /크레딧이 부족/);
+  } finally { broke.close(); }
+});
