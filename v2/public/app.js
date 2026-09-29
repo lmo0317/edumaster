@@ -707,7 +707,7 @@
   async function compareView(id) {
     const list = await api('GET', '/api/compare');
     if (!list.length) { view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">아직 비교 자료가 없습니다.</div>'; return; }
-    const b = await api('GET', '/api/compare/' + (id || list[0].id));
+    const [b, status, sys] = await Promise.all([api('GET', '/api/compare/' + (id || list[0].id)), api('GET', '/api/status'), api('GET', '/api/system')]);
     const RESULT = {
       passed: ['ok', '✓ 됨', ''], warning: ['ok', '✓ 됨 (확인할 점)', ''],
       needs_review: ['warn', '△ 검토 필요', ''], failed: ['bad', '✕ 안 됨', ''],
@@ -742,7 +742,12 @@
         <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="api/compare/${b.id}/pdf/${m.provider}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
       </div>`;
     };
-    view.innerHTML = `<h1>모델 비교 — 화학 몰질량</h1>
+    view.innerHTML = `<h1>모델 비교</h1>
+      <div class="panel">
+        <h2>품질과 비용 한눈에</h2>
+        ${compareHtml(sys, status)}
+      </div>
+      <h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2>
       <p class="muted">같은 몰질량 원본 문제와 해설을 세 모델에 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.</p>
       <div class="panel cv2-orig"><span class="muted small">원본</span>
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
@@ -763,6 +768,7 @@
       <h2 class="cv2-h">모델별 결과와 PDF</h2>
       <div class="cv2">${b.models.map(row).join('')}</div>
       <p class="muted small">✓ 됨: 자동 검토를 통과해 바로 쓸 수 있음 (확인할 점은 가볍게 한 번 보시면 되는 내용) · △ 검토 필요: 만들었지만 선생님 확인이 필요함 · ✕ 안 됨: 문제를 만들지 못함</p>`;
+    api('GET', '/api/balance').then((x) => { if ($('#balance')) $('#balance').textContent = x.balance; }).catch(() => { if ($('#balance')) $('#balance').textContent = '확인 실패'; });
   }
 
   // ------------------------------------------------------------------ rules
@@ -854,9 +860,9 @@
         <div class="note info small">검사를 통과해도 AI가 판단한 결과이므로, 학생에게 내기 전에 한 번 확인해 주세요. '교사 검토 필요'나 '확인할 점'이 붙은 문제는 그 이유를 문제 카드에서 볼 수 있습니다.</div>
       </div>
 
-      <div class="panel">
-        <h2>모델 비교 — 누가 문제를 더 잘 만들고, 얼마가 드나요</h2>
-        ${compareHtml(sys, status)}
+      <div class="panel sys-pointer">
+        <div><h2>생성 모델</h2><p class="muted small">문제를 만들 때 DeepSeek과 Gemma 중에서 고를 수 있고, Claude Opus는 품질 비교용으로 평가했습니다. 문제를 얼마나 잘 만드는지, 한 문제에 얼마가 드는지, 실제로 만든 문제는 모델 비교 화면에 모아 두었습니다.</p></div>
+        <a class="button primary" href="#/compare">모델 비교 보기</a>
       </div>
 
       <div class="panel">
@@ -895,7 +901,6 @@
       </div>
 
       <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
-    api('GET', '/api/balance').then((b) => { $('#balance').textContent = b.balance; }).catch(() => { $('#balance').textContent = '확인 실패'; });
   }
 
   // One comparison of the three models: how well each makes problems (newest harness run), what one problem
