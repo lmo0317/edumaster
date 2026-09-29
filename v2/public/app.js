@@ -718,10 +718,14 @@
       return first.length > 70 ? first.slice(0, 70) + '…' : first;
     };
     const stageName = (it) => (it.stage?.kind === 'twin' ? '최종 문제' : it.label.replace(' 누적', ''));
+    const fb = b.feedback;
+    const GRADE = { ok: ['ok', '반영됨'], partial: ['warn', '일부 반영'], no: ['bad', '반영 안 됨'] };
+    const fbCount = (m) => (fb?.models[m.provider] ? Object.values(fb.models[m.provider]).filter(([g]) => g === 'ok').length : null);
     const row = (m) => {
       const done = m.items.filter((it) => ['passed', 'warning'].includes(it.status)).length;
+      const f = fbCount(m);
       return `<div class="cv2-row">
-        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span></div>
+        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span>${f != null ? `<span class="muted small">선생님 피드백 <b>${f}/${fb.points.length}</b> 반영</span>` : ''}</div>
         ${m.items.map((it) => {
           const [tone, label, extra] = RESULT[it.status] || ['', it.status, ''];
           const reason = it.status === 'passed' ? '' : why(it) || extra;
@@ -736,6 +740,17 @@
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
         <span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>
       <div class="cv2">${b.models.map(row).join('')}</div>
+      ${fb ? `<div class="panel cv2-fb">
+        <h2>선생님 피드백을 얼마나 반영했나</h2>
+        <details class="cv2-quote" data-k="fb-quote"><summary>받은 피드백 원문 보기</summary><blockquote>${esc(fb.quote)}</blockquote></details>
+        ${fb.points.map((pt, k) => `<div class="cv2-fb-point">
+          <div class="cv2-fb-head"><span class="num">${k + 1}</span><div><b>${esc(pt.ask)}</b><div class="muted small">피드백: "${esc(pt.said)}"</div></div></div>
+          <div class="cv2-fb-grid" style="--n:${b.models.length}">${b.models.map((m) => {
+            const [g, text] = fb.models[m.provider]?.[pt.id] || ['', '평가 없음'];
+            const [tone, label] = GRADE[g] || ['', '-'];
+            return `<div class="cv2-fb-cell ${tone}"><div class="cv2-fb-top"><span class="small"><b>${esc(m.label)}</b></span><span class="chip ${tone}">${label}</span></div><p>${esc(text)}</p></div>`;
+          }).join('')}</div></div>`).join('')}
+        <p class="muted small">${esc(fb.by)}</p></div>` : ''}
       <p class="muted small">✓ 됨: 자동 검토를 통과해 바로 쓸 수 있음 (확인할 점은 가볍게 한 번 보시면 되는 내용) · △ 검토 필요: 만들었지만 선생님 확인이 필요함 · ✕ 안 됨: 문제를 만들지 못함</p>`;
   }
 

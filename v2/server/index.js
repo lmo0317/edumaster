@@ -371,7 +371,7 @@ function createApp(options = {}) {
   }
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
-  route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json')).map((f) => {
+  route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ label: m.label, provider: m.provider, score: m.score?.make || null })) };
   }) : []));
@@ -387,7 +387,11 @@ function createApp(options = {}) {
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => {
     const file = path.join(compareDir, `${id}.json`);
     if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const bundle = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // How each model met the teacher's written feedback (a reviewed judgement kept next to the bundle).
+    const feedback = path.join(compareDir, `${id}.feedback.json`);
+    if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
+    return bundle;
   });
   route('GET', /^\/api\/system$/, () => {
     const rules = store.rules.all();
