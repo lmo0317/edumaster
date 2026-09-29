@@ -375,6 +375,15 @@ function createApp(options = {}) {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ label: m.label, provider: m.provider, score: m.score?.make || null })) };
   }) : []));
+  const PDF_NAME = { relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', gemma: 'Gemma_4_12B' };
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|gemma)$/, (req, res, [id, provider]) => {
+    const file = path.join(compareDir, id, `${provider}.pdf`);
+    if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
+    const name = `${id}_${PDF_NAME[provider]}.pdf`;
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${name}"`, 'Content-Length': fs.statSync(file).size, ...security });
+    fs.createReadStream(file).pipe(res);
+    return undefined;
+  });
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => {
     const file = path.join(compareDir, `${id}.json`);
     if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');

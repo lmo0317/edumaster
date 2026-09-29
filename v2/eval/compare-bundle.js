@@ -1,7 +1,9 @@
 'use strict';
 // Builds one model-comparison file for the 모델 비교 page: the original (images + the teacher's STEP titles) and,
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
-//   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass
+//   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
+// Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
+// eval/compare/<case>/<provider>.pdf, are offered for download on the page.
 // Writes eval/compare/<case>.json (deploy ships it; the page reads it, nothing is stored in data/).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -30,11 +32,11 @@ const jobsDir = path.join(args.data, 'jobs');
 const models = [];
 for (const f of fs.readdirSync(jobsDir)) {
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, f), 'utf8'));
-  if (job.type !== 'generate' || !String(job.title).includes(`${args.case} · `)) continue;
+  if (job.type !== 'generate' || !String(job.title).includes(args.title || `${args.case} · `)) continue;
   const provider = job.options?.provider || 'deepseek';
   const m = job.material;
   models.push({
-    provider, label: LABEL[provider] || provider, jobId: job.id, status: job.status, error: job.error || '', mode: job.options?.mode,
+    provider, label: LABEL[provider] || provider, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${provider}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,
     score: scores[provider] || null,
     reading: { question: (m.problem.text || '').split('\n').filter((l) => l.trim()).pop(), steps: m.steps.map((s) => s.title), answer: m.problem.answer },
     items: job.items.map((it) => ({
