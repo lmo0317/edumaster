@@ -103,3 +103,14 @@ test('several assignments on one line run as separate lines; commas inside calls
   const r = await codeCheck({ program: ['mA = 12, mB = 8, left = mA - mB', 'ans = max(left, 2) / 10'], answer: 'ans', choices: ['1/5', '2/5', '3/5', '4/5', '1'] }, { answer: 2, choiceCount: 5 });
   assert.equal(r.status, 'pass', r.reasons.join());
 });
+
+test('choices that name two values ("3w, 12w") are compared as pairs', async () => {
+  const program = ['mA = 3 * w', 'mB = 12 * w', 'ans = [mA, mB]'];
+  const choices = ['3w, 12w', '4w, 10w', '2w, 12w', '3w, 10w', '6w, 12w'];
+  const ok = await codeCheck({ program, answer: 'ans', free: ['w'], choices }, { answer: 1, choiceCount: 5 });
+  assert.equal(ok.status, 'pass', ok.reasons.join());
+  const pair = await codeCheck({ program: ['a = 2', 'b = 2'], answer: 'a, b', choices: ['2,2', '2,3', '3,2', '1,2', '2,1'] }, { answer: 1, choiceCount: 5 });
+  assert.equal(pair.status, 'pass', pair.reasons.join());
+  const wrong = await codeCheck({ program, answer: 'ans', free: ['w'], choices }, { answer: 4, choiceCount: 5 });
+  assert.equal(wrong.status, 'fail');
+});

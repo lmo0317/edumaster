@@ -7,7 +7,7 @@ const MAX_CHARS = 400;
 
 // "a = 12, b = 8, c = a - b" (Qwen writes several assignments on one line) is one assignment per line; mathjs
 // rejects the commas. Only top-level commas split, and only when every part is an assignment.
-function assignments(line) {
+function topLevel(line, separators) {
   const parts = [];
   let depth = 0;
   let start = 0;
@@ -15,10 +15,18 @@ function assignments(line) {
     const ch = line[i];
     if ('([{'.includes(ch)) depth++;
     else if (')]}'.includes(ch)) depth--;
-    else if ((ch === ',' || ch === ';') && depth === 0) { parts.push(line.slice(start, i).trim()); start = i + 1; }
+    else if (separators.includes(ch) && depth === 0) { parts.push(line.slice(start, i).trim()); start = i + 1; }
   }
   parts.push(line.slice(start).trim());
-  const pieces = parts.filter(Boolean);
+  return parts.filter(Boolean);
+}
+// A choice that names two values ("3w, 12w" — the mass of A and of B) is compared as a pair.
+function tuple(expr) {
+  const parts = topLevel(expr, ',');
+  return parts.length > 1 ? `[${parts.join(', ')}]` : expr;
+}
+function assignments(line) {
+  const pieces = topLevel(line, ',;');
   return pieces.length > 1 && pieces.every((p) => /^[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)/.test(p)) ? pieces : [line];
 }
 
@@ -34,7 +42,7 @@ function normalize(verification, choiceCount) {
   const tooLong = [...program, verification.answer, ...list(verification.choices)].find((s) => String(s ?? '').length > MAX_CHARS);
   if (tooLong) return { error: '검산 식 한 줄이 너무 깁니다.' };
   const free = list(verification.free).map(String).filter((s) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)).slice(0, 6);
-  let choices = list(verification.choices).map((c) => (c === null || c === undefined ? '' : String(c).trim()));
+  let choices = list(verification.choices).map((c) => (c === null || c === undefined ? '' : tuple(String(c).trim())));
   // ㄱ/ㄴ/ㄷ combinations or worded choices are not values: such a problem is checked by its conditions only.
   if (choices.some((c) => /[ㄱ-ㆎ가-힣]/.test(c))) choices = [];
   if (choiceCount && choices.length && choices.length !== choiceCount) return { error: `선택지 식 개수(${choices.length})가 선택지 수(${choiceCount})와 다릅니다.` };
@@ -44,7 +52,7 @@ function normalize(verification, choiceCount) {
     .slice(0, 30);
   // Without choice values the answer has nothing to be compared with, so it is not evaluated (a leftover
   // "ans" that the program never assigns would otherwise fail a correct transcription).
-  return { spec: { program, free, answer: choices.length ? String(verification.answer ?? '').trim() : '', choices, checks } };
+  return { spec: { program, free, answer: choices.length ? tuple(String(verification.answer ?? '').trim()) : '', choices, checks } };
 }
 
 // The 4-second limit covers the model-written program only. Loading mathjs in a fresh worker can itself take

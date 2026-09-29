@@ -26,6 +26,12 @@ function isNumeric(math, value) {
 }
 
 function near(math, a, b) {
+  if (math.isMatrix(a) || math.isMatrix(b)) {
+    if (!math.isMatrix(a) || !math.isMatrix(b)) return false;
+    const x = a.toArray().flat();
+    const y = b.toArray().flat();
+    return x.length === y.length && x.every((v, i) => near(math, v, y[i]));
+  }
   if (!isNumeric(math, a) || !isNumeric(math, b)) return false;
   if (math.isFraction(a) && math.isFraction(b)) return a.equals(b);
   const x = Number(a.valueOf ? a.valueOf() : a); const y = Number(b.valueOf ? b.valueOf() : b);
