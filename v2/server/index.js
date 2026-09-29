@@ -306,7 +306,7 @@ function createApp(options = {}) {
   // Cost per problem from real DeepSeek runs of the eval set: tokens of a whole generation job (design, blind
   // solve, repairs) divided by the problems it produced; the analysis of one original counted separately.
   // Opus is priced on the same token amounts (the relay run records no token counts).
-  function costEstimate() {
+  function costEstimate(onlyCase) {
     const dir = path.join(cfg.root, 'eval', 'reports');
     const perCase = [];
     const analyses = [];
@@ -314,7 +314,7 @@ function createApp(options = {}) {
       for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
         let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
         for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-          if (r.provider !== 'deepseek') continue;
+          if (r.provider !== 'deepseek' || (onlyCase && r.case !== onlyCase)) continue;
           if (r.analysisUsage?.calls) analyses.push(r.analysisUsage);
           const made = (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length;
           if (r.generationUsage?.calls && made) perCase.push({ case: r.case, input: r.generationUsage.input / made, output: r.generationUsage.output / made });
@@ -345,13 +345,14 @@ function createApp(options = {}) {
     ['structural', '최종 문제를 새 구조로 설계', (n) => /구조 변형/.test(n)],
     ['clear', '교사 검토 없이 바로 쓸 수 있음', (n) => /: 교사 검토 필요 없음$/.test(n)],
   ];
-  function modelComparison() {
+  function modelComparison(onlyCase) {
     const dir = path.join(cfg.root, 'eval', 'reports');
     const out = {};
     if (!fs.existsSync(dir)) return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort().reverse()) {
       let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
-      const results = Array.isArray(raw) ? raw : raw.results || [];
+      const results = (Array.isArray(raw) ? raw : raw.results || []).filter((r) => !onlyCase || r.case === onlyCase);
+      if (!results.length) continue;
       if ((raw.stage || results[0]?.stage) !== 'full') continue;
       for (const provider of new Set(results.map((r) => r.provider))) {
         if (out[provider]) continue;
@@ -391,6 +392,18 @@ function createApp(options = {}) {
     // How each model met the teacher's written feedback (a reviewed judgement kept next to the bundle).
     const feedback = path.join(compareDir, `${id}.feedback.json`);
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
+    // Quality and cost of each model on this case alone.
+    bundle.overview = { compare: modelComparison(id), cost: costEstimate(id) };
+    // Where the final problem was compared by hand, that verdict replaces the automatic "structural" check
+    // (the automatic one passed DeepSeek's final, which only changed numbers).
+    for (const [provider, m] of Object.entries(bundle.overview.compare.models)) {
+      const verdict = bundle.feedback?.models?.[provider]?.final?.[0];
+      const auto = m.metrics.structural;
+      if (!verdict || !auto?.total) continue;
+      const pass = verdict === 'ok' ? auto.total : 0;
+      m.overall = { pass: m.overall.pass - auto.pass + pass, total: m.overall.total };
+      m.metrics.structural = { pass, total: auto.total, reviewed: true };
+    }
     return bundle;
   });
   route('GET', /^\/api\/system$/, () => {

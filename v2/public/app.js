@@ -707,7 +707,7 @@
   async function compareView(id) {
     const list = await api('GET', '/api/compare');
     if (!list.length) { view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">아직 비교 자료가 없습니다.</div>'; return; }
-    const [b, status, sys] = await Promise.all([api('GET', '/api/compare/' + (id || list[0].id)), api('GET', '/api/status'), api('GET', '/api/system')]);
+    const [b, status] = await Promise.all([api('GET', '/api/compare/' + (id || list[0].id)), api('GET', '/api/status')]);
     const RESULT = {
       passed: ['ok', '✓ 됨', ''], warning: ['ok', '✓ 됨 (확인할 점)', ''],
       needs_review: ['warn', '△ 검토 필요', ''], failed: ['bad', '✕ 안 됨', ''],
@@ -745,7 +745,7 @@
     view.innerHTML = `<h1>모델 비교</h1>
       <div class="panel">
         <h2>품질과 비용 한눈에</h2>
-        ${compareHtml(sys, status)}
+        ${compareHtml(b.overview, status)}
       </div>
       <h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2>
       <p class="muted">같은 몰질량 원본 문제와 해설을 세 모델에 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.</p>
@@ -925,7 +925,7 @@
     const cell = (s) => {
       const v = pct(s);
       if (v == null) return '<td class="muted small">해당 없음</td>';
-      return `<td><div class="cmp-cell"><div class="meter"><span style="width:${v}%" class="${tone(v)}"></span></div><b>${v}%</b></div><div class="muted tiny">${s.pass}/${s.total}</div></td>`;
+      return `<td><div class="cmp-cell"><div class="meter"><span style="width:${v}%" class="${tone(v)}"></span></div><b>${v}%</b></div><div class="muted tiny">${s.pass}/${s.total}${s.reviewed ? " · 직접 비교해 판정" : ""}</div></td>`;
     };
     const cards = MODELS.map((m) => {
       const q = cmp.models[m.id];
@@ -942,7 +942,7 @@
         </div></div>`;
     }).join('');
     const rows = cmp.metrics.map((x) => `<tr><th>${x.label}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
-    const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
+    const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange && krw(c.perProblemRange[m.price][0]) !== krw(c.perProblemRange[m.price][1]) ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
     const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${m.price ? `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}` : '0원'}</b></td>`).join('')}</tr>` : '';
     const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
     return `<div class="sys-cards cmp-cards">${cards}</div>
@@ -953,7 +953,7 @@
         <tr class="grp"><td colspan="${MODELS.length + 1}">비용</td></tr>
         ${costRow}${setRow}
       </table></div>
-      <p class="muted small">같은 평가 문제 2개(화학 몰질량, 생명 흥분 전도)를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
+      <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
       비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다. DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
   }
 
