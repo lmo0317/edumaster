@@ -11,8 +11,8 @@ $cand = Join-Path $workspace 'tools/models/local-candidates'
 $logs = Join-Path $workspace 'artifacts/evidence/web'
 New-Item -ItemType Directory -Force $logs | Out-Null
 $models = @{
-  qwen36  = @{ m = Join-Path $cand 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf'; p = Join-Path $cand 'mmproj-F16.gguf'; alias = 'edumaster-qwen3.6-35b-a3b'; extra = @('--fit', 'on') }
-  gemma26 = @{ m = Join-Path $cand 'gemma-4-26B_q4_0-it.gguf'; p = Join-Path $cand 'gemma-4-26B-it-mmproj.gguf'; alias = 'edumaster-gemma-4-26b-a4b'; extra = @('--fit', 'on', '--image-min-tokens', '1120', '--image-max-tokens', '1120') }
+  qwen36  = @{ m = Join-Path $cand 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf'; p = Join-Path $cand 'mmproj-F16.gguf'; alias = 'edumaster-qwen3.6-35b-a3b'; extra = @('--fit', 'on', '--fit-target', '3072') }
+  gemma26 = @{ m = Join-Path $cand 'gemma-4-26B_q4_0-it.gguf'; p = Join-Path $cand 'gemma-4-26B-it-mmproj.gguf'; alias = 'edumaster-gemma-4-26b-a4b'; extra = @('--fit', 'on', '--fit-target', '3072', '--image-min-tokens', '1120', '--image-max-tokens', '1120') }
   gemma12 = @{ m = 'D:\work\dev\blog\windows\.models\gemma-4-12b-it-qat-q4_0.gguf'; p = Join-Path $workspace 'tools/models/gemma-vision/mmproj-gemma-4-12B-it-BF16.gguf'; alias = 'edumaster-gemma-4-12b-vision'; extra = @('-ngl', '99', '--image-min-tokens', '1120', '--image-max-tokens', '1120') }
 }
 $c = $models[$Name]

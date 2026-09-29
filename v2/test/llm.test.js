@@ -50,8 +50,10 @@ test('DeepSeek and Gemma requests go out with the right settings and usage is re
     assert.equal(fake.seen[1].model, 'fake-gemma');
     assert.equal(fake.seen[1].max_tokens, 1234, 'Gemma output is capped to fit its context');
     assert.equal(fake.seen[1].chat_template_kwargs.enable_thinking, true, 'the PC model thinks on design/review calls');
+    assert.equal(fake.seen[1].thinking_budget_tokens, 617, 'thinking leaves at least half the output for the answer');
     await llm.json({ provider: 'gemma', purpose: 'p', jobId: 'j', budget, system: 's', text: 't', effort: 'off' });
     assert.equal(fake.seen[2].chat_template_kwargs.enable_thinking, false, 'reading calls stay without thinking');
+    assert.equal(fake.seen[2].thinking_budget_tokens, undefined);
     assert.equal(budget.calls, 3);
     assert.deepEqual([...new Set(store.usage.all().map((r) => r.provider))].sort(), ['deepseek', 'gemma']);
   } finally { fake.server.close(); }

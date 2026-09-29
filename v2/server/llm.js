@@ -189,13 +189,20 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   async function sendGemma({ messages, maxTokens, effort, signal }) {
     const status = await gemmaStatus();
     if (!status.available) throw Object.assign(new Error('Gemma(PC)에 연결할 수 없습니다. PC가 켜져 있고 Gemma가 실행 중인지 확인해 주세요.'), { status: 503 });
-    // Same settings v1 used for the local model: no thinking, JSON-constrained output, output fits the 32k context.
+    // JSON-constrained output that fits the context. Thinking (design/review calls) gets its own budget: left
+    // unbounded, Gemma 26B thought until the whole output limit was used and the answer was never written.
+    const thinking = Boolean(config.gemma.thinking) && effort !== 'off';
+    const maxOut = Math.min(maxTokens, config.gemma.maxOutputTokens);
     const payload = {
       model: status.model, messages, stream: false, temperature: 0.2,
-      max_tokens: Math.min(maxTokens, config.gemma.maxOutputTokens),
-      chat_template_kwargs: { enable_thinking: Boolean(config.gemma.thinking) && effort !== 'off' },
+      max_tokens: maxOut,
+      chat_template_kwargs: { enable_thinking: thinking },
       response_format: { type: 'json_object' },
     };
+    if (thinking) {
+      payload.thinking_budget_tokens = Math.min(config.gemma.thinkingBudget || 8192, Math.floor(maxOut / 2));
+      payload.reasoning_budget_message = '\n\n생각할 시간이 끝났다. 지금까지 정한 내용으로 바로 JSON 답을 쓴다.\n';
+    }
     const { response, raw } = await postJson(config.gemma.endpoint + '/chat/completions', {}, payload, config.gemma.timeoutMs, signal, 'Gemma 응답 시간이 초과되었습니다.');
     if (!response.ok) {
       gemmaCache.at = 0;

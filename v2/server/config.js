@@ -32,6 +32,8 @@ module.exports = {
     // Thinking on for design and review calls (a quick check: without it Gemma 12B got a 1:3 limiting-reagent
     // question wrong, with it right). Reading calls stay without thinking.
     thinking: env.EDUMASTER_GEMMA_THINKING !== '0',
+    // Tokens the model may think before it must answer (the rest of the output limit is for the JSON).
+    thinkingBudget: int('EDUMASTER_GEMMA_THINKING_BUDGET', 8192),
   },
   // Claude over the Anthropic API (key in data/anthropic-api-key.txt, never in the repo).
   claude: {
