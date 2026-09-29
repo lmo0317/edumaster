@@ -98,3 +98,8 @@ test('Python-style True/False in a program (Gemma) run as mathjs booleans', asyn
   const r = await codeCheck({ program: ['synapse_exists = True', 'x = 2'], answer: '', choices: [], checks: [{ expr: 'synapse_exists == True and x == 2' }] }, { answer: 1, choiceCount: 5 });
   assert.equal(r.status, 'pass', r.reasons.join());
 });
+
+test('several assignments on one line run as separate lines; commas inside calls are left alone', async () => {
+  const r = await codeCheck({ program: ['mA = 12, mB = 8, left = mA - mB', 'ans = max(left, 2) / 10'], answer: 'ans', choices: ['1/5', '2/5', '3/5', '4/5', '1'] }, { answer: 2, choiceCount: 5 });
+  assert.equal(r.status, 'pass', r.reasons.join());
+});

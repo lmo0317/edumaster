@@ -5,13 +5,30 @@ const { Worker } = require('node:worker_threads');
 const MAX_LINES = 120;
 const MAX_CHARS = 400;
 
+// "a = 12, b = 8, c = a - b" (Qwen writes several assignments on one line) is one assignment per line; mathjs
+// rejects the commas. Only top-level commas split, and only when every part is an assignment.
+function assignments(line) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth--;
+    else if ((ch === ',' || ch === ';') && depth === 0) { parts.push(line.slice(start, i).trim()); start = i + 1; }
+  }
+  parts.push(line.slice(start).trim());
+  const pieces = parts.filter(Boolean);
+  return pieces.length > 1 && pieces.every((p) => /^[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)/.test(p)) ? pieces : [line];
+}
+
 /** Normalizes the model's verification block. Returns { spec } or { error }. */
 function normalize(verification, choiceCount) {
   if (!verification || typeof verification !== 'object') return { error: '검산 프로그램이 없습니다.' };
   const list = (v) => (Array.isArray(v) ? v : []);
   // Python-style True/False (Gemma writes them) are mathjs true/false.
   const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
-  const program = list(verification.program).map((s) => logic(s).trim()).filter(Boolean);
+  const program = list(verification.program).flatMap((s) => assignments(logic(s).trim())).filter(Boolean);
   if (!program.length) return { error: '검산 프로그램이 비어 있습니다.' };
   if (program.length > MAX_LINES) return { error: `검산 프로그램이 너무 깁니다 (${program.length}줄).` };
   const tooLong = [...program, verification.answer, ...list(verification.choices)].find((s) => String(s ?? '').length > MAX_CHARS);
