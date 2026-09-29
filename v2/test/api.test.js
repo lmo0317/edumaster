@@ -189,6 +189,8 @@ test('system page data: prompts with version, the check catalog, RAG state, usag
     assert.equal(data.rag.rules.approved, 1);
     assert.equal(data.rag.corrections.count, 0);
     assert.ok(Array.isArray(data.evals));
+    assert.deepEqual(data.cost.pricing.opus, { input: 4, output: 20 }, 'Opus 5.5 list price');
+    if (data.cost.perProblem) assert.ok(data.cost.perProblem.opus > data.cost.perProblem.deepseek && data.cost.perProblemRange.deepseek[0] <= data.cost.perProblem.deepseek);
     assert.equal((await s.call('GET', '/api/system').then(() => fetch(s.app.server.address ? `http://127.0.0.1:${s.app.server.address().port}/api/system` : ''))).status, 401, 'login required');
   } finally { await s.close(); }
 });

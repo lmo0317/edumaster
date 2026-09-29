@@ -303,6 +303,38 @@ function createApp(options = {}) {
       } catch { return null; }
     }).filter(Boolean);
   }
+  // Cost per problem from real DeepSeek runs of the eval set: tokens of a whole generation job (design, blind
+  // solve, repairs) divided by the problems it produced; the analysis of one original counted separately.
+  // Opus is priced on the same token amounts (the relay run records no token counts).
+  function costEstimate() {
+    const dir = path.join(cfg.root, 'eval', 'reports');
+    const perCase = [];
+    const analyses = [];
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+        for (const r of Array.isArray(raw) ? raw : raw.results || []) {
+          if (r.provider !== 'deepseek') continue;
+          if (r.analysisUsage?.calls) analyses.push(r.analysisUsage);
+          const made = (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length;
+          if (r.generationUsage?.calls && made) perCase.push({ case: r.case, input: r.generationUsage.input / made, output: r.generationUsage.output / made });
+        }
+      }
+    }
+    const price = (u, p) => (u.input * cfg.pricing[p].input + u.output * cfg.pricing[p].output) / 1e6;
+    const avg = (list) => (list.length ? { input: list.reduce((a, x) => a + x.input, 0) / list.length, output: list.reduce((a, x) => a + x.output, 0) / list.length } : null);
+    const problem = avg(perCase);
+    const analysis = avg(analyses);
+    const both = (u) => (u ? { deepseek: price(u, 'deepseek'), opus: price(u, 'opus') } : null);
+    return {
+      pricing: cfg.pricing,
+      basis: { problems: perCase.length, analyses: analyses.length },
+      perProblem: both(problem),
+      perProblemRange: perCase.length ? { deepseek: [Math.min(...perCase.map((u) => price(u, 'deepseek'))), Math.max(...perCase.map((u) => price(u, 'deepseek')))], opus: [Math.min(...perCase.map((u) => price(u, 'opus'))), Math.max(...perCase.map((u) => price(u, 'opus')))] } : null,
+      perAnalysis: both(analysis),
+      tokens: { problem, analysis },
+    };
+  }
   route('GET', /^\/api\/system$/, () => {
     const rules = store.rules.all();
     const corrections = store.corrections.all().sort((a, b) => b.count - a.count);
@@ -325,6 +357,7 @@ function createApp(options = {}) {
       budget: cfg.budget,
       usage: byProvider,
       evals: evalReports(),
+      cost: costEstimate(),
     };
   });
   route('GET', /^\/api\/usage$/, () => {

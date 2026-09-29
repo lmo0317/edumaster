@@ -712,7 +712,7 @@
       return `<div class="meter"><span style="width:${pct}%" class="${pct >= 95 ? 'ok' : pct >= 75 ? 'warn' : 'bad'}"></span></div><span class="meter-num">${pct}%</span>`;
     };
     const MODELS = [
-      { id: 'deepseek', name: 'DeepSeek V4 Flash', where: '인터넷 · 유료', text: '평소에 쓰는 기본 모델입니다. 언제든 쓸 수 있고, 분석과 문제 한 세트에 보통 수백~천 원 정도 듭니다.' },
+      { id: 'deepseek', name: 'DeepSeek V4 Flash', where: '인터넷 · 유료', text: '평소에 쓰는 기본 모델입니다. 언제든 쓸 수 있고 비용이 낮습니다 (아래 예상 비용 참고).' },
       { id: 'gemma', name: 'Gemma 12B', where: '선생님 PC · 무료', text: 'PC에서 직접 돌아가는 작은 모델입니다. 비용은 없지만 작은 글씨 판독과 긴 문제 설계에서 실수가 많습니다.' },
       { id: 'relay', name: 'Claude Opus 5.5', where: '비교 실험용', text: '품질을 비교하려고 같은 과정으로 평가만 해 본 모델입니다. 현재 화면에서 선택해 쓰는 모델은 아닙니다.' },
     ];
@@ -731,7 +731,6 @@
           <div class="small muted">원본 분석부터 문제 세트 완성까지 약 ${ev.minutes}분</div></div>` : '<div class="small muted">아직 평가하지 않았습니다.</div>'}
       </div>`;
     };
-    const deepseekCost = sys.usage.deepseek ? cost(sys.usage.deepseek, 'deepseek') : 0;
     const checks = [
       ['정답이 하나로 정해지는지', '보기 중 정답이 딱 하나인지, 조건끼리 모순은 없는지'],
       ['계산이 맞는지', '문제의 모든 수를 컴퓨터가 분수로 정확히 다시 계산'],
@@ -779,32 +778,35 @@
       </div>
 
       <div class="panel">
-        <h2>학습 — 선생님 피드백이 반영되는 방식</h2>
-        <div class="sys-cards two">
-          <div class="sys-card learn">
-            <div class="learn-num">${r.rules.approved}<small>개 적용 중</small></div>
-            <b>피드백과 지침 → 다음 문제에 반영</b>
-            <p>문제마다 남긴 피드백과 '해야 할 것 / 하지 말 것' 지침은, 다음에 문제를 만들 때 AI에게 함께 전달됩니다. 모든 문제에 붙는 지침과, 비슷한 유형에만 붙는 피드백이 있습니다. 결과 화면에서 지침별로 어떻게 지켰는지 확인할 수 있습니다.</p>
-            <a href="#/rules" class="small">지침·피드백 관리 →</a>
+        <h2>학습 — 무엇을 배우고, 어떻게 반영되나요</h2>
+        <p class="muted small">AI 모델 자체를 다시 훈련시키지 않습니다. 선생님이 남긴 내용을 저장해 두었다가, 새 문제를 만들거나 사진을 읽을 때 <b>그 상황에 맞는 것을 찾아 AI에게 함께 전달</b>합니다(RAG). 그래서 저장하는 즉시 다음 작업부터 반영되고, 지우면 바로 빠집니다.</p>
+        <div class="learn-rows">
+          <div class="learn-row">
+            <div class="learn-title"><span class="num">1</span><b>문제에 대한 피드백</b></div>
+            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>만든 문제 카드에 "STEP 1 연습인데 남는 물질을 문제에서 알려 줘서 추론할 게 없어요"처럼 피드백을 남깁니다.</div>
+            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>피드백 문장과 함께, <b>어떤 문제에 대한 피드백이었는지</b>(과목·유형·그 문제 내용)를 저장합니다.</div>
+            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>같은 과목의 비슷한 문제를 만들 때 이 피드백과 당시 문제를 AI에게 보여 주고 같은 실수를 하지 말라고 지시합니다. 다른 과목 문제에는 붙지 않습니다.</div>
           </div>
-          <div class="sys-card learn">
-            <div class="learn-num">${r.corrections.count}<small>개 기억</small></div>
-            <b>읽기 수정 → 다음 판독에 반영</b>
-            <p>분석 결과에서 잘못 읽은 단어를 고치시면(예: 물질량 → 몰질량) 그 내용을 기억해 두었다가, 다음 사진을 읽을 때 "이 단어를 전에 잘못 읽었다"고 알려 주고 확인 항목에도 올립니다.</p>
-            ${r.corrections.top.length ? `<div class="small">${r.corrections.top.map((c) => `<span class="chip">${esc(c.wrong)} → ${esc(c.right)}</span>`).join(' ')}</div>` : ''}
+          <div class="learn-row">
+            <div class="learn-title"><span class="num">2</span><b>전체 지침</b></div>
+            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>'해야 할 것 / 하지 말 것'을 적습니다. 예: "풀이에 필요 없는 조건을 넣지 않는다", "최종 문제는 숫자만 바꾸지 않는다".</div>
+            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>지침 문장과 적용 대상(문제·해설·설계)을 저장합니다.</div>
+            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>모든 문제를 만들 때 항상 전달합니다. 만든 문제마다 AI가 지침을 어떻게 지켰는지 적고, 독립 검토가 실제로 지켰는지 다시 판정해 결과 카드에 보여 줍니다.</div>
+          </div>
+          <div class="learn-row">
+            <div class="learn-title"><span class="num">3</span><b>잘못 읽은 글자 수정</b></div>
+            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>분석 결과 화면에서 잘못 읽은 단어를 고칩니다. 예: "물질량" → "몰질량".</div>
+            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>고치기 전과 후를 비교해 <b>바뀐 단어 쌍</b>만 뽑아 저장합니다 (숫자처럼 문제마다 다른 값은 저장하지 않음).</div>
+            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>다음 사진을 읽을 때 "이 단어를 전에 잘못 읽었다"고 알려 줘 더 주의해서 읽게 하고, 발문에서 맞게 읽힌 단어로 해설의 같은 오독도 함께 고치며, 원본 확인 항목에 올립니다.</div>
           </div>
         </div>
-        <p class="muted small">AI 모델 자체를 다시 훈련시키는 방식이 아니라, 쌓인 피드백 중 이 문제에 맞는 것을 찾아 매번 함께 전달하는 방식(RAG)입니다. 그래서 피드백을 지우거나 고치면 바로 다음 생성부터 달라집니다.</p>
+        <p class="small"><a href="#/rules">지침·피드백 관리 화면</a>에서 저장된 내용을 보고 고치거나 지울 수 있습니다.</p>
       </div>
 
       <div class="panel">
-        <h2>사용 현황</h2>
-        <div class="stat-row">
-          <div class="stat"><span class="stat-label">진행 중 작업</span><b>${status.activeJobs}</b></div>
-          <div class="stat"><span class="stat-label">DeepSeek 누적 비용</span><b>약 $${deepseekCost.toFixed(2)}</b></div>
-          <div class="stat"><span class="stat-label">DeepSeek 잔액</span><b id="balance">확인 중…</b></div>
-        </div>
-        <p class="muted small">한 번의 분석·문제 세트마다 비용 한도가 있어, 넘기 전에 멈춥니다.</p>
+        <h2>문제 1개당 예상 비용</h2>
+        ${costHtml(sys.cost)}
+        <p class="muted small">DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>
       </div>
 
       <div class="panel">
@@ -818,6 +820,32 @@
 
       <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
     api('GET', '/api/balance').then((b) => { $('#balance').textContent = b.balance; }).catch(() => { $('#balance').textContent = '확인 실패'; });
+  }
+
+  // Per-problem model fees, from the tokens real eval runs used (design + blind check + repairs per problem).
+  function costHtml(c) {
+    const krw = (usd) => Math.round((usd * c.pricing.krwPerUsd) / 10) * 10;
+    const won = (usd) => `${krw(usd).toLocaleString()}원`;
+    if (!c.perProblem) {
+      return `<div class="sys-cards">${[['DeepSeek V4 Flash', '평가 기록이 쌓이면 표시됩니다'], ['Claude Opus 5.5', '평가 기록이 쌓이면 표시됩니다'], ['Gemma 4 12B', '무료']].map(([n, t]) => `<div class="sys-card price"><b>${n}</b><div class="price-big">${t}</div></div>`).join('')}</div>`;
+    }
+    const card = (name, key, note) => {
+      const [lo, hi] = c.perProblemRange[key];
+      const set = c.perAnalysis[key] + c.perProblem[key] * 3;
+      return `<div class="sys-card price"><div class="model-head"><b>${name}</b><span class="chip">유료</span></div>
+        <div class="price-big">약 ${won(c.perProblem[key])}<small> / 문제 1개</small></div>
+        <div class="small muted">문제에 따라 ${won(lo)} ~ ${won(hi)}</div>
+        <ul class="price-lines"><li>원본 1개 분석: 약 ${won(c.perAnalysis[key])} (처음 한 번)</li><li>3문제 세트 전체: 약 ${won(set)}</li></ul>
+        <div class="small muted">${note}</div></div>`;
+    };
+    return `<div class="sys-cards">
+        ${card('DeepSeek V4 Flash', 'deepseek', `단가: 입력 $${c.pricing.deepseek.input} · 출력 $${c.pricing.deepseek.output} (100만 토큰당)`)}
+        ${card('Claude Opus 5.5', 'opus', `단가: 입력 $${c.pricing.opus.input} · 출력 $${c.pricing.opus.output} (100만 토큰당). DeepSeek과 같은 양의 토큰을 쓴다고 보고 계산한 추정입니다.`)}
+        <div class="sys-card price free"><div class="model-head"><b>Gemma 4 12B</b><span class="chip ok">무료</span></div>
+          <div class="price-big">0원</div>
+          <div class="small muted">선생님 PC에서 직접 돌아가서 사용료가 없습니다. PC가 켜져 있을 때만 쓸 수 있고, 품질은 두 유료 모델보다 낮습니다.</div></div>
+      </div>
+      <p class="muted small">실제 평가 문제를 만들 때 쓴 양으로 계산했습니다. 문제 1개 비용에는 문제 설계, 독립 풀이 검토, 필요할 때의 수정이 모두 들어 있습니다. 환율은 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원으로 잡았습니다.</p>`;
   }
 
   // Technical view of the same system (prompt version, every check, eval runs), folded away for teachers.
