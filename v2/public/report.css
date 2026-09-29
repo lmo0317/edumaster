@@ -17,5 +17,7 @@ body.report { background: #e9ecf1; }
   .no-print { display: none !important; }
   #doc { box-shadow: none; margin: 0; padding: 0; max-width: none; }
   .page-break { break-before: page; }
+  /* A tall scan fits under the title instead of leaving page 1 blank. */
+  .orig-img { width: auto; max-width: min(100%, 560px); max-height: 215mm; }
   details > summary { display: none; }
 }
