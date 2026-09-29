@@ -27,7 +27,7 @@ module.exports = {
   gemma: {
     endpoint: (env.EDUMASTER_GEMMA_ENDPOINT || 'http://127.0.0.1:18283/v1').replace(/\/+$/, ''),
     timeoutMs: int('EDUMASTER_GEMMA_TIMEOUT_MS', 1200000),
-    maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 8192),
+    maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 12288),
   },
   // "relay" provider: each model request is written to this folder and answered by an outside agent
   // (used to run the same pipeline with a model that has no API key here, e.g. Claude in a Claude Code session).

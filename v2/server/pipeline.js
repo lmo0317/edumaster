@@ -245,10 +245,18 @@ function coverage(stage, stepCount, used) {
 
 async function blindSolve(ctx, item, material, rules, compareOriginal) {
   ctx.log(`${item.label}: 독립 풀이로 검토 중`);
-  const { data } = await ctx.llm.json({
-    purpose: 'solve', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000,
-    system: prompts.SOLVE_SYSTEM, text: prompts.solveText({ item, material, rules, compareOriginal }),
-  });
+  let data;
+  try {
+    ({ data } = await ctx.llm.json({
+      purpose: 'solve', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000,
+      system: prompts.SOLVE_SYSTEM, text: prompts.solveText({ item, material, rules, compareOriginal }),
+    }));
+  } catch (e) {
+    if (e.name !== 'LlmFormatError') throw e;
+    // A solver that cannot finish (e.g. a small model re-solving until the output limit) is a verification
+    // result, not a reason to throw the generated problem away: it goes to the teacher as unverified.
+    data = { answer: 0, confident: false, solution: `독립 풀이가 출력 한도 안에서 답을 내지 못했습니다 (${e.message}).` };
+  }
   const choiceCount = item.problem.choices.length;
   return {
     answer: answerNumber(data?.answer, choiceCount || 99),

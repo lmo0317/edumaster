@@ -22,7 +22,8 @@
     const withSolution = document.getElementById('opt-solution').checked;
     const withReview = document.getElementById('opt-review').checked;
     const items = job.items.filter((i) => i.problem && (withReview || !['needs_review', 'failed'].includes(i.status)));
-    const flag = (i) => (i.status === 'needs_review' ? '<span class="review-flag">[교사 검토 필요]</span>' : '');
+    const flag = (i) => (i.status === 'needs_review' ? '<span class="review-flag">[교사 검토 필요]</span>'
+      : i.status === 'failed' ? `<span class="review-flag">[검증 미완료: ${esc(i.error || '')}]</span>` : '');
     doc.innerHTML = `
       <h1>${esc(m.title)} — 단계별 연습 ${items.length}문제</h1>
       <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} · 모델: ${esc({ deepseek: 'DeepSeek V4 Flash', gemma: 'Gemma 4 12B', relay: 'Claude Opus 5.5' }[job.options.provider] || 'DeepSeek V4 Flash')} · ${new Date(job.createdAt).toLocaleDateString('ko-KR')}</p>

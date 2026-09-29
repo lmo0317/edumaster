@@ -88,3 +88,20 @@ test('a final problem that skips a STEP goes to teacher review after the one rep
   assert.equal(item.status, 'needs_review');
   assert.match(item.problems.join(), /STEP 2 로직 없이/);
 });
+
+test('a blind solver that cannot finish keeps the problem for teacher review instead of failing it', async () => {
+  const { LlmFormatError } = require('../server/llm');
+  let solveCalls = 0;
+  const llm = {
+    json: async ({ system }) => {
+      if (system === prompts.SOLVE_SYSTEM) { solveCalls++; throw new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.'); }
+      return { data: generated('끝까지 못 푸는 문제') };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(item.status, 'needs_review');
+  assert.ok(item.problem.text);
+  assert.match(item.verification.blind.solution, /답을 내지 못했습니다/);
+  assert.equal(solveCalls, 2, 'one repair, then stop because the complaint repeats');
+});
