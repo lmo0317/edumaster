@@ -77,7 +77,7 @@
   // USD per million tokens (input, output); Gemma runs free on the teacher's PC, the relay records no tokens.
   const PRICE = { deepseek: [0.30, 1.20], claude: [4, 20] };
   const cost = (u, provider = 'deepseek') => (PRICE[provider] ? ((u.paidInput ?? u.input ?? 0) * PRICE[provider][0] + (u.paidOutput ?? u.output ?? 0) * PRICE[provider][1]) / 1e6 : 0);
-  const tokens = (u, provider) => u ? `모델 호출 ${u.calls}회 · ${Number(u.total || 0).toLocaleString()}토큰 · ${provider === 'gemma' ? '무료(Gemma)' : provider === 'relay' ? '토큰 집계 없음(세션 중계)' : `최대 약 $${cost(u, provider).toFixed(3)}`}` : '';
+  const tokens = (u, provider) => u ? `모델 호출 ${u.calls}회 · ${Number(u.total || 0).toLocaleString()}토큰 · ${provider === 'gemma' ? '무료(PC 모델)' : provider === 'relay' ? '토큰 집계 없음(세션 중계)' : `최대 약 $${cost(u, provider).toFixed(3)}`}` : '';
   const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'Gemma', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
@@ -958,7 +958,7 @@
     const MODELS = [
       { id: 'relay', name: 'Claude Opus 5.5', price: 'opus', use: status.providers?.relay ? '선택 가능' : '지금은 비교 평가만 (화면에서 선택 불가)' },
       { id: 'deepseek', name: 'DeepSeek V4 Flash', price: 'deepseek', use: '언제든 사용 (인터넷)' },
-      { id: 'gemma', name: 'Gemma 4 12B', price: null, use: '선생님 PC가 켜져 있을 때만' },
+      { id: 'gemma', name: `${cmp.models.gemma?.label || 'PC 모델'} (PC)`, price: null, use: '선생님 PC가 켜져 있을 때만' },
     ].filter((m) => cmp.models[m.id]);
     if (!MODELS.length) return '<p class="muted small">아직 평가 결과가 없습니다. 평가를 돌리면 모델별 비교가 표시됩니다.</p>';
     const quality = (m) => pct(cmp.models[m.id].overall) ?? 0;

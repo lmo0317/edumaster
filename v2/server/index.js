@@ -373,6 +373,8 @@ function createApp(options = {}) {
         const gen = rows.flatMap((r) => r.generation || []);
         out[provider] = {
           when: raw.stamp || f.slice(0, 15), cases: rows.map((r) => r.case),
+          // The PC provider serves whichever local model was loaded for that run.
+          label: provider === 'gemma' && rows[0].model ? pcModelLabel(rows[0].model).replace(' (PC)', '') : undefined,
           read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
           overall: tally(() => true, gen),
           metrics: Object.fromEntries(QUALITY.map(([id, , pred]) => [id, tally(pred, gen)])),
@@ -423,6 +425,9 @@ function createApp(options = {}) {
     // (the automatic one passed DeepSeek's final, which only changed numbers).
     for (const [provider, m] of Object.entries(bundle.overview.compare.models)) {
       const verdict = bundle.feedback?.models?.[provider]?.final?.[0];
+      // The hand verdict is about this bundle's problems; a newer run of another PC model keeps its own check.
+      const bundled = bundle.models.find((x) => x.provider === provider)?.label;
+      if (m.label && bundled && m.label !== bundled) continue;
       const auto = m.metrics.structural;
       if (!verdict || !auto?.total) continue;
       const pass = verdict === 'ok' ? auto.total : 0;
