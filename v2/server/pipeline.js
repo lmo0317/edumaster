@@ -670,4 +670,32 @@ function pickRules(store, material) {
     context: r.source?.excerpt ? `${r.source.label || '이전 생성 문제'}: ${r.source.excerpt.replace(/\s+/g, ' ').slice(0, 220)}` : '' }));
 }
 
-module.exports = { sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+// What the pipeline checks and what happens on failure — shown on the 시스템 page. Keep in step with the code above.
+// onFail: 'fix' = the pipeline corrects it itself, 'repair' = the problem goes back to the model once more,
+// 'review' = shown to the teacher as 교사 검토 필요, 'note' = shown as 확인할 점.
+const SYSTEM_CHECKS = {
+  analysis: [
+    { label: '원본 대조 교정', how: '옮겨 적은 문제·해설을 이미지와 글자 단위로 다시 대조해 오독(몰질량↔물질량, 숫자, 로마 숫자)을 고친다.', onFail: 'fix' },
+    { label: '필기 유입 재판독', how: '해설에서 구하는 값(x=15, 2cm/ms)이 문제 본문에 있으면 문제 이미지만 인쇄 글자 기준으로 두 번 다시 읽는다. 두 번 다 있으면 인쇄된 조건으로 인정한다.', onFail: 'fix' },
+    { label: '발문 재판독 (2회)', how: '발문만 따로 두 번 읽어, 두 번 일치한 글자로 첫 판독을 고친다. 알려진·교사가 고친 혼동 단어는 해설까지 함께 고친다.', onFail: 'fix' },
+    { label: '해설 단계 제목 재판독 (2회)', how: '해설에 인쇄된 step 제목을 두 번 읽어 STEP 수와 제목을 정한다.', onFail: 'fix' },
+    { label: 'STEP 수 맞추기', how: '정리한 STEP이 해설의 단계 수보다 많으면 이웃한 STEP을 합친다.', onFail: 'fix' },
+    { label: '원본 정답 검산', how: '원본을 해설대로 계산하는 프로그램을 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 본다. 프로그램이 실행되지 않으면 오류를 보여 주고 한 번 고치게 한다.', onFail: 'review' },
+    { label: '혼동 단어 확인', how: '뒤바뀐 적이 있는 단어(기본 목록 + 교사 교정 기억)가 나오면 원본 확인 항목에 올린다.', onFail: 'note' },
+  ],
+  generation: [
+    { label: '코드 검산', how: '생성 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행: 정답 값이 선택지 하나와만 맞는지, 설계 조건(가정→모순 등)이 참인지.', onFail: 'repair' },
+    { label: '독립 풀이', how: '정답을 모르는 별도 호출이 문제만 보고 풀어 정답을 대조하고, 모호·모순·조건 부족·결론 노출을 지적한다.', onFail: 'repair' },
+    { label: 'STEP 범위', how: '독립 풀이에 원본 STEP 기법 중 무엇이 꼭 필요했는지로, 목표 범위(STEP 1, STEP 1~2, 전체)와 맞는지 본다.', onFail: 'repair' },
+    { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 안 쓰인 조건이 있으면 설계 결함.', onFail: 'repair' },
+    { label: '통합 변형 여부', how: '통합 모드의 최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 코드 골격 비교) 본다.', onFail: 'repair' },
+    { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문이 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair' },
+    { label: '교사 풀이 방법 (v1 하네스)', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 확인.', onFail: 'repair' },
+    { label: '보기·정답 연결, O/X 일관성', how: '보기 수·중복·정답 번호, ㄱㄴㄷ 해설의 참 판정과 정답 보기가 맞는지 코드로 확인.', onFail: 'review' },
+    { label: '결론 노출·표기 형식', how: '앞 STEP의 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 확인.', onFail: 'repair' },
+    { label: '교사 지침 준수', how: '생성 모델이 지침별로 적용 방법을 적고, 독립 풀이가 문제에 관한 지침을 다시 판정한다.', onFail: 'note' },
+  ],
+  repair: '발견된 문제를 모델에 보여 주고 최대 2번 수정한다. 같은 지적이 반복되면 멈추고, 뒤에 만들 문제의 토큰이 부족해질 것 같으면 수정을 건너뛴다. 남은 문제는 교사 검토 필요 또는 확인할 점으로 표시한다.',
+};
+
+module.exports = { SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

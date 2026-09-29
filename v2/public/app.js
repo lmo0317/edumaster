@@ -691,25 +691,69 @@
 
   // ------------------------------------------------------------------ system
   async function systemView() {
-    const [status, usage] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/usage')]);
+    const [status, sys] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/system')]);
+    const ON_FAIL = { fix: ['ok', '자동으로 고침'], repair: ['run', '모델에 수정 요청'], review: ['bad', '교사 검토 필요'], note: ['warn', '확인할 점으로 표시'] };
+    const failChip = (k) => `<span class="chip ${ON_FAIL[k][0]}">${ON_FAIL[k][1]}</span>`;
+    const checkTable = (list) => `<div class="table-wrap"><table class="rules sys"><tr><th>검사</th><th>하는 일</th><th>걸리면</th></tr>${list.map((c) => `<tr><td><b>${esc(c.label)}</b></td><td>${esc(c.how)}</td><td>${failChip(c.onFail)}</td></tr>`).join('')}</table></div>`;
+    const modelName = (p) => PROVIDER_LABEL[p] || p;
+    const usageRows = Object.entries(sys.usage).map(([p, u]) => `<tr><td>${esc(modelName(p))}</td><td>${u.calls.toLocaleString()}회</td><td>${u.input.toLocaleString()}</td><td>${u.output.toLocaleString()}${u.reasoning ? ` <span class="muted small">(추론 ${u.reasoning.toLocaleString()})</span>` : ''}</td><td>${p === 'gemma' ? '무료' : p === 'relay' ? '집계 없음' : '최대 약 $' + cost(u, p).toFixed(2)}</td></tr>`).join('');
+    const score = (s) => (s ? `<span class="chip ${s.pass === s.total ? 'ok' : s.pass / s.total >= 0.8 ? 'warn' : 'bad'}">${s.pass}/${s.total}</span>` : '<span class="muted">-</span>');
+    const evalHtml = sys.evals.length ? sys.evals.map((e) => `<details data-k="eval-${esc(e.stamp)}"${e === sys.evals[0] ? ' open' : ''}><summary>${esc(e.stamp)} · ${e.stage === 'full' ? '분석+생성' : '분석'}${e.promptVersion ? ` · 프롬프트 ${esc(e.promptVersion)}` : ''}${e.learning ? ` · ${e.learning.used === 'none' ? '학습 끔' : `지침 ${e.learning.rules}개·교정 ${e.learning.corrections}개`}` : ''}</summary><div class="inner">
+        <div class="table-wrap"><table class="rules sys"><tr><th>사례</th><th>모델</th><th>분석</th><th>생성</th><th>실패한 항목</th></tr>${e.rows.map((r) => `<tr><td>${esc(r.case)}</td><td>${esc(modelName(r.provider))}</td><td>${score(r.analysis)}</td><td>${score(r.generation)}</td><td class="small">${r.error ? esc(r.error) : r.failed.length ? r.failed.map(esc).join('<br>') : '<span class="muted">없음</span>'}</td></tr>`).join('')}</table></div></div></details>`).join('')
+      : '<p class="muted small">서버에 저장된 평가 보고서가 없습니다. <code>node eval/run.js</code>로 실행합니다.</p>';
+    const r = sys.rag;
     view.innerHTML = `<h1>시스템</h1>
       <div class="panel"><h2>현재 상태</h2><div class="kv">
-        <div class="k">버전</div><div>${esc(status.version)}</div>
+        <div class="k">버전</div><div>${esc(status.version)} <span class="muted small">· 프롬프트 ${esc(sys.prompts.version)}</span></div>
         <div class="k">모델</div><div>${status.llm === 'mock' ? '<span class="chip warn">모의 모드 — 실제 모델을 호출하지 않음</span>' : Object.values(status.providers || {}).map((p) => `${esc(p.label)} ${p.available ? '<span class="chip ok">사용 가능</span>' : '<span class="chip">꺼짐</span>'} <span class="muted small">${esc(p.note || '')}</span>`).join('<br>')}</div>
         <div class="k">DeepSeek 잔액</div><div id="balance">확인 중…</div>
-        <div class="k">진행 중 작업</div><div>${status.activeJobs}</div>
-        <div class="k">최근 24시간</div><div>${tokens(usage.last24h)}</div>
-        <div class="k">전체 누적</div><div>${tokens(usage.all)}</div></div></div>
-      <div class="panel rich"><h2>v2는 이렇게 동작합니다</h2>
-        <p><b>1. 원본 분석</b> — 문제·해설 이미지를 한 번에 읽어 인쇄된 문제와 필기를 분리하고, 교사 해설의 STEP 구분과 방법(보조 문자, 가정→모순, 비교 순서)을 그대로 정리합니다. STEP 개수는 원본에 따릅니다. 교사가 화면에서 직접 고칠 수 있고, 고친 내용이 생성 기준이 됩니다.</p>
-        <p><b>2. 단계별 설계</b> — STEP 1, STEP 1~2, …, 최종 쌍둥이 순서로 한 문제씩 만듭니다. 뒤 문제를 만들 때는 앞에서 실제로 만든 문제 내용을 함께 넘겨, 통합 변형에서 그 아이디어를 엮게 합니다. 특정 유형용으로 고정한 코드 템플릿은 없습니다.</p>
-        <p><b>3. 검증</b> — (a) 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행해 정답·선택지 중복·조건(가정의 모순 등)을 확인하고, (b) 정답을 모르는 별도 호출이 문제만 보고 다시 풀어 정답과 필요했던 STEP을 대조합니다. 어긋나면 수정은 한 번만 하고, 그래도 남으면 '교사 검토 필요'로 이유와 함께 보여 줍니다. 반복 재생성으로 토큰을 태우지 않습니다.</p>
-        <p><b>4. 학습</b> — 문제별 피드백과 전체 지침은 승인되면 다음 생성의 지시문에 붙고, 결과마다 각 지침을 어떻게 지켰는지(생성 모델 자기 보고)와 독립 검토 판정이 표시됩니다. 모델 가중치를 학습시키는 방식(fine-tuning)은 아닙니다.</p>
-        <p><b>5. 비용</b> — 작업마다 호출 수·토큰 상한이 있고, 넘기 전에 멈춥니다. 모든 호출의 토큰 사용량을 기록합니다.</p>
-        <h3>한계</h3>
-        <p class="bullet">• 그림이 꼭 필요한 문제는 그림을 글/표로 설명합니다. 그림 자동 생성은 아직 없습니다.</p>
-        <p class="bullet">• ㄱㄴㄷ 선지형처럼 수치가 아닌 문제는 코드 검산 대상이 아니며 독립 풀이 대조에 의존합니다.</p>
-        <p class="bullet">• 독립 풀이도 모델이므로 틀릴 수 있습니다. '검증 통과'는 교사 최종 승인과 같지 않습니다.</p></div>`;
+        <div class="k">진행 중 작업</div><div>${status.activeJobs}</div></div>
+        <h3>모델별 누적 사용량</h3>
+        ${usageRows ? `<div class="table-wrap"><table class="rules sys"><tr><th>모델</th><th>호출</th><th>입력 토큰</th><th>출력 토큰</th><th>비용</th></tr>${usageRows}</table></div>` : '<p class="muted small">아직 모델 호출이 없습니다.</p>'}</div>
+
+      <div class="panel"><h2>처리 흐름</h2>
+        <div class="flow">${['원본 분석 (판독·대조·재판독)', '교사 확인·수정', '단계별 문제 설계', '검증 (코드 검산 + 독립 풀이 + 하네스)', '수정 (최대 2번)', '교사 검토·피드백'].map((s, i) => `<div class="flow-step"><span class="n">${i + 1}</span>${s}</div>`).join('<span class="flow-arrow">→</span>')}</div>
+        <p class="muted small">교사 피드백과 분석 수정은 저장되어 다음 분석·생성에 다시 들어갑니다 (아래 ③). 특정 유형용으로 고정한 코드 템플릿은 없고, 문제 설계는 모델이, 계산 확인은 코드가 합니다.</p></div>
+
+      <div class="panel"><h2>① 프롬프트 — 모델에 보내는 지시문</h2>
+        <p>모든 호출은 아래 지시문 중 하나를 씁니다. 지시문이 바뀌면 버전(<b>${esc(sys.prompts.version)}</b>)이 바뀌고, 각 분석·생성 작업과 평가 보고서에 어떤 버전으로 만들었는지 남습니다.</p>
+        <div class="table-wrap"><table class="rules sys"><tr><th>지시문</th><th>하는 일</th><th>길이</th></tr>${sys.prompts.list.map((p) => `<tr><td><code>${esc(p.id)}</code></td><td>${esc(p.purpose)}</td><td class="muted">${p.chars.toLocaleString()}자</td></tr>`).join('')}</table></div>
+        <p class="small"><a href="#/rules">지침·피드백 화면</a> 맨 아래에서 전문을 볼 수 있습니다.</p></div>
+
+      <div class="panel"><h2>② 하네스 — 결과를 코드로 검사</h2>
+        <p>모델이 "잘 만들었다"고 하는 것을 믿지 않고, 매번 같은 검사를 돌려 통과 여부를 기록합니다. v1의 품질 하네스(교사 방법·보기·O/X·결론 노출·표기 검사)를 옮겨 왔습니다.</p>
+        <h3>분석 단계</h3>${checkTable(sys.checks.analysis)}
+        <h3>생성 단계</h3>${checkTable(sys.checks.generation)}
+        <p class="note info small">${esc(sys.checks.repair)}</p>
+        <h3>평가 세트 결과</h3>
+        <p class="muted small">정답을 아는 원본 사례(현재 화학 몰질량, 생명 흥분 전도)를 같은 파이프라인에 넣어 판독 정확도와 생성 품질을 점수로 봅니다. 시스템을 고칠 때마다 다시 돌려 전후를 비교합니다.</p>
+        ${evalHtml}</div>
+
+      <div class="panel"><h2>③ RAG — 쌓인 교사 지식을 다시 넣기</h2>
+        <div class="cols cols-2">
+          <div><h3>교사 지침·피드백 → 문제 생성</h3>
+            <div class="kv"><div class="k">적용 중</div><div>${r.rules.approved}개 <span class="muted small">(항상 ${r.rules.global} · 유형별 ${r.rules.topic})</span></div>
+              <div class="k">승인 대기</div><div>${r.rules.pending}개</div>
+              <div class="k">붙인 횟수</div><div>누적 ${r.rules.applied}세트</div></div>
+            <p class="small">'항상' 지침은 모든 생성에, '유형별' 피드백은 같은 과목에서 문제 내용이 비슷할 때만 골라 붙입니다. 피드백을 받은 문제의 내용도 함께 보내, 같은 실수를 반복하지 않게 합니다. 결과마다 지침별로 어떻게 지켰는지와 독립 판정이 표시됩니다.</p></div>
+          <div><h3>판독 교정 기억 → 원본 분석</h3>
+            <div class="kv"><div class="k">쌓인 교정</div><div>${r.corrections.count}개</div>
+              <div class="k">자주 틀린 단어</div><div>${r.corrections.top.length ? r.corrections.top.map((c) => `"${esc(c.wrong)}"→"${esc(c.right)}" <span class="muted small">${c.count}회</span>`).join('<br>') : '<span class="muted">아직 없음</span>'}</div>
+              <div class="k">기본 혼동 단어</div><div>${r.confusable.map((p) => esc(p.join('↔'))).join(', ')}</div></div>
+            <p class="small">교사가 분석 결과의 단어를 고치면 그 쌍이 저장되고, 다음 분석부터 모든 판독 호출에 "이전에 잘못 읽은 단어"로 알려 주며 원본 확인 항목에 올립니다.</p></div></div>
+        <p class="muted small">모델 가중치를 다시 학습시키는 방식(fine-tuning)이 아니라, 저장된 지식을 찾아 지시문에 붙이는 방식입니다.</p></div>
+
+      <div class="panel"><h2>작업별 비용 한도</h2><div class="kv">
+        <div class="k">원본 분석</div><div>호출 ${sys.budget.analyzeCalls}회 · ${sys.budget.analyzeTokens.toLocaleString()}토큰</div>
+        <div class="k">문제 세트 생성</div><div>호출 ${sys.budget.generateCalls}회 · ${sys.budget.generateTokens.toLocaleString()}토큰</div>
+        <div class="k">한 문제 다시 만들기</div><div>호출 ${sys.budget.regenerateCalls}회 · ${sys.budget.regenerateTokens.toLocaleString()}토큰</div></div>
+        <p class="muted small">한도에 닿기 전에 멈추고, 앞 문제의 수정이 뒤 문제를 만들 토큰을 다 쓰지 않도록 남겨 둡니다. 모든 호출의 토큰을 기록합니다.</p></div>
+
+      <div class="panel"><h2>한계</h2>
+        <p class="bullet">• 그림이 꼭 필요한 문제는 그림을 글·표로 설명합니다. 그림 자동 생성은 없습니다.</p>
+        <p class="bullet">• 독립 풀이와 판독도 모델이므로 틀릴 수 있습니다. '검증 통과'는 교사 최종 승인과 같지 않습니다.</p>
+        <p class="bullet">• 작은 스캔에서 두 번 읽어도 같은 글자를 잘못 읽으면(예: Gemma의 몰질량→물질량) 교차 확인으로는 잡지 못합니다. 혼동 단어 확인 항목과 교사 교정 기억으로 보완합니다.</p>
+        <p class="bullet">• Gemma 12B는 긴 설계에서 출력이 잘리거나 검산 프로그램이 틀리는 일이 잦습니다 (평가 세트 결과 참고).</p></div>`;
     api('GET', '/api/balance').then((b) => { $('#balance').textContent = b.balance; }).catch(() => { $('#balance').textContent = '확인 실패'; });
   }
 

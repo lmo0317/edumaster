@@ -173,3 +173,22 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
     assert.ok(aligned.data.proofread.some((p) => p.includes('STEP 3+4')));
   } finally { await s.close(); }
 });
+
+test('system page data: prompts with version, the check catalog, RAG state, usage per model, eval reports', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/rules', { text: '불필요한 조건을 넣지 않는다.', kind: 'dont', target: 'problem' });
+    const { status, data } = await s.call('GET', '/api/system');
+    assert.equal(status, 200);
+    assert.match(data.prompts.version, /^[0-9a-f]{10}$/);
+    assert.equal(data.prompts.list.length, 10);
+    assert.ok(data.prompts.list.every((p) => p.purpose), 'every prompt says what it does');
+    assert.ok(data.checks.analysis.length >= 5 && data.checks.generation.length >= 8);
+    assert.ok([...data.checks.analysis, ...data.checks.generation].every((c) => ['fix', 'repair', 'review', 'note'].includes(c.onFail)));
+    assert.equal(data.rag.rules.approved, 1);
+    assert.equal(data.rag.corrections.count, 0);
+    assert.ok(Array.isArray(data.evals));
+    assert.equal((await s.call('GET', '/api/system').then(() => fetch(s.app.server.address ? `http://127.0.0.1:${s.app.server.address().port}/api/system` : ''))).status, 401, 'login required');
+  } finally { await s.close(); }
+});

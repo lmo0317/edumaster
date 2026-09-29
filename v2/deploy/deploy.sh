@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Deploys v2 to the 112 server (run from Git Bash on the dev PC). Keeps the server's data/ folder.
+# eval/reports goes along (the 시스템 page lists them); reports made on the server are kept, tar only adds.
 set -euo pipefail
 HOST=lmo0317@192.168.219.112
 APP=/home/lmo0317/apps/edumasterv2
 cd "$(dirname "$0")/.."
-tar czf /tmp/edumasterv2.tgz --exclude=node_modules --exclude=data --exclude=data-mock --exclude=test --exclude=eval/.work --exclude=eval/reports package.json package-lock.json server public deploy scripts eval
+tar czf /tmp/edumasterv2.tgz --exclude=node_modules --exclude=data --exclude=data-mock --exclude=test --exclude=eval/.work package.json package-lock.json server public deploy scripts eval
 scp -q /tmp/edumasterv2.tgz "$HOST:/tmp/edumasterv2.tgz"
 ssh "$HOST" bash -s <<REMOTE
 set -euo pipefail

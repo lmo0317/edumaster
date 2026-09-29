@@ -12,6 +12,7 @@ const { makeRule, updateRule, readingCorrections, recordCorrections } = require(
 const { normalizeStages, buildItems } = require('./plan');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
+const harness = require('./harness');
 
 const VERSION = '2.0.0';
 
@@ -277,6 +278,55 @@ function createApp(options = {}) {
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 
   route('GET', /^\/api\/prompts$/, () => ({ version: prompts.PROMPT_VERSION, ...prompts.SYSTEMS }));
+  // The 시스템 page: the three core parts (prompts, harness, retrieval) with live data, plus usage per model.
+  const PROMPT_PURPOSE = {
+    analyze: '원본 문제·해설 이미지를 옮겨 적고 교사 풀이를 STEP으로 정리', proofread: '옮겨 적은 내용을 이미지와 글자 단위로 대조',
+    'reread-question': '발문만 다시 읽기 (2회)', 'reread-problem': '필기 유입이 의심될 때 인쇄 글자만 다시 읽기',
+    'reread-headings': '해설의 단계 제목만 다시 읽기 (2회)', regroup: 'STEP을 해설 단계 수에 맞게 묶기',
+    'fix-verification': '실행되지 않는 원본 검산 프로그램 고치기', generate: '단계별 변형 문제 설계',
+    solve: '정답을 모르는 독립 풀이 검토', repair: '검토에서 나온 문제를 고쳐 다시 설계',
+  };
+  function evalReports(limit = 4) {
+    const dir = path.join(cfg.root, 'eval', 'reports');
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().reverse().slice(0, limit).map((f) => {
+      try {
+        const raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+        const results = Array.isArray(raw) ? raw : raw.results || [];
+        const score = (list) => (list?.length ? { pass: list.filter((c) => c.pass).length, total: list.length } : null);
+        return {
+          file: f, stamp: raw.stamp || f.slice(0, 15), stage: raw.stage || results[0]?.stage || '', promptVersion: raw.promptVersion || '', learning: raw.learning || null,
+          rows: results.map((r) => ({ case: r.case, provider: r.provider, analysis: score(r.analysis), generation: score(r.generation), minutes: r.minutes, error: r.error || '',
+            failed: [...(r.analysis || []), ...(r.generation || [])].filter((c) => !c.pass)
+              .map((c) => (c.detail ? `${c.name} — ${String(c.detail).replace(/\s+/g, ' ').slice(0, 140)}` : c.name)).slice(0, 12) })),
+        };
+      } catch { return null; }
+    }).filter(Boolean);
+  }
+  route('GET', /^\/api\/system$/, () => {
+    const rules = store.rules.all();
+    const corrections = store.corrections.all().sort((a, b) => b.count - a.count);
+    const byProvider = {};
+    for (const r of store.usage.all()) {
+      const k = r.provider || 'deepseek';
+      const a = byProvider[k] || (byProvider[k] = { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 });
+      a.calls++; a.input += r.input || 0; a.output += r.output || 0; a.reasoning += r.reasoning || 0; a.total += r.total || 0;
+    }
+    return {
+      prompts: { version: prompts.PROMPT_VERSION, list: Object.entries(prompts.SYSTEMS).map(([id, text]) => ({ id, purpose: PROMPT_PURPOSE[id] || '', chars: text.length })) },
+      checks: pipeline.SYSTEM_CHECKS,
+      rag: {
+        rules: { approved: rules.filter((r) => r.status === 'approved').length, pending: rules.filter((r) => r.status === 'pending').length,
+          global: rules.filter((r) => r.status === 'approved' && r.scope === 'global').length, topic: rules.filter((r) => r.status === 'approved' && r.scope === 'topic').length,
+          applied: rules.reduce((a, r) => a + (r.applied || 0), 0) },
+        corrections: { count: corrections.length, top: corrections.slice(0, 5).map((c) => ({ wrong: c.wrong, right: c.right, count: c.count })) },
+        confusable: harness.CONFUSABLE,
+      },
+      budget: cfg.budget,
+      usage: byProvider,
+      evals: evalReports(),
+    };
+  });
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();
     // paidInput/paidOutput exclude Gemma, which runs free on the teacher's PC.
