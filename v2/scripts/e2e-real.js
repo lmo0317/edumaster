@@ -29,7 +29,7 @@ async function wait(id) {
 
 (async () => {
   await call('POST', '/api/login', { code: fs.readFileSync(codeFile, 'utf8').trim() });
-  const created = await call('POST', '/api/materials', { title: 'e2e 몰질량', problemImage: dataUrl(problemPath), solutionImage: solutionPath ? dataUrl(solutionPath) : null, problemViews: views(problemPath), solutionViews: solutionPath ? views(solutionPath) : [], provider });
+  const created = await call('POST', '/api/materials', { title: process.env.EDUMASTER_E2E_TITLE || 'e2e 몰질량', problemImage: dataUrl(problemPath), solutionImage: solutionPath ? dataUrl(solutionPath) : null, problemViews: views(problemPath), solutionViews: solutionPath ? views(solutionPath) : [], provider });
   const analysis = await wait(created.jobId);
   console.log('\nanalysis:', analysis.status, analysis.error || '', JSON.stringify(analysis.usage));
   const m = await call('GET', `/api/materials/${created.material.id}`);

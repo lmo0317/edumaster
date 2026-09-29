@@ -25,7 +25,7 @@
     const flag = (i) => (i.status === 'needs_review' ? '<span class="review-flag">[교사 검토 필요]</span>' : '');
     doc.innerHTML = `
       <h1>${esc(m.title)} — 단계별 연습 ${items.length}문제</h1>
-      <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} · ${new Date(job.createdAt).toLocaleDateString('ko-KR')}</p>
+      <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} · 모델: ${esc({ deepseek: 'DeepSeek V4 Flash', gemma: 'Gemma 4 12B', relay: 'Claude Opus 5.5' }[job.options.provider] || 'DeepSeek V4 Flash')} · ${new Date(job.createdAt).toLocaleDateString('ko-KR')}</p>
       ${withOriginal ? `
         <h2>원본 문제</h2>
         <img class="orig-img" src="api/files/${m.images.problem}" alt="원본 문제">

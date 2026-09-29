@@ -91,6 +91,7 @@ function createApp(options = {}) {
       providers: {
         deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
         gemma: { label: PROVIDERS.gemma.label, available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
+        ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
       },
       activeJobs: jobs.activeCount(),
     };
@@ -98,6 +99,10 @@ function createApp(options = {}) {
 
   // Picks the provider for a new job and refuses Gemma while the PC is off.
   const chooseProvider = async (value) => {
+    if (value === 'relay') {
+      if (!cfg.relay.dir) throw fail(409, '이 서버에는 중계 모델이 설정되어 있지 않습니다.');
+      return 'relay';
+    }
     const provider = value === 'gemma' ? 'gemma' : 'deepseek';
     if (provider === 'gemma' && !(await llm.gemmaStatus(true)).available) {
       throw fail(409, 'Gemma(PC)가 꺼져 있어 사용할 수 없습니다. DeepSeek을 선택하거나 PC를 켠 뒤 다시 시도해 주세요.');

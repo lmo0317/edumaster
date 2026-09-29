@@ -29,6 +29,13 @@ module.exports = {
     timeoutMs: int('EDUMASTER_GEMMA_TIMEOUT_MS', 1200000),
     maxOutputTokens: int('EDUMASTER_GEMMA_MAX_OUTPUT', 8192),
   },
+  // "relay" provider: each model request is written to this folder and answered by an outside agent
+  // (used to run the same pipeline with a model that has no API key here, e.g. Claude in a Claude Code session).
+  relay: {
+    dir: env.EDUMASTER_RELAY_DIR || '',
+    label: env.EDUMASTER_RELAY_LABEL || 'Claude Opus 5.5 (세션 중계)',
+    timeoutMs: int('EDUMASTER_RELAY_TIMEOUT_MS', 3 * 3600 * 1000),
+  },
   // Hard limits per job. A job never exceeds either one; it stops and reports instead.
   budget: {
     analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 4),

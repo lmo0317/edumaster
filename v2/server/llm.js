@@ -1,6 +1,8 @@
 'use strict';
 const http = require('node:http');
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
 // DeepSeek chat client with a per-job budget and a usage ledger.
 // Every paid call is recorded (tokens only — never prompts, images or keys).
 const { newId } = require('./store');
@@ -60,6 +62,7 @@ function restoreLatex(value) {
 const PROVIDERS = {
   deepseek: { label: 'DeepSeek V4 Flash' },
   gemma: { label: 'Gemma 4 12B (PC)' },
+  relay: { label: 'Claude Opus 5.5 (세션 중계)' },
 };
 
 // POST JSON with our own timeout and the job's cancel signal.
@@ -143,6 +146,38 @@ function createLlm({ config, store, apiKey, mock }) {
     return JSON.parse(raw);
   }
 
+  // Relay: write the exact request (system prompt, user text, images in order) to a file and wait for an
+  // answer file. Same prompts and same pipeline as the API providers; only who answers differs.
+  async function sendRelay({ messages, purpose, signal }) {
+    const dir = config.relay.dir;
+    if (!dir) throw Object.assign(new Error('중계 모델이 설정되지 않았습니다.'), { status: 503 });
+    fs.mkdirSync(dir, { recursive: true });
+    const id = `${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${newId().slice(0, 6)}-${purpose}`;
+    const user = messages[1].content;
+    const content = [];
+    (typeof user === 'string' ? [{ type: 'text', text: user }] : user).forEach((part, i) => {
+      if (part.type === 'text') { content.push({ type: 'text', text: part.text }); return; }
+      const m = /^data:image\/(\w+);base64,(.*)$/s.exec(part.image_url.url);
+      const file = path.join(dir, `${id}-image${i}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
+      fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
+      content.push({ type: 'image', file });
+    });
+    const requestFile = path.join(dir, `${id}.request.json`);
+    const responseFile = path.join(dir, `${id}.response.json`);
+    fs.writeFileSync(requestFile, JSON.stringify({ id, purpose, system: messages[0].content, content, responseFile }, null, 1));
+    const deadline = Date.now() + config.relay.timeoutMs;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
+      if (fs.existsSync(responseFile)) {
+        await new Promise((r) => setTimeout(r, 500)); // let the writer finish
+        const answer = JSON.parse(fs.readFileSync(responseFile, 'utf8'));
+        return { choices: [{ finish_reason: 'stop', message: { content: answer.content } }], usage: {} };
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error('중계 모델 응답 시간이 초과되었습니다.');
+  }
+
   /**
    * Calls the model and returns parsed JSON.
    * One automatic retry only for unreadable/truncated output; that retry is counted in the budget too.
@@ -154,7 +189,7 @@ function createLlm({ config, store, apiKey, mock }) {
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     const messages = [{ role: 'system', content: system }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -167,6 +202,7 @@ function createLlm({ config, store, apiKey, mock }) {
         const tokens = attempt ? Math.min(maxTokens * 2, 128000) : maxTokens;
         envelope = mode === 'mock' ? await mock(messages)
           : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, signal })
+          : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
         store.usage.put({ ...record, durationMs: Date.now() - started, outcome: 'error' });
