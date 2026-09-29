@@ -54,6 +54,15 @@ function scoreGeneration(job) {
     if (!it.problem) continue;
     out.push(check(`${label}: 코드 검산`, v.code?.status === 'pass' || v.code?.status === 'skip', (v.code?.reasons || []).join('; ')));
     out.push(check(`${label}: 독립 풀이 정답 일치`, v.blind?.answer && v.blind.answer === it.problem.answer, `독립 ${v.blind?.answer} / 표시 ${it.problem.answer}`));
+    // Teacher feedback, measured one by one: unused conditions, STEP range, the teacher's method, the rules.
+    const unused = (v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text);
+    out.push(check(`${label}: 모든 조건이 풀이에 쓰임`, !unused.length, unused.join('; ')));
+    out.push(check(`${label}: 목표 STEP 범위로 풀림`, v.coverage?.status === 'pass', (v.coverage?.notes || []).join('; ')));
+    const method = (v.harness || []).filter((c) => c.state === 'fail' && /helper|method|assumption/.test(c.id));
+    out.push(check(`${label}: 교사 풀이 방법 보존`, !method.length, method.map((c) => `${c.label}: ${c.evidence}`).join('; ')));
+    const broken = (v.rules || []).filter((r) => r.judged && !r.judged.ok);
+    const silent = (v.rules || []).filter((r) => !r.how);
+    out.push(check(`${label}: 교사 지침 준수`, !broken.length && !silent.length, [...broken.map((r) => `위반: ${r.text.slice(0, 50)} — ${r.judged.note}`), ...silent.map((r) => `적용 설명 없음: ${r.text.slice(0, 50)}`)].join('; ')));
     out.push(check(`${label}: 교사 검토 필요 없음`, !(it.problems || []).length, (it.problems || []).join('; ')));
     out.push(check(`${label}: 확인할 점 없음`, !(it.warnings || []).length, (it.warnings || []).join('; ')));
     if (it.stage?.kind === 'twin' && job.options?.mode === 'integrated') {

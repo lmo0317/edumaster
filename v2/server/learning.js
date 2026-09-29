@@ -3,6 +3,7 @@
 // and each generated problem reports how it applied each rule (shown to the teacher).
 // This is prompt-level learning (retrieval), not model fine-tuning.
 const { newId } = require('./store');
+const harness = require('./harness');
 
 const KINDS = new Set(['do', 'dont', 'feedback']);
 const TARGETS = new Set(['problem', 'solution', 'design', 'all']);
@@ -66,7 +67,8 @@ function selectRules(allRules, material, { limit = 14, maxChars = 3500 } = {}) {
   const approved = allRules.filter((r) => r.status === 'approved');
   const global = approved.filter((r) => r.scope === 'global').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const target = grams([material.subject, material.topic, material.problem?.text, ...(material.techniques || [])].join(' '));
-  const topical = approved.filter((r) => r.scope === 'topic').map((r) => {
+  // A topic feedback belongs to its subject: shared exam wording ("조건", "자료") must not carry a 화학 note to 생명과학.
+  const topical = approved.filter((r) => r.scope === 'topic' && !(r.subject && material.subject && r.subject !== material.subject)).map((r) => {
     let score = overlap(grams([r.subject, r.topic, r.source?.excerpt, r.text].join(' ')), target);
     if (r.subject && material.subject && r.subject === material.subject) score += 0.15;
     if (r.source?.materialId && r.source.materialId === material.id) score += 1;
@@ -81,4 +83,60 @@ function selectRules(allRules, material, { limit = 14, maxChars = 3500 } = {}) {
   return picked;
 }
 
-module.exports = { makeRule, updateRule, selectRules, grams, overlap };
+// ---------------------------------------------------------------- reading corrections (RAG for analysis)
+// When the teacher fixes an analysis (물질량 → 몰질량), the word-level changes are kept. Later analyses show the
+// reader its past misreads and treat each corrected pair like a known confusable pair.
+
+/** One-letter Hangul word changes between the analysis before and after the teacher's edit. */
+function readingCorrections(before, after) {
+  const fields = (m) => {
+    const out = [m?.problem?.text, ...(m?.problem?.choices || [])];
+    for (const s of m?.steps || []) out.push(s.title, s.work, s.result);
+    return out.map((t) => String(t || ''));
+  };
+  const a = fields(before); const b = fields(after);
+  if (a.length !== b.length) b.length = Math.min(a.length, b.length);
+  const pairs = new Map();
+  b.forEach((text, i) => {
+    if (!text || text === a[i]) return;
+    for (let [wrong, right] of harness.hangulFixes(a[i], text, text, harness.CONFUSABLE, 2)) {
+      // 물질량을 → 몰질량을 is the same correction as 물질량 → 몰질량: drop a shared trailing particle.
+      const particle = /(으로|에서|에게|을|를|이|가|은|는|의|에|와|과|로|도|만)$/.exec(wrong)?.[1];
+      if (particle && right.endsWith(particle) && wrong.length - particle.length >= 2 && right.length - particle.length >= 2) {
+        wrong = wrong.slice(0, -particle.length); right = right.slice(0, -particle.length);
+      }
+      if (/^-?\d/.test(wrong) || /^-?\d/.test(right) || wrong.length < 2 || right.length < 2) continue; // values are not reusable knowledge
+      pairs.set(`${wrong}→${right}`, [wrong, right]);
+    }
+  });
+  return [...pairs.values()];
+}
+
+function recordCorrections(store, pairs, material, now = new Date()) {
+  const existing = store.corrections.all();
+  for (const [wrong, right] of pairs) {
+    const found = existing.find((c) => c.wrong === wrong && c.right === right);
+    const base = found || { id: newId().slice(0, 16), wrong, right, count: 0, createdAt: now.toISOString(), materials: [] };
+    store.corrections.put({ ...base, count: base.count + 1, subject: material?.subject || base.subject || '', lastAt: now.toISOString(),
+      materials: [...new Set([...(base.materials || []), material?.id].filter(Boolean))].slice(-20), provider: material?.analyzedWith || '' });
+  }
+}
+
+/** Confusable word pairs: the built-in list plus every word the teacher has corrected. */
+function readingPairs(corrections) {
+  const pairs = harness.CONFUSABLE.map((p) => [...p]);
+  for (const c of corrections) {
+    if (!pairs.some((p) => p.includes(c.wrong) && p.includes(c.right))) pairs.push([c.wrong, c.right]);
+  }
+  return pairs;
+}
+
+/** Past corrections as a short hint for the reader (most frequent first). */
+function readingHint(corrections, limit = 12) {
+  const top = [...corrections].sort((a, b) => b.count - a.count || String(b.lastAt).localeCompare(String(a.lastAt))).slice(0, limit);
+  if (!top.length) return '';
+  return '[과거 교사 교정 — 이전 판독에서 실제로 잘못 읽은 단어. 이 단어들은 인쇄된 글자를 한 글자씩 확인한다]\n'
+    + top.map((c) => `- "${c.wrong}"로 잘못 읽음 → 원본은 "${c.right}" (${c.count}회)`).join('\n');
+}
+
+module.exports = { makeRule, updateRule, selectRules, grams, overlap, readingCorrections, recordCorrections, readingPairs, readingHint };

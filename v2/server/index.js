@@ -8,7 +8,7 @@ const { openStore, newId, isId } = require('./store');
 const { createLlm, PROVIDERS, Budget } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
-const { makeRule, updateRule } = require('./learning');
+const { makeRule, updateRule, readingCorrections, recordCorrections } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
@@ -181,6 +181,8 @@ function createApp(options = {}) {
     const body = await readBody(req, 512 * 1024);
     const merged = pipeline.normalizeMaterial({ ...m, ...body, problem: { ...m.problem, ...body.problem } });
     if (!merged.steps.length) throw fail(400, 'STEP이 하나 이상 있어야 합니다.');
+    // Reading RAG: a teacher's word fix of the model's transcription (물질량 → 몰질량) is remembered for later analyses.
+    if (m.status === 'ready' && m.problem) recordCorrections(store, readingCorrections(m, merged), m);
     return store.materials.put(pipeline.refreshStepCountNote({ ...m, ...merged, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() }));
   });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
@@ -271,10 +273,10 @@ function createApp(options = {}) {
     return store.rules.put(updateRule(rule, await readBody(req, 16 * 1024)));
   });
   route('DELETE', /^\/api\/rules\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.rules.remove(id) }));
+  route('GET', /^\/api\/corrections$/, () => store.corrections.all().sort((a, b) => b.count - a.count));
+  route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 
-  route('GET', /^\/api\/prompts$/, () => ({
-    analyze: prompts.ANALYZE_SYSTEM, generate: prompts.GENERATE_SYSTEM, solve: prompts.SOLVE_SYSTEM, repair: prompts.REPAIR_SYSTEM,
-  }));
+  route('GET', /^\/api\/prompts$/, () => ({ version: prompts.PROMPT_VERSION, ...prompts.SYSTEMS }));
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();
     // paidInput/paidOutput exclude Gemma, which runs free on the teacher's PC.

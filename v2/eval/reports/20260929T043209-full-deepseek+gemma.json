@@ -1,0 +1,970 @@
+{
+ "stamp": "20260929T043209",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "ceeb151fa4",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "bio-nerve-conduction",
+   "title": "생명과학 · 흥분 전도와 전달 (막전위로 지점 매칭, 전도 속도, 시냅스 위치)",
+   "provider": "deepseek",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 8,
+    "input": 25907,
+    "output": 82804,
+    "reasoning": 78555,
+    "total": 108711,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 0.86"
+    },
+    {
+     "name": "문제에 \"휴지 전위는 -70mV\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"1cm/ms\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"시냅스\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"탈분극\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"2cm/ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"4ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"4 ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"시냅스 존재\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"재분극\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"막전위\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"흥분 전도 속도\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"시냅스\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "막전위를 이용해 지점 매칭하기",
+     "신경 A의 흥분 전도 속도 구하기",
+     "t₁과 시냅스가 있는 부분 추론하기"
+    ],
+    "question": "ㄷ. $t_1$일 때, A의 Ⅱ에서 탈분극이 일어나고 있다.",
+    "proofread": [
+     "problem.text: \"| A | $-80$ | $0$ | $?$ | $-70$ |\" → \"| A | $-80$ | $0$ | $?$ | $0$ |\" (표에서 A의 Ⅳ(d₁)에 해당하는 막전위는 0mV로 인쇄되어 있는데 -70으로 잘못 옮겼다. 해설에서도 'A에서 Ⅱ와 Ⅳ의 막전위는 모두 0mV'라고 설명하여 A의 Ⅳ가 0mV임을 뒷받침한다.)",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"t1과 시냅스 위치 추론 및 보기 분석\" → \"t₁과 시냅스가 있는 부분 추론하기\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 15,
+    "input": 76638,
+    "output": 560548,
+    "reasoning": 532940,
+    "total": 637186,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": false,
+     "detail": "이 작업의 토큰 상한(600,000토큰)에 도달해 더 호출하지 않았습니다."
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2, 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2, 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": false,
+     "detail": "조건 검사 실패: $v_A=2$로 두면 $d_2$의 경과 시간이 2ms가 아닌 1ms(=3-2/2)가 되어 $-70\\text{mV}$가 나오므로 표의 값 $0\\text{mV}$가 될 수 없음을 확인한다. → false"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 4 / 표시 4"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": false,
+     "detail": "휴지 전위는 $-70\\text{mV}$이다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 조건 검사 실패: $v_A=2$로 두면 $d_2$의 경과 시간이 2ms가 아닌 1ms(=3-2/2)가 되어 $-70\\text{mV}$가 나오므로 표의 값 $0\\text{mV}$가 될 수 없음을 확인한다. → false"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "풀이에 쓰이지 않는 조건: 휴지 전위는 $-70\\text{mV}$이다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": false,
+     "detail": "이 작업의 토큰 상한(600,000토큰)에 도달해 더 호출하지 않았습니다."
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "f82e16098f9ebd9bcd039278",
+   "minutes": 41.8
+  },
+  {
+   "case": "bio-nerve-conduction",
+   "title": "생명과학 · 흥분 전도와 전달 (막전위로 지점 매칭, 전도 속도, 시냅스 위치)",
+   "provider": "gemma",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 8,
+    "input": 27567,
+    "output": 5524,
+    "reasoning": 0,
+    "total": 33091,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": false,
+     "detail": "읽음 3 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"휴지 전위는 -70mV\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"1cm/ms\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"시냅스\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"탈분극\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"2cm/ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"4ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"4 ms\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"시냅스 존재\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"재분극\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"막전위\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"흥분 전도 속도\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"시냅스\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "막전위를 이용해 지점 매칭하기",
+     "신경 A의 흥분 전도 속도 구하기",
+     "$t_1$과 시냅스가 있는 부분 추론하기"
+    ],
+    "question": "ㄷ. $t_1$일 때, A의 $\\text{II}$에서 탈분극이 일어나고 있다.",
+    "proofread": [
+     "problem.text: \"$\\text{\\textcircled{ㄱ}} \\thicksim \\text{\\textcircled{ㄷ}}$\" → \"$\\text{\\textcircled{ㄱ}} \\sim \\text{\\textcircled{ㄷ}}$\" (The original text uses a tilde symbol ($\\sim$) rather than the LaTeX command for a thick tilde ($\\thicksim$).)",
+     "problem.text: \"I $\\thicksim$ IV\" → \"I $\\sim$ IV\" (The original text uses a tilde symbol ($\\sim) rather than the LaTeX command for a thick tilde ($\\thicksim$).)",
+     "문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 2cm/ms이(가) 빠진 본문으로 교체",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"막전위를 이용한 지점 매칭\" → \"막전위를 이용해 지점 매칭하기\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"신경 A의 흥분 전도 속도 및 t1과 시냅스 위치 추론\" → \"신경 A의 흥분 전도 속도 구하기\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"보기 분석\" → \"$t_1$과 시냅스가 있는 부분 추론하기\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 23,
+    "input": 95384,
+    "output": 107930,
+    "reasoning": 0,
+    "total": 203314,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": false,
+     "detail": "16번째 줄 \"synapse_exists = True\" 계산 실패: Undefined symbol True"
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 3 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2, 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 16번째 줄 \"synapse_exists = True\" 계산 실패: Undefined symbol True; 독립 풀이의 정답은 3번(3)인데 표시된 정답은 2번입니다. 독립 풀이 요약: 1. 신경 A의 활동 전위 분석:\n- 자극 지점 $d_3$에서 활동 전위가 시작된다. \n- 그림에서 A의 활동 전위는 $+30\\text{mV}$까지 상승했다가 $0\\text{mV}$를 거쳐 $-60\\text{mV}$, $-80\\text{mV}$로 돌아온다.\n- 표에서 A의 막전위는 I($-80\\text{mV}$), II($0\\text{mV}$), III($-70\\text{mV}$), IV($0\\text{mV}$)이다.\n- 활동 전위가 발생한 지점은 막전위가 크게 변한 곳이다. II와 IV가 $0\\text{mV}$이므로 활동 전위가 진행 중인 지점이다.\n- $d_3$에서 시작하여 $d_4$ 방향으로 전도된다고 가정하면, $d_3$는 활동 전위가 막 시작된 지점이다. \n- $d_3$에서 시작한 활동 전위가 $d_4$로 이동할 때, $d_1$과 $d_2$는 아직 도달하지 않았거나 전도 중이다.\n- 표에서 A의 III은 $-70\\text{mV}$로 휴지 전위와 같다. 이는 활동 전위가 아직 도달하지 않은 지점이다.\n- $d_3$에서 시작하여 $d_4$로 전도될 때, $d_1$과 $d_2$는 자극 지점보다 멀리 있으므로 활동 전위가 도달하지 않았을 가능성이 크다. \n"
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2, 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": false,
+     "detail": "정답 식 \"ans\" 계산 실패: Undefined symbol ans"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 정답 식 \"ans\" 계산 실패: Undefined symbol ans"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 3 로직이 필요했습니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": false,
+     "detail": "조건 검사 실패: A의 d3에서 자극을 주었으므로 t1일 때 d3의 막전위 변화 시간은 0이어야 함 → false; 계산한 정답 2과 같은 선택지가 없습니다. 선택지 값: 3 | 3 | 0 | 3 | 0"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 4 / 표시 2"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 조건 검사 실패: A의 d3에서 자극을 주었으므로 t1일 때 d3의 막전위 변화 시간은 0이어야 함 → false; 코드 검산: 계산한 정답 2과 같은 선택지가 없습니다. 선택지 값: 3 | 3 | 0 | 3 | 0; 독립 풀이의 정답은 4번(4)인데 표시된 정답은 2번입니다. 독립 풀이 요약: 1. 지점 매칭 및 활동 전위 분석:\n- 신경 A와 B의 활동 전위 지속 시간은 $2.0\\text{ms}$이다.\n- 신경 A의 막전위 변화 그래프에서 $0\\text{mV}$에 도달하는 시점은 $1.0\\text{ms}$와 $3.0\\text{ms}$이다. 활동 전위가 발생한 지점은 $d_3$이므로, $d_3$에서의 활동 전위는 $1.0\\text{ms}$에 시작하여 $3.0\\text{ms}$에 끝난다.\n- 신경 B의 막전위 변화 그래프에서 $0\\text{mV}$에 도달하는 시점은 $2.0\\text{ms}$와 $4.0\\text{ms}$이다. $d_3$에서의 활동 전위는 $2.0\\text{ms}$에 시작하여 $4.0\\text{ms}$에 끝난다.\n- 표에서 $0\\text{mV}$인 지점은 A의 II, IV이며, B의 I이다.\n- $t_1$일 때, A의 II와 IV는 $0\\text{mV}$이고 B의 I은 $0\\text{mV}$이다.\n\n2. 전도 속도와 거리 계산:\n- 신경 A의 전도 속도는 $3.0\\text{cm/ms}$이다. ($d_3(6\\text{cm})$에서 $d_1(0\\text{cm})$ 방향으로 $6\\text{cm}$ 이동하는 데 $2.0\\text{ms}$ 소요; 보기·정답 연결: 보기 5개(원본 3개), 서로 다른 보기 5개, 정답 번호 2; 해설 O/X 판정과 정답: 해설의 참 판정은 ㄱ, ㄴ인데 정답 보기는 ㄴ입니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": false,
+     "detail": "통합 변형인데 원본에서 숫자만 바뀌었습니다. 원본 문제와 구조적으로 동일하며 수치와 지점 매칭만 변경됨.; 앞 문제(STEP 1 연습)와 질문이 같습니다.; 앞 문제(STEP 1~2 누적 연습)와 질문이 같습니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": false,
+     "detail": "numbers-only"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "08bd7f2f159efebd4c35358d",
+   "minutes": 21.9
+  },
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "deepseek",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 7,
+    "input": 19781,
+    "output": 9186,
+    "reasoning": 5768,
+    "total": 28967,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 몰질량 + \\ce{D}의 몰질량}{\\ce{B}의 몰질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
+     "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
+     "같은 오독을 해설 STEP 전체에도 적용: \"물질량\" → \"몰질량\"",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4+5 → STEP 3",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량과 반응 계수 b를 구하고 선택지를 분석한다\" → \"A~D의 몰질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 19,
+    "input": 80614,
+    "output": 313981,
+    "reasoning": 280199,
+    "total": 394595,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 2 로직 없이 풀렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": false,
+     "detail": "원본 STEP별 풀이 순서: 원본은 n를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다.; 원본 STEP별 풀이 순서: 원본은 m를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 2 로직 없이 풀렸습니다.; 원본 STEP별 풀이 순서: 원본은 n를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다.; 원본 STEP별 풀이 순서: 원본은 m를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다.; 원본 STEP별 풀이 순서: 원본은 n를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다.; 원본 STEP별 풀이 순서: 원본은 m를 STEP 2에서 도입하는데 변형 해설은 STEP 1에서 먼저 씁니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "23b9d0eccc303be9f0e93cee",
+   "minutes": 23.2
+  },
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 7,
+    "input": 29484,
+    "output": 3840,
+    "reasoning": 0,
+    "total": 33324,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "0.91, 0.94, 0.75"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": false,
+     "detail": "옮겨 적은 수치로 해설대로 계산하면 정답과 맞지 않습니다: 계산한 정답 2과 같은 선택지가 없습니다. 선택지 값: 1/5 | 2/5 | 3/5 | 4/5 | 1"
+    }
+   ],
+   "read": {
+    "steps": [
+     "I에서 한계 반응물을 구한다",
+     "I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 물질량을 구한다"
+    ],
+    "question": "⑤ 1",
+    "proofread": [
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 I에서 한계 반응물 구하기\" → \"I에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"A~D의 물질량 및 상댓값 관계를 이용한 변수 구하기\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"최종 값 계산\" → \"A~D의 물질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 10,
+    "input": 41397,
+    "output": 58862,
+    "reasoning": 0,
+    "total": 100259,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": false,
+     "detail": "계산한 정답 2과 같은 선택지가 없습니다. 선택지 값: A | B"
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 계산한 정답 2과 같은 선택지가 없습니다. 선택지 값: A | B; 보기·정답 연결: 보기 2개(원본 5개), 서로 다른 보기 2개, 정답 번호 2"
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "표기 형식(수식·표): 문제: 표의 칸 수가 행마다 다릅니다 (5 vs 4); 표기 형식(수식·표): 문제: 표의 칸 수가 행마다 다릅니다 (5 vs 4)"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "a4122958d2d134bc4c52a9fb",
+   "minutes": 12.2
+  }
+ ]
+}

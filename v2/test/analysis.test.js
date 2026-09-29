@@ -50,7 +50,7 @@ test('analysis path fixes the misread question word, the STEP count and the step
   assert.ok(!r.steps.some((s) => s.work.includes('물질량')), 'confusable partner corrected in the solution too');
   assert.equal(r.checks.find((c) => c.id === 'source-calculation').state, 'pass');
   assert.ok(r.proofread.some((p) => p.includes('발문 재판독')));
-  assert.ok(r.uncertainties.some((u) => u.includes('자주 뒤바뀌는 단어')), 'confusable words are always shown to the teacher');
+  assert.ok(r.uncertainties.some((u) => u.includes('뒤바뀐 적이 있는 단어')), 'confusable words are always shown to the teacher');
 });
 
 // Gemma's real bio transcription (2026-09-29): handwriting and a value the solution derives (2cm/ms) were
@@ -125,4 +125,31 @@ test('a source verification program that does not run is fixed once with the err
   assert.match(fix[0].text, /synapse_at_C/, 'the model sees the error');
   assert.equal(r.checks.find((c) => c.id === 'source-calculation').state, 'pass');
   assert.ok(r.proofread.some((p) => p.includes('실행 오류를 고쳐')));
+});
+
+// Opus (2026-09-29) restated the printed speed "1cm/ms" in a STEP result; that is not handwriting.
+test('a value both printed-only re-reads keep is a printed condition, not a leak', async () => {
+  const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-an-')));
+  const img = store.files.saveDataUrl('data:image/png;base64,' + Buffer.alloc(300, 1).toString('base64'));
+  const material = { id: 'm4', note: '', images: { problem: img.id, solution: img.id, sameImage: false, views: { problem: [], solution: [] } } };
+  const text = '다음은 민말이집 신경 A와 B의 흥분 전도에 대한 자료이다.\nB를 구성하는 두 뉴런의 흥분 전도 속도는 1cm/ms로 같다.\n이에 대한 설명으로 옳은 것만을 <보기>에서 있는 대로 고른 것은?';
+  const analysis = {
+    title: '생명', subject: '생명과학', topic: '흥분 전도', problem: { text, choices: ['ㄱ', 'ㄴ'], answer: 1 },
+    steps: [{ title: '속도', work: 'B의 속도는 1cm/ms', result: 'B의 속도 1cm/ms' }], stepMarkers: [], techniques: [],
+  };
+  let rereads = 0;
+  const answers = {
+    [prompts.ANALYZE_SYSTEM]: () => analysis,
+    [prompts.PROOFREAD_SYSTEM]: () => ({ fixes: [], solutionStepCount: 0 }),
+    [prompts.REREAD_PROBLEM_SYSTEM]: () => { rereads++; return { text }; },
+    [prompts.REREAD_QUESTION_SYSTEM]: () => ({ question: '이에 대한 설명으로 옳은 것만을 <보기>에서 있는 대로 고른 것은?' }),
+    [prompts.REREAD_HEADINGS_SYSTEM]: () => ({ steps: [] }),
+  };
+  const ctx = { store, job: { id: 'j' }, budget: new Budget({ maxCalls: 12, maxTokens: 1e6 }), log() {},
+    llm: { json: async ({ system }) => ({ data: JSON.parse(JSON.stringify(answers[system]())) }) } };
+  const r = await analyzeMaterial(ctx, material);
+  assert.equal(rereads, 2);
+  assert.deepEqual(r.printedValues, ['1cm/ms']);
+  assert.equal(r.checks.find((c) => c.id === 'derived-value-in-problem').state, 'pass');
+  assert.ok(!r.uncertainties.some((u) => u.includes('1cm/ms')), r.uncertainties.join(' | '));
 });

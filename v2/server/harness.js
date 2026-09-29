@@ -173,7 +173,7 @@ function inspectItem(material, item, mode) {
 const CONFUSABLE = [['물질량', '몰질량']];
 
 /** Hangul words of `target` that two independent re-reads agree should be different (e.g. 물질량 → 몰질량). */
-function hangulFixes(target, readA, readB) {
+function hangulFixes(target, readA, readB, pairs = CONFUSABLE, maxDistance = 1) {
   const words = (s) => [...plain(s).replace(/[－−–]/g, '-').matchAll(/[가-힣]+|-?\d+(?:\.\d+)?/g)].map((m) => m[0]);
   const a = words(readA); const b = words(readB);
   if (!a.length || a.join('|') !== b.join('|')) return [];
@@ -188,8 +188,13 @@ function hangulFixes(target, readA, readB) {
       runT.forEach((w, k) => {
         const r = runA[k];
         const numeric = /^-?\d/.test(w) && /^-?\d/.test(r);
-        // Words: one letter changed, missing or extra (물질량→몰질량, 질량→몰질량). Numbers: any change.
-        if (numeric ? w !== r : editDistance(w, r) === 1) fixes.push([w, r]);
+        // Words: one letter changed, missing or extra (물질량→몰질량, 질량→몰질량), or a known/learned confusable
+        // pair with the same ending (질량비는→부피비는). Numbers: any change.
+        const known = pairs.some((p) => p.some((x) => w.startsWith(x) && p.some((y) => y !== x && r === y + w.slice(x.length))));
+        const d = numeric ? 0 : editDistance(w, r);
+        // A change of more than one letter counts only as an isolated one-word substitution, not inside a rewrite.
+        const similar = d === 1 || (d >= 2 && d <= maxDistance && runT.length === 1 && Math.min(w.length, r.length) > d);
+        if (numeric ? w !== r : similar || known) fixes.push([w, r]);
       });
     }
     runT = []; runA = [];
@@ -223,11 +228,12 @@ function applyWordFixes(text, fixes) {
 /**
  * Once two focused reads confirm a word of a known confusable pair (e.g. the question says 몰질량), the same
  * reader's slips to its partner elsewhere (해설의 물질량) are corrected too — as substrings, since Korean
- * attaches particles (물질량을). Only for listed pairs, where the confusion is known to be systematic.
+ * attaches particles (물질량을). Only for listed pairs, where the confusion is known to be systematic
+ * (the built-in list plus the teacher's past corrections, see learning.readingPairs).
  */
-function confusableFixes(confirmedWords) {
+function confusableFixes(confirmedWords, pairs = CONFUSABLE) {
   const out = [];
-  for (const pair of CONFUSABLE) {
+  for (const pair of pairs) {
     const right = pair.find((w) => confirmedWords.some((c) => c.startsWith(w)));
     if (right) for (const wrong of pair) if (wrong !== right) out.push([wrong, right]);
   }

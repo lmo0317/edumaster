@@ -1,7 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { selectRules } = require('./learning');
+const { selectRules, readingHint, readingPairs } = require('./learning');
 const harness = require('./harness');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
@@ -49,6 +49,7 @@ function normalizeMaterial(data) {
     sourceVerification: data?.verification && typeof data.verification === 'object' ? data.verification : (data?.sourceVerification || null),
     stepHeadings: arr(data?.stepHeadings).map((h) => str(h, 300)).filter(Boolean).slice(0, 10),
     checks: arr(data?.checks).slice(0, 20),
+    printedValues: arr(data?.printedValues).map((v) => str(v, 40)).filter(Boolean).slice(0, 20),
   };
 }
 
@@ -178,8 +179,16 @@ function normalizeGenerated(data) {
 
 // ---------------------------------------------------------------- analysis
 
+const hinted = (ctx, text) => (ctx.readingHint ? `${text}\n\n${ctx.readingHint}` : text);
+
 async function analyzeMaterial(ctx, material) {
   const { store, llm, budget, signal } = ctx;
+  // Reading RAG: the teacher's past corrections of analyses (물질량 → 몰질량) go to every reader and join the
+  // confusable pairs that are propagated and flagged.
+  const corrections = store?.corrections?.all() || [];
+  ctx.readingHint = readingHint(corrections);
+  ctx.readingPairs = readingPairs(corrections);
+  const withHint = (text) => hinted(ctx, text);
   // Prefer the browser-made reading views (upscaled, tiled with overlap) over a small original.
   const { images: src } = material;
   const separate = src.solution && !src.sameImage;
@@ -200,7 +209,7 @@ async function analyzeMaterial(ctx, material) {
   const { data, shapeFixes: analyzeShape = [] } = await llm.json({
     purpose: 'analyze', jobId: ctx.job.id, budget, signal, vision: true, effort: 'off', maxTokens: 16000,
     system: prompts.ANALYZE_SYSTEM,
-    text: prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note }),
+    text: withHint(prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note })),
     images,
   });
   if (analyzeShape.length) ctx.log(`응답 JSON 구조 보정: ${analyzeShape.join(', ')}를 최상위로 옮김`);
@@ -216,7 +225,7 @@ async function analyzeMaterial(ctx, material) {
     result.steps.forEach((s, i) => { for (const k of ['title', 'work', 'result']) fields[`steps[${i}].${k}`] = s[k]; });
     const { data: check } = await llm.json({
       purpose: 'proofread', jobId: ctx.job.id, budget, signal, vision: true, effort: 'low', maxTokens: 32000,
-      system: prompts.PROOFREAD_SYSTEM, text: prompts.proofreadText(fields), images,
+      system: prompts.PROOFREAD_SYSTEM, text: withHint(prompts.proofreadText(fields)), images,
     });
     const { applied, unresolved } = applyFixes(result, arr(check?.fixes).slice(0, 30));
     result.proofread = applied;
@@ -259,8 +268,11 @@ async function analyzeMaterial(ctx, material) {
   // Two agreeing reads can share the same slip on a known confusable pair (Gemma read 몰질량 as 물질량 in all
   // three reads), so the teacher is always asked to look at those words.
   const allText = [result.problem.text, ...result.steps.map((s) => s.title + ' ' + s.work)].join(' ');
-  const seen = [...new Set(harness.CONFUSABLE.flat().filter((w) => allText.includes(w)))];
-  if (seen.length) result.uncertainties.push(`"${seen.join('", "')}"은(는) 판독에서 자주 뒤바뀌는 단어입니다(${harness.CONFUSABLE.map((p) => p.join('↔')).join(', ')}). 원본과 같은지 확인해 주세요.`);
+  const pairs = ctx.readingPairs || harness.CONFUSABLE;
+  const hit = pairs.filter((p) => p.some((w) => allText.includes(w)));
+  const seen = [...new Set(hit.flat().filter((w) => allText.includes(w)))];
+  if (seen.length) result.uncertainties.push(`"${seen.join('", "')}"은(는) 판독에서 뒤바뀐 적이 있는 단어입니다(${hit.map((p) => p.join('↔')).join(', ')}). 원본과 같은지 확인해 주세요.`);
+  if (corrections.length) result.proofread.push(`과거 교사 교정 ${corrections.length}건을 판독에 참고했습니다.`);
   return refreshStepCountNote(result);
 }
 
@@ -278,9 +290,9 @@ async function focusedReread(ctx, result, byRole, hasSolution) {
     return out;
   };
   const cleanHeading = (h) => str(h?.title ?? h, 300).replace(/^\s*(?:step|STEP)\s*\d+\s*[.:)·]?\s*/, '').replace(/[.。]\s*$/, '');
-  const questions = (await read('reread-question', prompts.REREAD_QUESTION_SYSTEM, '발문만 JSON으로 반환하라.', byRole.problem)).map((d) => str(d.question, 2000));
+  const questions = (await read('reread-question', prompts.REREAD_QUESTION_SYSTEM, hinted(ctx, '발문만 JSON으로 반환하라.'), byRole.problem)).map((d) => str(d.question, 2000));
   const headingReads = hasSolution
-    ? (await read('reread-headings', prompts.REREAD_HEADINGS_SYSTEM, '단계 제목만 JSON으로 반환하라.', byRole.solution)).map((d) => arr(d.steps).filter((s) => s?.marker || s?.title).map(cleanHeading).filter(Boolean))
+    ? (await read('reread-headings', prompts.REREAD_HEADINGS_SYSTEM, hinted(ctx, '단계 제목만 JSON으로 반환하라.'), byRole.solution)).map((d) => arr(d.steps).filter((s) => s?.marker || s?.title).map(cleanHeading).filter(Boolean))
     : [];
   result.rereads = { questions, headings: headingReads };
   if (hasSolution && headingReads.length === 2 && headingReads[0].length && headingReads[0].length === headingReads[1].length) {
@@ -293,17 +305,17 @@ async function focusedReread(ctx, result, byRole, hasSolution) {
   const [a, b] = questions;
   // Question: fix words that both focused reads read differently from the first pass (one-letter slips).
   const lines = result.problem.text.split('\n');
-  const qIndex = lines.map((l, i) => [i, harness.hangulFixes(l, a, b).length || 0, (harness.plain(l).match(/[가-힣]+/g) || []).length]).filter(([, , n]) => n > 0);
+  const qIndex = lines.map((l, i) => [i, harness.hangulFixes(l, a, b, ctx.readingPairs).length || 0, (harness.plain(l).match(/[가-힣]+/g) || []).length]).filter(([, , n]) => n > 0);
   const target = qIndex.map(([i]) => i).reverse().find((i) => /[?？]|은\?|는\?|것은|인가/.test(lines[i])) ?? qIndex.map(([i]) => i).pop();
   if (target === undefined) return;
-  const fixes = harness.hangulFixes(lines[target], a, b);
+  const fixes = harness.hangulFixes(lines[target], a, b, ctx.readingPairs);
   if (!fixes.length) return;
   lines[target] = harness.applyWordFixes(lines[target], fixes);
   result.problem.text = lines.join('\n');
   result.proofread.push(...fixes.map(([w, r]) => `발문 재판독(2회 일치): "${w}" → "${r}"`));
   // The question confirmed a word of a known confusable pair: the same reader's slips to its partner in the
   // choices and the solution are the same systematic misread.
-  const known = harness.confusableFixes(fixes.map(([, r]) => r));
+  const known = harness.confusableFixes(fixes.map(([, r]) => r), ctx.readingPairs);
   if (known.length) {
     const fixText = (t) => harness.applySubstringFixes(t, known);
     result.problem.choices = result.problem.choices.map(fixText);
@@ -323,7 +335,8 @@ function derivedLeaks(material, text) {
       ...[...harness.plain(s.result).matchAll(/([a-zA-Z](?:_?\d)?)\s*=\s*(-?[\d./]+)/g)].map((m) => `${m[1].replace('_', '')}=${m[2]}`),
       ...[...harness.plain(s.result).matchAll(/(-?\d+(?:\.\d+)?)\s*(cm\/ms|m\/s|ms|mV|g\/mol)/g)].map((m) => m[1] + m[2]),
     ];
-    for (const t of tokens) if (problem.includes(t.replace(/\s+/g, '')) && !leaks.some((l) => l.token === t)) leaks.push({ step: i + 1, token: t });
+    // A value two printed-only re-reads kept is printed (the solution merely restates a given, e.g. 1cm/ms).
+    for (const t of tokens) if (problem.includes(t.replace(/\s+/g, '')) && !(material.printedValues || []).includes(t) && !leaks.some((l) => l.token === t)) leaks.push({ step: i + 1, token: t });
   });
   return leaks;
 }
@@ -337,6 +350,7 @@ async function printedProblemReread(ctx, result, images) {
   ctx.log(`문제 본문에 해설에서 구하는 값(${suspects.join(', ')})이 있어 인쇄된 글자만 다시 읽는 중`);
   const words = (t) => new Set(harness.plain(t).match(/[가-힣]{2,}/g) || []);
   const before = words(result.problem.text);
+  const reads = []; // same-problem re-reads and the suspects each still contains
   for (let i = 0; i < 2; i++) {
     let data;
     try {
@@ -351,13 +365,28 @@ async function printedProblemReread(ctx, result, images) {
     const shared = [...after].filter((w) => before.has(w)).length;
     // Same problem: most of the re-read's words were in the first transcription, and it is not a fragment.
     const same = after.size >= 5 && shared / after.size >= 0.7 && shared / Math.max(1, before.size) >= 0.4;
-    if (!same || derivedLeaks(result, text).length) continue;
-    result.problem.text = text;
-    if (str(data?.figure, 3000)) result.problem.figure = str(data.figure, 3000);
-    result.proofread.push(`문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 ${suspects.join(', ')}이(가) 빠진 본문으로 교체`);
-    return;
+    if (!same) continue;
+    const kept = derivedLeaks(result, text).map((l) => l.token);
+    if (!kept.length) { useText(result, text, data, suspects); return; }
+    reads.push({ text, data, kept });
   }
-  result.uncertainties.push(`문제 본문에 해설에서 구하는 값(${suspects.join(', ')})이 있는데, 인쇄된 글자만 다시 읽어도 확인하지 못했습니다. 필기인지 원본과 대조해 주세요.`);
+  // Values both printed-only reads still show are printed conditions, not handwriting.
+  const printed = reads.length === 2 ? suspects.filter((t) => reads.every((r) => r.kept.includes(t))) : [];
+  if (printed.length) {
+    result.printedValues = [...new Set([...(result.printedValues || []), ...printed])];
+    result.proofread.push(`인쇄된 조건으로 확인(인쇄 글자만 두 번 읽어도 그대로): ${printed.join(', ')}`);
+  }
+  const rest = suspects.filter((t) => !printed.includes(t));
+  if (!rest.length) return;
+  const clean = reads.find((r) => r.kept.every((t) => printed.includes(t)));
+  if (clean) { useText(result, clean.text, clean.data, rest); return; }
+  result.uncertainties.push(`문제 본문에 해설에서 구하는 값(${rest.join(', ')})이 있는데, 인쇄된 글자만 다시 읽어도 확인하지 못했습니다. 필기인지 원본과 대조해 주세요.`);
+}
+
+function useText(result, text, data, removed) {
+  result.problem.text = text;
+  if (str(data?.figure, 3000)) result.problem.figure = str(data.figure, 3000);
+  result.proofread.push(`문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 ${removed.join(', ')}이(가) 빠진 본문으로 교체`);
 }
 
 // The original's verification program did not run (undefined name, syntax): show the model the error and
@@ -457,18 +486,30 @@ function tableRows(text) {
     const cells = line.trim().replace(/^\||\|$/g, '').split('|').slice(1)
       .map((c) => c.replace(/\\ce\{[^}]*\}|\$|\s|\\,/g, '').replace(/\\(d?frac)\{(\d+)\}\{(\d+)\}/g, '$2/$3'))
       .filter((c) => /\d/.test(c) && c.length <= 24);
-    if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(',') });
+    if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(','), cells });
   }
   return rows;
 }
+// Values that repeat across the original's table or come from its figure (membrane potentials 0, -70, +30 read
+// off one action-potential curve) are the problem's reading vocabulary, not designed experiment amounts:
+// rows made only of them are expected to recur and are not "reused numbers".
+function readingVocabulary(material) {
+  const count = new Map();
+  for (const r of tableRows(material.problem.text)) for (const c of new Set(r.cells)) count.set(c, (count.get(c) || 0) + 1); // rows containing c
+  const figure = new Set(harness.plain(material.problem.figure).replace(/[−–]/g, '-').replace(/\s/g, '').match(/[+-]?\d+(?:\.\d+)?/g) || []);
+  const bare = (v) => v.replace(/^\+/, '');
+  return new Set([...count].filter(([v, n]) => n >= 2 || figure.has(v) || figure.has(bare(v))).map(([v]) => v));
+}
+const designedRows = (text, vocab) => tableRows(text).filter((r) => !r.sig.split(',').every((v) => vocab.has(v)));
 
 /** Experiment rows whose given amounts match the original's or (for the final problem) an earlier problem's. */
 function numbersReused(item, prior, material) {
-  const mine = tableRows(item.problem.text);
+  const vocab = readingVocabulary(material);
+  const mine = designedRows(item.problem.text, vocab);
   if (!mine.length) return [];
   const notes = [];
   const compare = (text, whose) => {
-    const theirs = new Set(tableRows(text).map((r) => r.sig));
+    const theirs = new Set(designedRows(text, vocab).map((r) => r.sig));
     for (const r of mine) if (theirs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
   };
   compare(material.problem.text, '원본');
@@ -479,7 +520,8 @@ function numbersReused(item, prior, material) {
 /** Row signatures the new problem must avoid: the original's, and (for the final problem) earlier problems'. */
 function usedRowsFor(item, prior, material) {
   const texts = [material.problem.text, ...(item.stage.kind === 'twin' ? prior.filter((p) => p.problem).map((p) => p.problem.text) : [])];
-  return [...new Set(texts.flatMap((t) => tableRows(t).map((r) => r.sig)))];
+  const vocab = readingVocabulary(material);
+  return [...new Set(texts.flatMap((t) => designedRows(t, vocab).map((r) => r.sig)))];
 }
 
 // The final problem repeating a practice problem (same question, choices or answer) is copying, not integrating.
@@ -570,6 +612,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
     if (round > 0 && same(repairReasons(check), item.attempts[item.attempts.length - 1].failures)) break;
+    // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
+    if (ctx.budget.affords && !ctx.budget.affords(2 + (ctx.reserveCalls || 0))) {
+      ctx.log(`${item.label}: 남은 문제를 만들 토큰을 남기려고 수정을 건너뜁니다`);
+      check.soft.push('토큰 상한 때문에 자동 수정을 건너뛰었습니다. 교사 검토가 필요합니다.');
+      break;
+    }
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
     ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중`);
@@ -600,6 +648,9 @@ async function runGeneration(ctx) {
     if (['passed', 'warning', 'needs_review'].includes(item.status)) continue; // resume keeps finished work
     const prior = job.items.filter((x) => x.index < item.index && x.problem);
     try {
+      // Budget kept for the problems still to come (generate + solve each), so repairs of an early practice
+      // problem never starve the final problem.
+      ctx.reserveCalls = job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status)).length * 2;
       await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
@@ -614,7 +665,9 @@ async function runGeneration(ctx) {
 }
 
 function pickRules(store, material) {
-  return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
+  // The problem a feedback was written about goes along: "이 조건은 불필요" means little without it.
+  return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope,
+    context: r.source?.excerpt ? `${r.source.label || '이전 생성 문제'}: ${r.source.excerpt.replace(/\s+/g, ' ').slice(0, 220)}` : '' }));
 }
 
 module.exports = { sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

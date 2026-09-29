@@ -20,6 +20,8 @@ const stage = args.stage || 'analyze';
 const mode = args.mode || 'integrated';
 const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir).filter((d) => fs.existsSync(path.join(casesDir, d, 'case.json'))) : args.cases.split(',');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+const { PROMPT_VERSION } = require('../server/prompts');
+const learning = {};
 
 function dataUrl(file) {
   const ext = path.extname(file).slice(1).toLowerCase();
@@ -36,6 +38,17 @@ async function main() {
   fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'eval\n');
   const keyFile = args.key || path.join(root, 'data', 'deepseek-api-key.txt');
   if (fs.existsSync(keyFile)) fs.copyFileSync(keyFile, path.join(dataDir, 'deepseek-api-key.txt'));
+  // Measure the system as it runs: the teacher's approved rules and reading corrections come along (RAG).
+  // --no-learning measures the bare prompts, so the two runs show what retrieval adds.
+  const learningFrom = args['learning-from'] || path.join(root, 'data');
+  learning.used = args['no-learning'] ? 'none' : learningFrom;
+  if (!args['no-learning']) {
+    for (const dir of ['rules', 'corrections']) {
+      if (fs.existsSync(path.join(learningFrom, dir))) fs.cpSync(path.join(learningFrom, dir), path.join(dataDir, dir), { recursive: true });
+    }
+  }
+  learning.rules = fs.existsSync(path.join(dataDir, 'rules')) ? fs.readdirSync(path.join(dataDir, 'rules')).filter((f) => f.endsWith('.json')).length : 0;
+  learning.corrections = fs.existsSync(path.join(dataDir, 'corrections')) ? fs.readdirSync(path.join(dataDir, 'corrections')).filter((f) => f.endsWith('.json')).length : 0;
   const app = createApp({ dataDir, llmMode: 'deepseek', relay: { dir: args['relay-dir'] || '', label: 'relay', timeoutMs: 3 * 3600 * 1000 } });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -82,6 +95,7 @@ async function main() {
           const job = await wait(gen.jobId);
           row.generationUsage = job.usage;
           row.generation = scoreGeneration(job);
+          row.rulesAttached = (job.rules || []).length;
           row.jobId = job.id;
         }
       } catch (e) {
@@ -97,7 +111,7 @@ async function main() {
 
   fs.mkdirSync(path.join(__dirname, 'reports'), { recursive: true });
   const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}`);
-  fs.writeFileSync(base_ + '.json', JSON.stringify(results, null, 1));
+  fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, learning, results }, null, 1));
   fs.writeFileSync(base_ + '.md', report(results));
   console.log(`\n\n${report(results)}\n보고서: ${base_}.md`);
 }
@@ -113,6 +127,8 @@ function report(results) {
   const pct = (list) => (list?.length ? `${list.filter((c) => c.pass).length}/${list.length}` : '-');
   const lines = [
     `# 평가 결과 (${stamp}, ${stage}, ${mode})`, '',
+    `- 프롬프트 버전: ${PROMPT_VERSION}`,
+    `- 학습 상태(RAG): ${learning.used === 'none' ? '끔 (--no-learning)' : `교사 지침 ${learning.rules}개 · 판독 교정 ${learning.corrections}개`}`, '',
     '| 사례 | 모델 | 분석 | 생성 | 분석 비용 | 생성 비용 | 시간 |', '|---|---|---|---|---|---|---|',
     ...results.map((r) => `| ${r.case} | ${r.provider} | ${pct(r.analysis)} | ${pct(r.generation)} | ${usageText(r.analysisUsage, r.provider)} | ${usageText(r.generationUsage, r.provider)} | ${r.minutes}분 |`),
     '',
@@ -122,6 +138,7 @@ function report(results) {
     lines.push(`## ${r.case} · ${r.provider}`);
     if (r.error) lines.push(`- 오류: ${r.error}`);
     if (r.read) lines.push(`- 읽은 STEP: ${r.read.steps.map((s, i) => `${i + 1}) ${s}`).join(' / ')}`, `- 읽은 발문: ${r.read.question}`);
+    if (r.jobId) lines.push(`- 생성 작업: ${r.jobId} (붙인 교사 지침 ${r.rulesAttached}개)`);
     lines.push(failed.length ? '- 실패한 항목:' : '- 모든 항목 통과');
     for (const c of failed) lines.push(`  - ✗ ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
     lines.push('');

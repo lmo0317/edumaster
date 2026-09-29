@@ -4,6 +4,7 @@
 const { newId } = require('./store');
 const { Budget } = require('./llm');
 const pipeline = require('./pipeline');
+const { PROMPT_VERSION } = require('./prompts');
 
 const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
 
@@ -48,7 +49,7 @@ function createJobs({ store, llm, config }) {
         const result = await pipeline.analyzeMaterial(ctx, material);
         const current = store.materials.get(material.id);
         // A title the teacher typed wins over the one the model suggests.
-        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, analyzedWith: ctx.provider, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
+        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, analyzedWith: ctx.provider, promptVersion: PROMPT_VERSION, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
         ctx.log('분석 완료');
       } catch (e) {
         store.materials.put({ ...store.materials.get(material.id), status: 'failed', error: e.message });
@@ -110,7 +111,7 @@ function createJobs({ store, llm, config }) {
 
   function create(type, fields, budgetKey) {
     return enqueue({
-      id: newId(), type, createdAt: new Date().toISOString(), log: [],
+      id: newId(), type, createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
       budget: { maxCalls: config.budget[budgetKey + 'Calls'], maxTokens: config.budget[budgetKey + 'Tokens'] },
       usage: { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 },
       ...fields,

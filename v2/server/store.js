@@ -79,6 +79,7 @@ function openStore(dataDir) {
     materials: new Collection(path.join(dataDir, 'materials')),
     jobs: new Collection(path.join(dataDir, 'jobs')),
     rules: new Collection(path.join(dataDir, 'rules')),
+    corrections: new Collection(path.join(dataDir, 'corrections')),
     usage: new Collection(path.join(dataDir, 'usage')),
     files: new Files(path.join(dataDir, 'files')),
   };

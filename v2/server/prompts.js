@@ -127,13 +127,13 @@ function analyzeText({ hasSolution, sameImage, note }) {
 const DESIGN_PRINCIPLES = `[변형 문제 설계 원칙]
 1. 원본 풀이의 STEP 로직을 그대로 써서 풀리는 문제를 만든다. 다른 방법이 더 쉬운 문제로 바뀌면 안 된다. 교사의 보조 문자·가정/모순 판정·비교 방식을 해설에서 그대로 사용한다.
 2. 학생은 계산기를 쓰지 못한다. 모든 주어진 값, 중간값, 정답이 손으로 계산하기 깔끔해야 한다 (작은 정수 또는 분모가 작은 분수).
-3. 풀이에 쓰이지 않는 조건, 불필요한 서술, 답이나 중간 결론을 미리 알려주는 문구를 넣지 않는다. (예: 추론해야 할 '남는 물질'을 문제에서 알려주면 안 된다.)
+3. 풀이에 쓰이지 않는 조건, 불필요한 서술, 답이나 중간 결론을 미리 알려주는 문구를 넣지 않는다. (예: 화학에서 추론해야 할 '남는 물질', 생명과학에서 추론해야 할 '시냅스 위치'·'전도 속도'를 문제에서 알려주면 안 된다.)
    원본의 단서 문구(예: "(단, 온도와 압력은 일정하다.)")도 이 문제의 풀이에 실제로 쓰일 때만 넣는다. 문제의 모든 문장, 수치, 표의 행과 열은 풀이 어딘가에 쓰여야 한다. 구해야 할 값(예: $x$)을 표에 채워 주지 않는다. 원본에 없던 방식의 빈칸('-', '?')으로 표를 비우지 않는다 (숨길 값은 원본처럼 기호로 두거나 행을 뺀다).
 4. 조건끼리 모순되거나 답이 둘 이상 나오면 안 된다. 선택지는 서로 다른 값이어야 하며, 문자가 들어간 선택지는 문자에 어떤 양수를 넣어도 서로 달라야 한다.
 5. 원본 문제를 그대로 복사하거나 숫자 하나만 바꾼 문제는 안 된다. 표의 실험 수치는 원본과도, 이번 세트의 앞 문제들과도 다른 값으로 새로 정한다.
 6. 문제 본문에는 학생에게 필요한 인쇄 정보만. 제작 의도는 designNote에만 쓴다. designNote는 최종 문제의 실제 수치와 일치해야 한다.
-7. 연습 문제에서도 목표 STEP 각각의 '핵심 기법'이 풀이에 반드시 필요해야 한다. 예를 들어 STEP 1의 기법이 '한쪽이 모두 반응했다고 가정 → 다른 실험과 비교해 모순 → 반대쪽이 모두 반응'이라면, STEP 1 연습 문제는 그 가정·비교 없이는 답을 낼 수 없어야 한다.
-8. 원본에 없던 정보(몰질량 값, 전체 몰수, 한계 반응물 이름, 계수 등)를 새로 주어 원본 기법을 우회하게 만들지 않는다. 문제의 형식(표 구조, 묻는 방식)은 원본을 따른다.`;
+7. 연습 문제에서도 목표 STEP 각각의 '핵심 기법'이 풀이에 반드시 필요해야 한다. 그 STEP의 기법(원본 해설의 technique) 없이 답을 낼 수 있으면 실패다. 예: 기법이 '한쪽이 모두 반응했다고 가정 → 다른 실험과 비교해 모순'이면 그 가정·비교 없이는 답이 안 나와야 하고, '막전위 값으로 각 지점을 짝짓기'이면 짝짓기 없이는 답이 안 나와야 한다.
+8. 원본에 없던 정보(원본에서 추론하던 값·대응 관계·이름, 예: 몰질량 값, 한계 반응물, 지점 대응, 전도 속도, 시냅스 위치)를 새로 주어 원본 기법을 우회하게 만들지 않는다. 문제의 형식(표·그림 구조, 묻는 방식, <보기> 형식)은 원본을 따른다.`;
 
 const VERIFY_SPEC = `[verification — 서버가 코드로 정확한 분수 계산을 실행한다]
 - program: 한 줄에 하나씩 mathjs 문장. 먼저 문제에 주어진 값을 변수로 두고, 해설의 계산을 그대로 따라 중간값을 계산한다. 예: ["a1 = 5", "left1 = 10/3", "k = (a1 - left1) / 5", "ans = 3 / 15 * 2"]
@@ -205,11 +205,11 @@ function stageInstruction(stage, total, mode) {
     return `[이번에 만들 문제: 최종 통합 변형 문제]
 - 원본의 STEP 1~${n} 전체 로직이 모두 필요한 킬러 수준 문제. usesSteps는 [${all}].
 - 원본과 같은 표에 숫자만 바꾼 문제는 실패다. 앞에서 만든 연습 문제들의 아이디어(아래 [앞 단계 문제])를 실제로 통합해 원본과 다른 구조를 만든다. 다음 중 둘 이상을 쓴다:
-  (a) 연습 문제에서 새로 물은 값(예: 반응 후 전체 몰수 비, 남은 물질의 질량)을 최종 풀이의 필수 중간 단계로 넣거나 조건으로 주고 역으로 다른 값을 묻는다.
+  (a) 연습 문제에서 새로 물은 값(예: 반응 후 전체 몰수 비, 특정 시점의 막전위)을 최종 풀이의 필수 중간 단계로 넣거나 조건으로 주고 역으로 다른 값을 묻는다.
   (b) 묻는 대상을 바꾼다 (원본이 구한 값을 조건으로 주고, 원본의 조건이던 값을 묻기 등).
-  (c) 가정→모순 판정의 방향이나 위치를 바꾼다 (어느 실험에서 판정해야 하는지, 어느 물질이 남는지).
-  (d) 표의 정보 배치를 바꾼다 (주는 값과 숨기는 값을 바꾸되 원본 기법은 그대로 필요).
-- 최종 문제는 원본과 같은 수준 이상의 킬러 문제다. 원본 마지막 STEP의 결론(원본이 최종적으로 계산한 종류의 값, 예: 계수·몰질량 비를 함께 쓰는 식)까지 가야 답이 나와야 한다. 앞 연습 문제보다 쉬워지면 안 된다.
+  (c) 판정의 방향이나 위치를 바꾼다 (예: 어느 실험에서 가정→모순을 판정하는지, 어느 물질이 남는지, 시냅스가 어느 구간에 있는지).
+  (d) 표·그림의 정보 배치를 바꾼다 (주는 값과 숨기는 값을 바꾸되 원본 기법은 그대로 필요).
+- 최종 문제는 원본과 같은 수준 이상의 킬러 문제다. 원본 마지막 STEP의 결론(원본이 최종적으로 판정·계산한 종류의 값)까지 가야 답이 나와야 한다. 앞 연습 문제보다 쉬워지면 안 된다.
 - 앞 연습 문제의 질문·수치·선택지·정답을 그대로 다시 쓰지 않는다. 연습 문제에서 구한 관계는 중간 단계로만 쓰고, 최종 질문은 달라야 한다.
 - 통합했다고 조건을 늘리지 않는다. 모든 조건은 풀이에 쓰여야 한다.
 - designNote에 어떤 앞 문제의 어떤 아이디어를 어떻게 통합했는지 구체적으로 쓴다.`;
@@ -233,7 +233,8 @@ function priorBlock(prior) {
 function rulesBlock(rules) {
   if (!rules.length) return '\n[교사 지침] 없음. appliedRules는 빈 배열.';
   return '\n[교사 지침 — 반드시 지킨다. 각 지침을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
-    `- (${r.id}) [${r.kind === 'dont' ? '하지 말 것' : r.kind === 'do' ? '할 것' : '피드백'}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`).join('\n');
+    `- (${r.id}) [${r.kind === 'dont' ? '하지 말 것' : r.kind === 'do' ? '할 것' : '피드백'}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`
+    + (r.context ? `\n    (이 피드백을 받은 문제 — 같은 실수를 반복하지 않는다. 내용·수치를 베끼지 않는다: ${r.context})` : '')).join('\n');
 }
 
 function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [] }) {
@@ -301,7 +302,18 @@ function repairText({ material, stage, total, mode, rules, item, failures, blind
   ].join('\n');
 }
 
+// Every system prompt, by name — shown on the 지침 page and hashed into PROMPT_VERSION so each job, analysis and
+// harness report says which prompt text produced it.
+const SYSTEMS = {
+  analyze: ANALYZE_SYSTEM, proofread: PROOFREAD_SYSTEM, 'reread-question': REREAD_QUESTION_SYSTEM, 'reread-problem': REREAD_PROBLEM_SYSTEM,
+  'reread-headings': REREAD_HEADINGS_SYSTEM, regroup: REGROUP_SYSTEM, 'fix-verification': FIX_VERIFICATION_SYSTEM,
+  generate: GENERATE_SYSTEM, solve: SOLVE_SYSTEM, repair: REPAIR_SYSTEM,
+};
+const PROMPT_VERSION = require('node:crypto').createHash('sha256')
+  .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
+
 module.exports = {
+  SYSTEMS, PROMPT_VERSION,
   ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
   GENERATE_SYSTEM, generateText,
   SOLVE_SYSTEM, solveText,

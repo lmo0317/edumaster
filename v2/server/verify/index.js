@@ -9,7 +9,9 @@ const MAX_CHARS = 400;
 function normalize(verification, choiceCount) {
   if (!verification || typeof verification !== 'object') return { error: '검산 프로그램이 없습니다.' };
   const list = (v) => (Array.isArray(v) ? v : []);
-  const program = list(verification.program).map((s) => String(s).trim()).filter(Boolean);
+  // Python-style True/False (Gemma writes them) are mathjs true/false.
+  const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
+  const program = list(verification.program).map((s) => logic(s).trim()).filter(Boolean);
   if (!program.length) return { error: '검산 프로그램이 비어 있습니다.' };
   if (program.length > MAX_LINES) return { error: `검산 프로그램이 너무 깁니다 (${program.length}줄).` };
   const tooLong = [...program, verification.answer, ...list(verification.choices)].find((s) => String(s ?? '').length > MAX_CHARS);
@@ -20,7 +22,7 @@ function normalize(verification, choiceCount) {
   if (choices.some((c) => /[ㄱ-ㆎ가-힣]/.test(c))) choices = [];
   if (choiceCount && choices.length && choices.length !== choiceCount) return { error: `선택지 식 개수(${choices.length})가 선택지 수(${choiceCount})와 다릅니다.` };
   const checks = list(verification.checks)
-    .map((c) => (typeof c === 'string' ? { expr: c, desc: '' } : { expr: String(c?.expr ?? '').trim(), desc: String(c?.desc ?? '') }))
+    .map((c) => (typeof c === 'string' ? { expr: logic(c), desc: '' } : { expr: logic(c?.expr).trim(), desc: String(c?.desc ?? '') }))
     .filter((c) => c.expr && c.expr.length <= MAX_CHARS)
     .slice(0, 30);
   // Without choice values the answer has nothing to be compared with, so it is not evaluated (a leftover

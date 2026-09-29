@@ -62,3 +62,34 @@ test('the same complaint after a repair stops the loop (no token burn)', async (
   assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 1);
   assert.equal(item.status, 'warning');
 });
+
+// Opus bio run (2026-09-29): membrane potentials read off one shared curve were flagged as "reused numbers".
+test('values of the original figure/table vocabulary (membrane potentials) are not reused experiment numbers', () => {
+  const material = {
+    problem: { text: '| 신경 | Ⅰ | Ⅱ | Ⅲ | Ⅳ |\n|---|---|---|---|---|\n| A | $-80$ | $0$ | ? | $0$ |\n| B | $0$ | $-60$ | ? | ? |',
+      figure: '세로축 막전위(mV) 눈금 $+30$, $0$, $-60$, $-80$. 휴지 전위 $-70$' },
+  };
+  const item = { index: 2, stage: { kind: 'twin' }, problem: { text: '| 신경 | Ⅰ | Ⅱ |\n|---|---|---|\n| A | $0$ | $-60$ |\n| B | $+30$ | $-80$ |' } };
+  assert.deepEqual(numbersReused(item, [], material), []);
+  // A designed amount that happens to use a curve value together with a new one is still compared.
+  const chem = { problem: { text: '| 실험 | A | B |\n|---|---|---|\n| Ⅰ | $5w$ | $5w$ |\n| Ⅱ | $4w$ | $6w$ |' } };
+  assert.match(numbersReused({ index: 2, stage: { kind: 'twin' }, problem: { text: '| 실험 | A | B |\n|---|---|---|\n| Ⅰ | $4w$ | $6w$ |' } }, [], chem).join(), /원본의 실험 수치\(4w,6w\)/);
+});
+
+// DeepSeek bio run (2026-09-29): repairs of the practice problems used up the 600k-token cap and the final
+// problem was never made. A repair now runs only if the later problems still fit.
+test('a repair is skipped when it would leave too little budget for the problems still to come', async () => {
+  const budget = new Budget({ maxCalls: 20, maxTokens: 45000 });
+  const solves = [{ answer: 3, stepsUsed: [1, 2] }];
+  let made = 0;
+  const llm = { json: async ({ system }) => {
+    budget.reserve(); budget.add({ input: 0, output: 0, reasoning: 0, total: 10000 });
+    return { data: system === prompts.SOLVE_SYSTEM ? solves.shift() : generated(++made) };
+  } };
+  const ctx = { llm, job: { id: 'j' }, budget, effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, save() {}, log() {}, reserveCalls: 2 };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 0);
+  assert.ok(item.warnings.some((w) => w.includes('토큰 상한')), item.warnings.join(' | '));
+  assert.ok(budget.affords(2), 'the next problem still fits');
+});

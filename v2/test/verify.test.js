@@ -93,3 +93,8 @@ test('a check that computes a value instead of stating a condition is skipped wi
   const onlyValue = await codeCheck({ program: ['a = 1'], answer: '', choices: [], checks: [{ expr: 'a + 1' }] }, { answer: 1, choiceCount: 5 });
   assert.equal(onlyValue.status, 'skip', 'nothing was actually checked');
 });
+
+test('Python-style True/False in a program (Gemma) run as mathjs booleans', async () => {
+  const r = await codeCheck({ program: ['synapse_exists = True', 'x = 2'], answer: '', choices: [], checks: [{ expr: 'synapse_exists == True and x == 2' }] }, { answer: 1, choiceCount: 5 });
+  assert.equal(r.status, 'pass', r.reasons.join());
+});

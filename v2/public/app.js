@@ -645,7 +645,7 @@
 
   // ------------------------------------------------------------------ rules
   async function rulesView() {
-    const [rules, promptsText] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts')]);
+    const [rules, promptsText, corrections] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections')]);
     const group = (s) => rules.filter((r) => r.status === s);
     const row = (r) => `<div class="entry" data-rule="${r.id}" style="align-items:flex-start">
       <div style="flex:1"><div>${esc(r.text)}</div>
@@ -661,13 +661,20 @@
         <div class="row" style="margin-top:8px"><span class="spacer"></span><button class="primary" id="add">추가</button></div></div>
       <div class="panel"><h2>승인 대기 (${group('pending').length})</h2><div class="list">${group('pending').map(row).join('') || '<span class="muted small">없음</span>'}</div></div>
       <div class="panel"><h2>적용 중 (${group('approved').length})</h2><div class="list">${group('approved').map(row).join('') || '<span class="muted small">없음</span>'}</div></div>
+      <div class="panel"><h2>판독 교정 기억 (${corrections.length})</h2><p class="muted small">분석 결과를 고치면 바뀐 단어가 여기에 쌓이고, 다음 분석부터 판독 모델에 "이전에 잘못 읽은 단어"로 알려 주며 원본 확인 항목에 올립니다.</p>
+        <div class="list">${corrections.map((c) => `<div class="entry" data-corr="${c.id}"><div style="flex:1">"${esc(c.wrong)}" → "${esc(c.right)}" <span class="muted small">${c.count}회 · ${esc(c.subject || '')} · ${fmtTime(c.lastAt)}</span></div><button class="small danger" data-act="del-corr">삭제</button></div>`).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>
       <div class="panel"><details data-k="rej"><summary>반려됨 (${group('rejected').length})</summary><div class="inner list">${group('rejected').map(row).join('')}</div></details></div>
-      <div class="panel"><details data-k="prompts"><summary>생성에 쓰는 기본 지시문 (읽기 전용)</summary><div class="inner">
-        ${[['analyze', '원본 분석'], ['generate', '변형 문제 설계'], ['solve', '독립 풀이 검토'], ['repair', '검토 후 수정']].map(([k, t]) => `<h3>${t}</h3><pre class="values" style="max-height:340px">${esc(promptsText[k])}</pre>`).join('')}</div></details></div>`;
+      <div class="panel"><details data-k="prompts"><summary>모델에 보내는 기본 지시문 (읽기 전용 · 버전 ${esc(promptsText.version)})</summary><div class="inner">
+        ${[['analyze', '원본 분석'], ['proofread', '원본 대조 교정'], ['reread-question', '발문 재판독'], ['reread-headings', '해설 단계 제목 재판독'], ['reread-problem', '문제 본문 재판독 (필기 유입 시)'], ['regroup', 'STEP 묶기'], ['fix-verification', '원본 검산 프로그램 수정'], ['generate', '변형 문제 설계'], ['solve', '독립 풀이 검토'], ['repair', '검토 후 수정']].map(([k, t]) => `<h3>${t}</h3><pre class="values" style="max-height:340px">${esc(promptsText[k])}</pre>`).join('')}</div></details></div>`;
     $('#add').addEventListener('click', guard(async () => {
       await api('POST', '/api/rules', { text: $('#ntext').value, kind: $('#nk').value, target: $('#nt').value, scope: 'global' });
       toast('추가했습니다.'); rulesView();
     }));
+    $$('[data-corr] [data-act]').forEach((b) => b.addEventListener('click', guard(async () => {
+      if (!confirm('이 교정 기억을 삭제할까요?')) return;
+      await api('DELETE', '/api/corrections/' + b.closest('[data-corr]').dataset.corr);
+      rulesView();
+    })));
     $$('[data-rule] [data-act]').forEach((b) => b.addEventListener('click', guard(async () => {
       const id = b.closest('[data-rule]').dataset.rule;
       const act = b.dataset.act;

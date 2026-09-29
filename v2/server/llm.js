@@ -28,6 +28,11 @@ class Budget {
   add(usage) {
     this.input += usage.input; this.output += usage.output; this.reasoning += usage.reasoning; this.total += usage.total;
   }
+  /** Whether `calls` more calls of the average size so far still fit under both caps. */
+  affords(calls) {
+    const avg = this.calls ? this.total / this.calls : 0;
+    return this.calls + calls <= this.maxCalls && this.total + avg * calls <= this.maxTokens;
+  }
   toJSON() {
     const { calls, input, output, reasoning, total, maxCalls, maxTokens } = this;
     return { calls, input, output, reasoning, total, maxCalls, maxTokens };
