@@ -8,7 +8,7 @@ const { openStore, newId, isId } = require('./store');
 const { createLlm, PROVIDERS, Budget } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
-const { makeRule, updateRule, readingCorrections, recordCorrections } = require('./learning');
+const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
@@ -280,6 +280,12 @@ function createApp(options = {}) {
     return store.rules.put(updateRule(rule, await readBody(req, 16 * 1024)));
   });
   route('DELETE', /^\/api\/rules\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.rules.remove(id) }));
+  // 학습 page: the exact text the stored knowledge adds to a model call (rules for every problem, reading hints).
+  route('GET', /^\/api\/learning\/preview$/, () => {
+    const global = store.rules.all().filter((r) => r.status === 'approved' && r.scope === 'global')
+      .map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
+    return { rules: prompts.rulesBlock(global).trim(), reading: readingHint(store.corrections.all()) };
+  });
   route('GET', /^\/api\/corrections$/, () => store.corrections.all().sort((a, b) => b.count - a.count));
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 

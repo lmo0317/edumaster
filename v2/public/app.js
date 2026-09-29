@@ -183,7 +183,7 @@
       else if (hash.startsWith('#/materials')) { setNav('materials'); await materialsView(); }
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
-      else if (hash.startsWith('#/rules')) { setNav('rules'); await rulesView(); }
+      else if (hash.startsWith('#/rules') || hash.startsWith('#/learn')) { setNav('rules'); await rulesView(); }
       else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
       else { setNav('home'); await homeView(); }
     } catch (e) {
@@ -551,7 +551,7 @@
     const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
     const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
     $('#rules-preview').innerHTML = `<b>항상 적용되는 교사 지침 ${global.length}개</b>${global.length ? '<ul>' + global.slice(0, 8).map((r) => `<li>[${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : ''}
-      <div>유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것은 생성할 때 자동으로 골라 붙입니다. <a href="#/rules">지침 관리</a></div>`;
+      <div>유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것은 생성할 때 자동으로 골라 붙입니다. <a href="#/learn">학습 관리</a></div>`;
   }
 
   // ------------------------------------------------------------------ job
@@ -673,15 +673,16 @@
       <details data-k="rules"><summary>교사 지침 적용 (${v?.rules?.length || 0})</summary><div class="inner">${v?.rules?.length ? `<table class="rules"><tr><th>지침</th><th>생성 모델이 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${esc(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table>` : '<span class="muted small">붙인 지침이 없습니다.</span>'}</div></details>` : ''}
       ${item.history?.length ? `<details data-k="hist"><summary>이전 버전 (${item.history.length})</summary><div class="inner">${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 피드백: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}</div></details>` : ''}
       ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
-      <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 / 다시 만들기</summary><div class="inner">
+      <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 (학습에 저장) / 다시 만들기</summary><div class="inner">
+        <p class="muted small">남긴 피드백은 학습에 저장되어, 이 문제 내용과 함께 다음 문제를 만들 때 AI에게 전달됩니다.</p>
         <div class="cols cols-3">
           <div><label>대상</label><select name="target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
-          <div><label>종류</label><select name="kind"><option value="feedback">피드백</option><option value="do">앞으로 할 것</option><option value="dont">앞으로 하지 말 것</option></select></div>
-          <div><label>적용 범위</label><select name="scope"><option value="topic">비슷한 유형의 문제에 적용</option><option value="global">모든 문제에 항상 적용</option></select></div>
+          <div><label>종류</label><select name="kind"><option value="feedback">피드백</option><option value="do">앞으로 꼭 할 것</option><option value="dont">앞으로 하지 말 것</option></select></div>
+          <div><label>언제 쓸까요</label><select name="scope"><option value="topic">같은 과목의 비슷한 문제를 만들 때</option><option value="global">모든 문제를 만들 때</option></select></div>
         </div>
         <label>내용</label><textarea name="fb" placeholder="예: STEP 1 연습인데 남는 물질이 B라고 문제에서 알려줘서 STEP 1을 안 거쳐도 풀립니다. 추론할 결론은 주지 마세요."></textarea>
-        <label class="inline"><input type="checkbox" name="approve" checked> 바로 승인 — 다음 생성부터 적용</label>
-        <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">피드백 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
+        <label class="inline"><input type="checkbox" name="approve" checked> 바로 켜기 — 다음 생성부터 적용</label>
+        <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">학습에 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
       </div></details>` : ''}
     </div>`;
   }
@@ -698,7 +699,7 @@
       }
       if (andRegen) { await api('POST', `/api/jobs/${job.id}/items/${item.index}/regenerate`, { feedback: text }); wake(); }
       $('textarea[name=fb]', card).value = '';
-      toast(andRegen ? '피드백을 저장하고 이 문제를 다시 만드는 중입니다.' : '피드백을 저장했습니다. ' + ($('[name=approve]', card).checked ? '다음 생성부터 적용됩니다.' : '지침 화면에서 승인하면 적용됩니다.'));
+      toast(andRegen ? '피드백을 저장하고 이 문제를 다시 만드는 중입니다.' : '학습에 저장했습니다. ' + ($('[name=approve]', card).checked ? '다음 생성부터 적용됩니다.' : '학습 화면에서 켜면 적용됩니다.'));
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
     $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
@@ -775,30 +776,72 @@
 
   // ------------------------------------------------------------------ rules
   async function rulesView() {
-    const [rules, promptsText, corrections] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections')]);
-    const group = (s) => rules.filter((r) => r.status === s);
-    const row = (r) => `<div class="entry" data-rule="${r.id}" style="align-items:flex-start">
-      <div style="flex:1"><div>${esc(r.text)}</div>
-        <div class="muted small">[${KIND[r.kind]}·${TARGET[r.target]}·${r.scope === 'global' ? '항상' : '비슷한 유형'}] ${r.subject ? esc(r.subject) + ' · ' : ''}${fmtTime(r.createdAt)} · 적용된 세트 ${r.applied || 0}개
-          ${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">출처: ${esc(r.source.label || '생성 세트')}</a>` : ''}</div></div>
-      <div class="row">${r.status !== 'approved' ? '<button class="small primary" data-act="approve">승인</button>' : '<button class="small" data-act="pending">보류</button>'}
-        ${r.status !== 'rejected' ? '<button class="small" data-act="reject">반려</button>' : ''}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div></div>`;
-    view.innerHTML = `<h1>지침·피드백</h1>
-      <div class="panel"><h2>전체 생성 지침 추가</h2><p class="muted small">모든 문제 생성에 항상 붙습니다. 각 문제 결과의 '교사 지침 적용'에서 어떻게 지켰는지 확인할 수 있습니다.</p>
-        <div class="cols cols-2"><div><label>종류</label><select id="nk"><option value="do">할 것</option><option value="dont">하지 말 것</option></select></div>
-          <div><label>대상</label><select id="nt"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계</option></select></div></div>
-        <label>내용</label><textarea id="ntext" placeholder="예: 원본 해설이 보조 문자를 쓰면 변형 해설에서도 같은 문자와 순서를 쓴다."></textarea>
-        <div class="row" style="margin-top:8px"><span class="spacer"></span><button class="primary" id="add">추가</button></div></div>
-      <div class="panel"><h2>승인 대기 (${group('pending').length})</h2><div class="list">${group('pending').map(row).join('') || '<span class="muted small">없음</span>'}</div></div>
-      <div class="panel"><h2>적용 중 (${group('approved').length})</h2><div class="list">${group('approved').map(row).join('') || '<span class="muted small">없음</span>'}</div></div>
-      <div class="panel"><h2>판독 교정 기억 (${corrections.length})</h2><p class="muted small">분석 결과를 고치면 바뀐 단어가 여기에 쌓이고, 다음 분석부터 판독 모델에 "이전에 잘못 읽은 단어"로 알려 주며 원본 확인 항목에 올립니다.</p>
-        <div class="list">${corrections.map((c) => `<div class="entry" data-corr="${c.id}"><div style="flex:1">"${esc(c.wrong)}" → "${esc(c.right)}" <span class="muted small">${c.count}회 · ${esc(c.subject || '')} · ${fmtTime(c.lastAt)}</span></div><button class="small danger" data-act="del-corr">삭제</button></div>`).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>
-      <div class="panel"><details data-k="rej"><summary>반려됨 (${group('rejected').length})</summary><div class="inner list">${group('rejected').map(row).join('')}</div></details></div>
-      <div class="panel"><details data-k="prompts"><summary>모델에 보내는 기본 지시문 (읽기 전용 · 버전 ${esc(promptsText.version)})</summary><div class="inner">
+    const [rules, promptsText, corrections, preview] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections'), api('GET', '/api/learning/preview')]);
+    const on = rules.filter((r) => r.status === 'approved');
+    const off = rules.filter((r) => r.status !== 'approved');
+    const KIND_L = { do: '꼭 할 것', dont: '하지 말 것', feedback: '피드백' };
+    const TARGET_L = { problem: '문제', solution: '해설', design: '설계', all: '문제·해설 전체' };
+    const item = (r) => `<div class="learn-item" data-rule="${r.id}">
+      <div class="learn-item-main">
+        <div class="learn-text">${esc(r.text)}</div>
+        <div class="learn-meta"><span class="chip">${KIND_L[r.kind] || r.kind}</span><span class="chip">${TARGET_L[r.target] || r.target}</span>${r.subject ? `<span class="chip">${esc(r.subject)}</span>` : ''}
+          <span class="muted small">${r.applied ? `문제 세트 ${r.applied}개에 반영됨` : '아직 반영된 적 없음'}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">어떤 문제에 대한 피드백인지 보기</a>` : ''}</span></div>
+      </div>
+      <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div>
+    </div>`;
+    const section = (title, when, list, empty) => `<div class="learn-sec"><div class="learn-sec-head"><h3>${title}</h3><span class="learn-when">${when}</span></div>
+      <div class="learn-list">${list.map(item).join('') || `<p class="muted small">${empty}</p>`}</div></div>`;
+    const EXAMPLES = ['풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.', '최종 문제는 숫자만 바꾸지 말고 앞 연습 문제의 아이디어를 엮어 새 구조로 만든다.', '해설은 원본 해설의 보조 문자와 풀이 순서를 그대로 따른다.'];
+    view.innerHTML = `<h1>학습</h1>
+      <div class="panel learn-intro">
+        <p>선생님이 가르친 내용을 저장해 두었다가, AI가 <b>다음에 문제를 만들거나 사진을 읽을 때</b> 그 상황에 맞는 것을 찾아 함께 전달합니다(RAG). AI 모델 자체를 다시 훈련시키지 않으므로, 저장하면 <b>바로 다음 생성부터</b> 반영되고 끄거나 지우면 바로 빠집니다.</p>
+        <div class="learn-flow">
+          <div><span class="num">1</span><b>가르치기</b><span>문제 카드의 피드백, 아래 입력, 분석 결과 수정</span></div>
+          <div><span class="num">2</span><b>저장</b><span>내용과 함께 언제 쓸지(모든 문제 / 비슷한 문제 / 사진 읽기)를 기억</span></div>
+          <div><span class="num">3</span><b>다음에 전달</b><span>새 문제를 만들 때 맞는 내용을 골라 AI 지시문에 붙임</span></div>
+          <div><span class="num">4</span><b>지켰는지 확인</b><span>문제 카드의 '교사 지침 적용'에서 어떻게 지켰는지와 독립 검토 판정을 보여 줌</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>AI에게 가르치기</h2>
+        <label>가르칠 내용</label>
+        <textarea id="ntext" placeholder="예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다."></textarea>
+        <div class="learn-examples">${EXAMPLES.map((t) => `<button type="button" class="small ex">${esc(t)}</button>`).join('')}</div>
+        <div class="cols cols-3" style="margin-top:10px">
+          <div><label>언제 쓸까요</label><select id="ns"><option value="global">모든 문제를 만들 때</option><option value="topic">같은 과목의 비슷한 문제를 만들 때</option></select></div>
+          <div><label>종류</label><select id="nk"><option value="do">꼭 할 것</option><option value="dont">하지 말 것</option></select></div>
+          <div><label>어디에</label><select id="nt"><option value="all">문제·해설 전체</option><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option></select></div>
+        </div>
+        <div class="row" style="margin-top:10px"><span class="muted small">문제를 보다가 떠오른 피드백은 그 문제 카드에서 남기시면, 어떤 문제에 대한 내용인지도 함께 저장됩니다.</span><span class="spacer"></span><button class="primary" id="add">학습에 추가</button></div>
+      </div>
+
+      <div class="panel">
+        <h2>가르친 내용 (켜져 있는 것 ${on.length + corrections.length}개)</h2>
+        ${section('문제 만들기 규칙', '모든 문제를 만들 때', on.filter((r) => r.scope === 'global'), '아직 없습니다. 위에서 추가하세요.')}
+        ${section('문제별 피드백', '같은 과목의 비슷한 문제를 만들 때 · 피드백을 받은 문제도 함께 보여 줌', on.filter((r) => r.scope !== 'global'), '아직 없습니다. 만든 문제 카드의 "피드백 남기기"에서 추가됩니다.')}
+        <div class="learn-sec"><div class="learn-sec-head"><h3>사진 읽기 교정</h3><span class="learn-when">원본 사진을 읽을 때 · 분석 결과에서 단어를 고치면 자동으로 쌓임</span></div>
+          <div class="learn-list">${corrections.map((c) => `<div class="learn-item" data-corr="${c.id}"><div class="learn-item-main"><div class="learn-text">"${esc(c.wrong)}"로 잘못 읽음 → 원본은 "${esc(c.right)}"</div>
+            <div class="learn-meta"><span class="muted small">${c.count}번 고침 · ${esc(c.subject || '')} · 다음 판독 때 이 단어를 주의해서 읽게 하고 확인 항목에 올림</span></div></div>
+            <div class="learn-actions"><button class="small danger" data-act="del-corr">삭제</button></div></div>`).join('') || '<p class="muted small">아직 없습니다. 분석 결과 화면에서 잘못 읽은 단어를 고치면 여기에 쌓입니다.</p>'}</div></div>
+        ${off.length ? `<details class="learn-off" data-k="learn-off"><summary>꺼 둔 내용 (${off.length}) — 다음 생성에 쓰지 않음</summary><div class="learn-list">${off.map(item).join('')}</div></details>` : ''}
+      </div>
+
+      <div class="panel">
+        <details data-k="learn-preview"><summary><b>AI에게 실제로 전달되는 모습</b> <span class="muted small">— 모든 문제에 붙는 부분</span></summary><div class="inner">
+          <p class="muted small">문제를 만들 때 기본 지시문 뒤에 아래 내용이 그대로 붙습니다. 비슷한 문제용 피드백은 문제마다 골라서 더 붙습니다.</p>
+          <pre class="values">${esc(preview.rules || '(붙일 내용 없음)')}</pre>
+          ${preview.reading ? `<p class="muted small">사진을 읽을 때는 이 내용이 붙습니다.</p><pre class="values">${esc(preview.reading)}</pre>` : ''}
+        </div></details>
+      </div>
+
+      <div class="panel"><details data-k="prompts"><summary>AI 기본 지시문 (고정 · 버전 ${esc(promptsText.version)}) — 학습 내용은 이 뒤에 덧붙습니다</summary><div class="inner">
         ${[['analyze', '원본 분석'], ['proofread', '원본 대조 교정'], ['reread-question', '발문 재판독'], ['reread-headings', '해설 단계 제목 재판독'], ['reread-problem', '문제 본문 재판독 (필기 유입 시)'], ['regroup', 'STEP 묶기'], ['fix-verification', '원본 검산 프로그램 수정'], ['generate', '변형 문제 설계'], ['solve', '독립 풀이 검토'], ['repair', '검토 후 수정']].map(([k, t]) => `<h3>${t}</h3><pre class="values" style="max-height:340px">${esc(promptsText[k])}</pre>`).join('')}</div></details></div>`;
+    $$('.learn-examples .ex').forEach((b) => b.addEventListener('click', () => { $('#ntext').value = b.textContent; $('#ntext').focus(); }));
     $('#add').addEventListener('click', guard(async () => {
-      await api('POST', '/api/rules', { text: $('#ntext').value, kind: $('#nk').value, target: $('#nt').value, scope: 'global' });
-      toast('추가했습니다.'); rulesView();
+      if (!$('#ntext').value.trim()) throw new Error('가르칠 내용을 입력해 주세요.');
+      await api('POST', '/api/rules', { text: $('#ntext').value, kind: $('#nk').value, target: $('#nt').value, scope: $('#ns').value });
+      toast('학습에 추가했습니다. 다음 문제 생성부터 반영됩니다.'); rulesView();
     }));
     $$('[data-corr] [data-act]').forEach((b) => b.addEventListener('click', guard(async () => {
       if (!confirm('이 교정 기억을 삭제할까요?')) return;
@@ -808,16 +851,17 @@
     $$('[data-rule] [data-act]').forEach((b) => b.addEventListener('click', guard(async () => {
       const id = b.closest('[data-rule]').dataset.rule;
       const act = b.dataset.act;
-      if (act === 'del') { if (!confirm('이 지침을 삭제할까요?')) return; await api('DELETE', '/api/rules/' + id); }
+      if (act === 'del') { if (!confirm('이 내용을 학습에서 삭제할까요?')) return; await api('DELETE', '/api/rules/' + id); }
       else if (act === 'edit') {
         const rule = rules.find((r) => r.id === id);
-        const text = prompt('지침 내용 수정', rule.text);
+        const text = prompt('내용 수정', rule.text);
         if (text === null) return;
         await api('PUT', '/api/rules/' + id, { text });
-      } else await api('PUT', '/api/rules/' + id, { status: { approve: 'approved', pending: 'pending', reject: 'rejected' }[act] });
+      } else await api('PUT', '/api/rules/' + id, { status: act === 'on' ? 'approved' : 'pending' });
       rulesView();
     })));
   }
+
 
   // ------------------------------------------------------------------ system
   async function systemView() {
@@ -890,7 +934,7 @@
             <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>다음 사진을 읽을 때 "이 단어를 전에 잘못 읽었다"고 알려 줘 더 주의해서 읽게 하고, 발문에서 맞게 읽힌 단어로 해설의 같은 오독도 함께 고치며, 원본 확인 항목에 올립니다.</div>
           </div>
         </div>
-        <p class="small"><a href="#/rules">지침·피드백 관리 화면</a>에서 저장된 내용을 보고 고치거나 지울 수 있습니다.</p>
+        <p class="small"><a href="#/learn">학습 화면</a>에서 저장된 내용을 보고 끄거나 고치거나 지울 수 있습니다.</p>
       </div>
 
       <div class="panel">

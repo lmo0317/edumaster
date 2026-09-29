@@ -318,5 +318,5 @@ module.exports = {
   GENERATE_SYSTEM, generateText,
   SOLVE_SYSTEM, solveText,
   REPAIR_SYSTEM, repairText,
-  stageInstruction,
+  stageInstruction, rulesBlock,
 };
