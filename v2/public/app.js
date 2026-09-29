@@ -265,14 +265,71 @@
   const materialEntry = (m) => `<a class="entry" href="#/m/${m.id}"><div style="flex:1"><div class="title">${esc(m.title)}</div>
     <div class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} ${m.stepCount ? `· STEP ${m.stepCount}개` : ''} · ${fmtTime(m.createdAt)}</div></div>${chip(MAT_STATUS, m.status)}</a>`;
 
+  // A problem set in plain words: still being made, finished (and how many can be used as is), or stopped.
+  function setStatus(j) {
+    const n = j.items.length;
+    const count = (s) => j.items.filter((i) => i.status === s).length;
+    const made = j.items.filter((i) => ['passed', 'warning', 'needs_review'].includes(i.status)).length;
+    if (j.status === 'queued') return { cat: 'busy', tone: 'run', label: '순서 기다리는 중', detail: '' };
+    if (j.status === 'running') return { cat: 'busy', tone: 'run', label: `만드는 중 · ${made}/${n}문제 완성`, detail: '' };
+    const parts = [
+      count('passed') && `바로 사용 ${count('passed')}`, count('warning') && `확인할 점 ${count('warning')}`,
+      count('needs_review') && `검토 필요 ${count('needs_review')}`, count('failed') && `못 만듦 ${count('failed')}`,
+    ].filter(Boolean).join(' · ');
+    if (j.status === 'done') {
+      const trouble = count('needs_review') + count('failed');
+      return { cat: trouble ? 'check' : 'done', tone: trouble ? 'warn' : 'ok', label: trouble ? '완료 · 확인 필요' : count('warning') ? '완료 · 확인할 점 있음' : '완료 · 모두 바로 사용 가능', detail: parts };
+    }
+    return { cat: 'check', tone: 'bad', label: `멈춤 · ${made}/${n}문제까지 완성`, detail: j.error ? '' : parts };
+  }
+  const jobEntry = (j, no) => {
+    const st = setStatus(j);
+    return `<a class="set-row" href="#/j/${j.id}">
+      <div class="set-main"><b>${no ? `문제 세트 ${no}` : esc(j.title || '문제 세트')}</b><span class="muted small">${j.items.length}문제 · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'} · ${PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'} · ${fmtTime(j.createdAt)}</span></div>
+      <div class="set-state"><span class="chip ${st.tone}">${esc(st.label)}</span>${st.detail ? `<span class="muted small">${esc(st.detail)}</span>` : ''}</div></a>`;
+  };
+
+  // What an original problem needs next: reading, a teacher look, or nothing.
+  function materialState(m, sets) {
+    if (m.status === 'analyzing') return { cat: 'busy', tone: 'run', label: '사진 읽는 중', next: '잠시 후 읽은 내용을 확인할 수 있습니다.' };
+    if (m.status === 'failed') return { cat: 'check', tone: 'bad', label: '읽기 실패', next: '다시 분석하거나 더 선명한 사진을 넣어 주세요.' };
+    if (!sets.length) return { cat: 'check', tone: 'warn', label: '문제 만들 준비됨', next: '읽은 내용과 STEP을 확인한 뒤 문제를 만드세요.' };
+    const latest = setStatus(sets[0]);
+    if (sets.some((j) => ['queued', 'running'].includes(j.status))) return { cat: 'busy', tone: 'run', label: '문제 만드는 중', next: '' };
+    if (latest.cat === 'check') return { cat: 'check', tone: 'warn', label: '결과 확인 필요', next: '검토가 필요한 문제가 있습니다.' };
+    return { cat: 'done', tone: 'ok', label: '완료', next: '' };
+  }
+
   async function materialsView() {
     const [materials, jobs] = await Promise.all([api('GET', '/api/materials'), api('GET', '/api/jobs')]);
+    const setsOf = (id) => jobs.filter((j) => j.type === 'generate' && j.materialId === id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const rows = materials.map((m) => ({ m, sets: setsOf(m.id) })).map((x) => ({ ...x, st: materialState(x.m, x.sets) }));
+    const TABS = [['all', '전체'], ['busy', '진행 중'], ['check', '확인 필요'], ['done', '완료']];
+    const count = (cat) => (cat === 'all' ? rows.length : rows.filter((x) => x.st.cat === cat).length);
+    const card = ({ m, sets, st }) => `<div class="mat-card" data-cat="${st.cat}">
+      <a class="mat-head" href="#/m/${m.id}">
+        ${m.images?.problem ? `<img class="mat-thumb" src="api/files/${m.images.problem}" alt="" loading="lazy">` : '<div class="mat-thumb"></div>'}
+        <div class="mat-info">
+          <div class="mat-title">${esc(m.title)}</div>
+          <div class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}${m.stepCount ? ` · 풀이 STEP ${m.stepCount}개` : ''} · ${fmtTime(m.createdAt)}</div>
+          <div class="mat-state"><span class="chip ${st.tone}">${st.label}</span>${st.next ? `<span class="muted small">${st.next}</span>` : ''}</div>
+        </div>
+        <span class="mat-open">원본 보기 ›</span>
+      </a>
+      ${sets.length ? `<div class="set-list">${sets.map((j, i) => jobEntry(j, sets.length - i)).join('')}</div>` : ''}
+    </div>`;
     view.innerHTML = `<h1>자료·결과</h1>
-      <div class="panel"><h2>원본 자료</h2><div class="list">${materials.map(materialEntry).join('') || '<span class="muted">자료가 없습니다.</span>'}</div></div>
-      <div class="panel"><h2>생성 세트</h2><div class="list">${jobs.filter((j) => j.type === 'generate').map(jobEntry).join('') || '<span class="muted">생성한 세트가 없습니다.</span>'}</div></div>`;
+      <p class="muted">넣으신 원본 문제마다, 그 문제로 만든 연습 문제 세트가 아래에 모여 있습니다. 같은 원본으로 세트를 여러 번 만들 수 있습니다.</p>
+      <div class="tabs" role="tablist">${TABS.map(([k, t], i) => `<button type="button" class="tab${i ? '' : ' on'}" data-tab="${k}">${t} <span class="count">${count(k)}</span></button>`).join('')}</div>
+      <div class="mat-list">${rows.map(card).join('') || '<div class="panel muted">아직 넣은 문제가 없습니다. <a href="#/">새 문제</a>에서 시작하세요.</div>'}</div>
+      <p class="muted small empty-note" hidden>이 분류에 해당하는 문제가 없습니다.</p>`;
+    $$('.tab').forEach((b) => b.addEventListener('click', () => {
+      $$('.tab').forEach((x) => x.classList.toggle('on', x === b));
+      let shown = 0;
+      $$('.mat-card').forEach((c) => { const on = b.dataset.tab === 'all' || c.dataset.cat === b.dataset.tab; c.hidden = !on; shown += on ? 1 : 0; });
+      $('.empty-note').hidden = shown > 0 || !rows.length;
+    }));
   }
-  const jobEntry = (j) => `<a class="entry" href="#/j/${j.id}"><div style="flex:1"><div class="title">${esc(j.title || '')} — ${j.items.length}문제 ${j.options?.mode === 'integrated' ? '(통합 변형)' : '(수치 변형)'}</div>
-    <div class="muted small">${fmtTime(j.createdAt)} · ${PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'} · ${tokens(j.usage, j.options?.provider)} · ${j.items.map((i) => (ITEM_STATUS[i.status] || [i.status])[0]).join(' / ')}</div></div>${chip(JOB_STATUS, j.status)}</a>`;
 
   // ------------------------------------------------------------------ material
   function stepHtml(s, i) {
@@ -325,7 +382,7 @@
 
   function renderMaterial(m, editing) {
     const n = m.steps.length;
-    const gens = m.jobs.filter((j) => j.type === 'generate');
+    const gens = m.jobs.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     view.innerHTML = `
       <div class="row"><h1 style="margin-right:auto">${esc(m.title)}</h1>${chip(MAT_STATUS, m.status)}</div>
       <div class="grid2">
@@ -333,7 +390,7 @@
         <div class="panel" id="analysis"></div>
       </div>
       <div class="panel" id="generate"></div>
-      <div class="panel"><h2>이 자료로 만든 세트</h2><div class="list">${gens.map(jobEntry).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>`;
+      <div class="panel"><h2>이 문제로 만든 연습 문제 세트</h2><div class="set-list">${gens.map((j, i) => jobEntry(j, gens.length - i)).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>`;
     if (editing) editAnalysis(m); else showAnalysis(m);
     generatePanel(m, n);
   }

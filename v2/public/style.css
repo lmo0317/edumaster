@@ -134,6 +134,30 @@ table.rules td, table.rules th { border-bottom: 1px solid var(--line); padding: 
 table.rules.sys th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 table.rules.sys td:first-child { white-space: nowrap; }
 table.rules.sys td:last-child .chip { white-space: nowrap; }
+/* ---- 자료·결과: originals with their problem sets ---- */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+.tab { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
+.tab .count { color: var(--muted); font-weight: 700; margin-left: 2px; }
+.tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab.on .count { color: #dfe6ff; }
+.mat-list { display: grid; gap: 12px; }
+.mat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.mat-head { display: flex; gap: 14px; align-items: center; padding: 14px 16px; text-decoration: none; color: inherit; }
+.mat-head:hover { background: #fafbfd; }
+.mat-thumb { flex: 0 0 64px; width: 64px; height: 84px; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 6px; background: #f1f3f6; }
+.mat-info { flex: 1; min-width: 0; }
+.mat-title { font-weight: 700; font-size: 16px; }
+.mat-state { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.mat-open { color: var(--accent); font-size: 13.5px; white-space: nowrap; }
+.set-list { display: grid; }
+.mat-card .set-list { border-top: 1px solid var(--line); background: #fafbfd; padding: 4px 16px 4px 94px; }
+.set-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; text-decoration: none; color: inherit; border-bottom: 1px dashed var(--line); }
+.set-row:last-child { border-bottom: 0; }
+.set-row:hover .set-main b { color: var(--accent); }
+.set-main { display: flex; flex-direction: column; min-width: 0; }
+.set-state { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.panel .set-list .set-row { padding: 10px 2px; }
+
 /* ---- 시스템 안내 (teacher-facing) ---- */
 .sys-hero { background: linear-gradient(135deg, #2f5bea 0%, #4b3fd6 100%); color: #fff; border-radius: 14px; padding: 26px 26px 22px; margin-bottom: 16px; }
 .sys-hero .eyebrow { font-size: 13px; font-weight: 700; opacity: .8; letter-spacing: .02em; }
@@ -238,6 +262,12 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   table.rules.sys td:first-child { white-space: normal; overflow-wrap: anywhere; }
   table.rules.sys td, table.rules.sys th { padding: 6px 5px; overflow-wrap: anywhere; }
   .flow { flex-direction: column; align-items: stretch; }
+  .mat-head { padding: 12px; gap: 10px; align-items: flex-start; }
+  .mat-thumb { flex-basis: 48px; width: 48px; height: 64px; }
+  .mat-open { display: none; }
+  .mat-card .set-list { padding: 2px 12px; }
+  .set-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .set-state { align-items: flex-start; text-align: left; }
   .sys-hero { padding: 20px 16px 16px; }
   .sys-hero h1 { font-size: 20px; }
   .hero-points, .sys-steps, .check-grid, .sys-cards.two, .stat-row { grid-template-columns: minmax(0, 1fr); }
