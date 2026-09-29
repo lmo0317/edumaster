@@ -148,6 +148,81 @@ function postJson(url, headers, payload, timeoutMs, signal, timeoutMessage) {
   });
 }
 
+// A local model sometimes falls into a loop ("(M_A/M_B) * (M_A/M_B) * ..." or the same sentence again and again)
+// and would fill the whole output limit, ~5 minutes on the PC. True when the latest stretch keeps repeating.
+function repeating(text, { window = 4000, piece = 60, times = 6 } = {}) {
+  if (text.length < piece * times) return false;
+  const tail = text.slice(-window);
+  const last = tail.slice(-piece);
+  let count = 0;
+  for (let i = tail.indexOf(last); i !== -1; i = tail.indexOf(last, i + 1)) if (++count >= times) return true;
+  return false;
+}
+
+// Streams an OpenAI-style chat completion (llama-server) and stops early when the answer or the thinking starts
+// repeating. Returns the same envelope a non-streamed call gives; a stopped loop has finish_reason 'repeat'.
+function postStream(url, payload, timeoutMs, signal, timeoutMessage) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const body = Buffer.from(JSON.stringify({ ...payload, stream: true, stream_options: { include_usage: true } }));
+    const client = target.protocol === 'https:' ? https : http;
+    let settled = false;
+    const finish = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', onCancel); fn(value); };
+    let content = '';
+    let reasoning = '';
+    let finishReason = null;
+    let usage = null;
+    let pieces = 0;
+    let checkedAt = 0;
+    const envelope = (reason) => ({
+      choices: [{ finish_reason: reason, message: { content, reasoning_content: reasoning } }],
+      usage: usage || { prompt_tokens: 0, completion_tokens: pieces, total_tokens: pieces },
+    });
+    // A fresh connection per call: llama-server closes a streamed connection, and a reused keep-alive socket
+    // then fails the next call with 'socket hang up'.
+    const req = client.request(target, { method: 'POST', agent: false, headers: { 'Content-Type': 'application/json', 'Content-Length': body.length, Connection: 'close' } }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => finish(resolve, { response: { ok: false, status: res.statusCode }, raw: Buffer.concat(chunks).toString('utf8') }));
+        return;
+      }
+      let buffer = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        buffer += chunk;
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') continue;
+          let event;
+          try { event = JSON.parse(data); } catch { continue; }
+          if (event.usage) usage = event.usage;
+          const choice = event.choices?.[0];
+          if (!choice) continue;
+          if (choice.delta?.content) { content += choice.delta.content; pieces++; }
+          if (choice.delta?.reasoning_content) { reasoning += choice.delta.reasoning_content; pieces++; }
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+        }
+        if (content.length + reasoning.length - checkedAt >= 400) {
+          checkedAt = content.length + reasoning.length;
+          if (repeating(content) || repeating(reasoning)) { req.destroy(); finish(resolve, { response: { ok: true, status: 200 }, envelope: envelope('repeat') }); }
+        }
+      });
+      res.on('end', () => finish(resolve, { response: { ok: true, status: 200 }, envelope: envelope(finishReason || 'stop') }));
+      res.on('error', (e) => finish(reject, e));
+    });
+    const timer = setTimeout(() => { req.destroy(); finish(reject, new Error(timeoutMessage)); }, timeoutMs);
+    const onCancel = () => { req.destroy(); finish(reject, new Error('작업이 취소되었습니다.')); };
+    signal?.addEventListener('abort', onCancel, { once: true });
+    req.on('error', (e) => finish(reject, e.code === 'ECONNREFUSED' ? new Error('모델 서버에 연결할 수 없습니다.') : e));
+    req.end(body);
+  });
+}
+
 function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   const mode = config.llmMode;
 
@@ -193,23 +268,26 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     // unbounded, Gemma 26B thought until the whole output limit was used and the answer was never written.
     const thinking = Boolean(config.gemma.thinking) && effort !== 'off';
     const maxOut = Math.min(maxTokens, config.gemma.maxOutputTokens);
+    // Sampling against loops: at temperature 0.2 Gemma 26B repeated one line until the output limit (5 answers in
+    // one set). DRY penalises re-emitting a sequence it just wrote; JSON punctuation resets it, so keys still repeat.
     const payload = {
-      model: status.model, messages, stream: false, temperature: 0.2,
+      model: status.model, messages, temperature: thinking ? 0.6 : 0.2, top_p: 0.95,
+      dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4,
       max_tokens: maxOut,
       chat_template_kwargs: { enable_thinking: thinking },
       response_format: { type: 'json_object' },
     };
     if (thinking) {
-      payload.thinking_budget_tokens = Math.min(config.gemma.thinkingBudget || 8192, Math.floor(maxOut / 2));
+      payload.thinking_budget_tokens = Math.min(config.gemma.thinkingBudget?.[effort] || config.gemma.thinkingBudget?.low || 3072, Math.floor(maxOut / 2));
       payload.reasoning_budget_message = '\n\n생각할 시간이 끝났다. 지금까지 정한 내용으로 바로 JSON 답을 쓴다.\n';
     }
-    const { response, raw } = await postJson(config.gemma.endpoint + '/chat/completions', {}, payload, config.gemma.timeoutMs, signal, 'Gemma 응답 시간이 초과되었습니다.');
+    const { response, raw, envelope } = await postStream(config.gemma.endpoint + '/chat/completions', payload, config.gemma.timeoutMs, signal, 'Gemma 응답 시간이 초과되었습니다.');
     if (!response.ok) {
       gemmaCache.at = 0;
       const hint = /context|too long|exceed/i.test(raw) ? 'Gemma의 입력 길이 한도(32k)를 넘었습니다. 이미지나 STEP 내용을 줄이거나 DeepSeek을 써 주세요.' : `Gemma 오류 (${response.status})`;
       throw Object.assign(new Error(hint), { status: 502, detail: raw.slice(0, 300) });
     }
-    return JSON.parse(raw);
+    return envelope;
   }
 
   // Relay: write the exact request (system prompt, user text, images in order) to a file and wait for an
@@ -335,6 +413,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       const raw = choice?.message?.content || '';
       try {
         if (finish === 'length') throw new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.');
+        if (finish === 'repeat') throw new LlmFormatError('모델이 같은 내용을 반복해서 중간에 멈췄습니다.');
         const { data, moved } = fixShape(extractJson(raw), SHAPES[purpose]);
         // A repaired-but-truncated answer (jsonrepair dropped everything after a broken bracket) must not pass.
         const missing = (REQUIRED[purpose] || []).filter((k) => data[k] === undefined || data[k] === null || data[k] === '' || (Array.isArray(data[k]) && !data[k].length));
@@ -350,7 +429,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         } catch { /* diagnostics only */ }
         // Same request again would give the same broken answer (temperature 0). For unreadable JSON, show the
         // model its answer and the error and ask for the corrected JSON; for a cut-off answer, allow more room.
-        if (finish !== 'length' && raw) {
+        if (finish !== 'length' && finish !== 'repeat' && raw) {
           messages = [...messages.slice(0, 2), { role: 'assistant', content: raw.slice(0, 60000) },
             { role: 'user', content: `위 응답은 올바른 JSON이 아니다 (${e.message}). 같은 내용을 올바른 JSON 객체 하나로만 다시 출력하라. 문자열 안의 큰따옴표는 \\" 로, LaTeX 역슬래시는 \\\\ 로 쓴다.` }];
         }
@@ -371,4 +450,4 @@ function pcModelLabel(id) {
   return id ? `${id} (PC)` : 'PC 모델';
 }
 
-module.exports = { pcModelLabel, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { repeating, pcModelLabel, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

@@ -5,7 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createLlm, Budget } = require('../server/llm');
+const { createLlm, Budget, LlmFormatError, repeating } = require('../server/llm');
 const { openStore } = require('../server/store');
 
 // A fake OpenAI-compatible server: /v1/models and a /chat/completions that answers after `delay` ms.
@@ -16,8 +16,18 @@ function fakeModel(delay) {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      seen.push(JSON.parse(body));
+      const request = JSON.parse(body);
+      seen.push(request);
       setTimeout(() => {
+        if (request.stream) {
+          // llama-server's streamed form: content in pieces, then usage, then [DONE].
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          for (const piece of ['{"ok"', ':true}']) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+          res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`);
+          res.end();
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }));
       }, delay);
@@ -31,7 +41,7 @@ function llmFor(url, overrides = {}) {
   const config = {
     llmMode: 'deepseek',
     deepseek: { baseUrl: url, visionModel: 'v', textModel: 't', timeoutMs: 5000 },
-    gemma: { endpoint: url, timeoutMs: 5000, maxOutputTokens: 1234, thinking: true },
+    gemma: { endpoint: url, timeoutMs: 5000, maxOutputTokens: 1234, thinking: true, thinkingBudget: { low: 300, high: 900 } },
     ...overrides,
   };
   return { llm: createLlm({ config, store, apiKey: 'test-key', mock: null }), store };
@@ -50,11 +60,13 @@ test('DeepSeek and Gemma requests go out with the right settings and usage is re
     assert.equal(fake.seen[1].model, 'fake-gemma');
     assert.equal(fake.seen[1].max_tokens, 1234, 'Gemma output is capped to fit its context');
     assert.equal(fake.seen[1].chat_template_kwargs.enable_thinking, true, 'the PC model thinks on design/review calls');
-    assert.equal(fake.seen[1].thinking_budget_tokens, 617, 'thinking leaves at least half the output for the answer');
+    assert.equal(fake.seen[1].thinking_budget_tokens, 300, 'the default effort thinks briefly');
     await llm.json({ provider: 'gemma', purpose: 'p', jobId: 'j', budget, system: 's', text: 't', effort: 'off' });
     assert.equal(fake.seen[2].chat_template_kwargs.enable_thinking, false, 'reading calls stay without thinking');
     assert.equal(fake.seen[2].thinking_budget_tokens, undefined);
-    assert.equal(budget.calls, 3);
+    await llm.json({ provider: 'gemma', purpose: 'p', jobId: 'j', budget, system: 's', text: 't', effort: 'high' });
+    assert.equal(fake.seen[3].thinking_budget_tokens, 617, 'high effort thinks longer but leaves half the output for the answer');
+    assert.equal(budget.calls, 4);
     assert.deepEqual([...new Set(store.usage.all().map((r) => r.provider))].sort(), ['deepseek', 'gemma']);
   } finally { fake.server.close(); }
 });
@@ -210,4 +222,37 @@ test('Claude (Anthropic API): system and images converted, usage recorded, rate 
     const llm = createLlm({ config: { llmMode: 'deepseek', deepseek: {}, gemma: { endpoint: url }, claude: { baseUrl: url, model: 'm', timeoutMs: 5000, maxOutputTokens: 1000 } }, store: openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-llm-'))), apiKey: '', claudeKey: 'k', mock: null });
     await assert.rejects(llm.json({ provider: 'claude', purpose: 'p', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1000 }), system: 's', text: 't', effort: 'off' }), /크레딧이 부족/);
   } finally { broke.close(); }
+});
+
+test('a PC model stuck repeating itself is stopped early and the call fails as unreadable, not after the full limit', async () => {
+  let streamed = 0;
+  let closed = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url.endsWith('/models')) { res.end(JSON.stringify({ data: [{ id: 'fake-gemma' }] })); return; }
+    req.resume();
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '{"solution":"' } }] })}\n\n`);
+    // The same line forever (what Gemma 26B did); only a client that stops reading ends it.
+    const timer = setInterval(() => { streamed++; res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '문제를 다시 보자. $b=2$이고 $x=2/5$라면 $5 \\times 1.5 = 7.5$.\\n' } }] })}\n\n`); }, 1);
+    res.on('close', () => { clearInterval(timer); closed++; });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { llm, store } = llmFor(`http://127.0.0.1:${server.address().port}/v1`);
+    await assert.rejects(
+      llm.json({ provider: 'gemma', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 100000 }), system: 's', text: 't' }),
+      (e) => e instanceof LlmFormatError && /반복/.test(e.message));
+    for (let i = 0; i < 50 && closed < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(closed, 2, 'both attempts were cut off by the client');
+    assert.ok(streamed < 200, `stopped after ${streamed} pieces, not at the output limit`);
+    assert.deepEqual(store.usage.all().map((u) => u.outcome), ['repeat', 'repeat']);
+  } finally { server.close(); }
+});
+
+test('repeating() flags a looping tail but not ordinary varied text', () => {
+  assert.equal(repeating('(M_A/M_B) * '.repeat(80)), true);
+  assert.equal(repeating('앞 부분. ' + '1) 1/15 2) 2/15 3) 3/15 4) 4/15 5) 1/5 (No)\n'.repeat(12)), true);
+  const varied = Array.from({ length: 120 }, (_, i) => `STEP ${i}: n_A = ${i * 3}w/M_A, 남은 B는 ${i + 7}w이다.`).join(' ');
+  assert.equal(repeating(varied), false);
+  assert.equal(repeating('{"a":1}'), false);
 });
