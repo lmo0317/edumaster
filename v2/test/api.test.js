@@ -50,7 +50,7 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
     assert.ok(material.annotations.some((a) => a.includes('필기')), 'handwriting kept out of the problem');
     assert.deepEqual(material.proofread.length, 1, 'proofreading fix applied');
     assert.ok(material.problem.text.includes('실험 Ⅰ~Ⅲ에 대한'));
-    assert.equal(analyze.usage.calls, 2);
+    assert.equal(analyze.usage.calls, 6, "analyze + proofread + two question and two heading re-reads");
 
     // teacher edits: fix a step title and keep 3 steps
     const edited = await s.call('PUT', `/api/materials/${material.id}`, { steps: material.steps.map((st, i) => (i === 0 ? { ...st, title: 'I에서 모두 반응한 물질 판정' } : st)) });

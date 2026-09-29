@@ -23,7 +23,7 @@ test('relay provider writes the exact request (text and images in order) and rea
     assert.ok(fs.existsSync(r.content[2].file));
     fs.writeFileSync(r.responseFile, JSON.stringify({ content: '{"ok":true,"t":"$\\\\ce{A}$"}' }));
   }, 50);
-  const { data } = await llm.json({ provider: 'relay', purpose: 'analyze', jobId: 'j', budget: new Budget({ maxCalls: 2, maxTokens: 100 }), system: 'SYS', text: '본문', images: [{ label: '[문제 이미지]', dataUrl: png }] });
+  const { data } = await llm.json({ provider: 'relay', purpose: 'relay-test', jobId: 'j', budget: new Budget({ maxCalls: 2, maxTokens: 100 }), system: 'SYS', text: '본문', images: [{ label: '[문제 이미지]', dataUrl: png }] });
   assert.deepEqual(data, { ok: true, t: '$\\ce{A}$' });
   assert.equal(store.usage.all()[0].provider, 'relay');
 });

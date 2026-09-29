@@ -38,8 +38,8 @@ module.exports = {
   },
   // Hard limits per job. A job never exceeds either one; it stops and reports instead.
   budget: {
-    analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 4),
-    analyzeTokens: int('EDUMASTER_ANALYZE_TOKENS', 120000),
+    analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 11),
+    analyzeTokens: int('EDUMASTER_ANALYZE_TOKENS', 160000),
     generateCalls: int('EDUMASTER_GENERATE_CALLS', 24),
     generateTokens: int('EDUMASTER_GENERATE_TOKENS', 600000),
     regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 5),

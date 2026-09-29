@@ -1,0 +1,418 @@
+[
+ {
+  "case": "bio-nerve-conduction",
+  "title": "생명과학 · 흥분 전도와 전달 (막전위로 지점 매칭, 전도 속도, 시냅스 위치)",
+  "provider": "deepseek",
+  "stage": "analyze",
+  "mode": "integrated",
+  "analysisUsage": {
+   "calls": 3,
+   "input": 17314,
+   "output": 55153,
+   "reasoning": 51689,
+   "total": 72467,
+   "maxCalls": 4,
+   "maxTokens": 120000
+  },
+  "analysis": [
+   {
+    "name": "정답 번호",
+    "pass": true,
+    "detail": "읽음 2 / 기대 2"
+   },
+   {
+    "name": "선택지 수",
+    "pass": true,
+    "detail": "읽음 5 / 기대 5"
+   },
+   {
+    "name": "해설 STEP 수",
+    "pass": true,
+    "detail": "정리 3 / 해설 3"
+   },
+   {
+    "name": "STEP 제목이 해설과 일치",
+    "pass": true,
+    "detail": "1.00, 1.00, 1.00"
+   },
+   {
+    "name": "문제에 \"휴지 전위\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"1cm/ms\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"시냅스\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"탈분극\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"2cm/ms\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"4ms\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"4 ms\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"시냅스 존재\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"재분극\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"막전위\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"흥분 전도 속도\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"시냅스\" 있음",
+    "pass": true,
+    "detail": ""
+   }
+  ],
+  "read": {
+   "steps": [
+    "막전위를 이용해 지점 매칭하기",
+    "신경 A의 흥분 전도 속도 구하기",
+    "$t_1$과 시냅스가 있는 부분 추론하기"
+   ],
+   "question": "ㄷ. $t_1$일 때, A의 Ⅱ에서 탈분극이 일어나고 있다.",
+   "proofread": []
+  },
+  "minutes": 3.5
+ },
+ {
+  "case": "bio-nerve-conduction",
+  "title": "생명과학 · 흥분 전도와 전달 (막전위로 지점 매칭, 전도 속도, 시냅스 위치)",
+  "provider": "gemma",
+  "stage": "analyze",
+  "mode": "integrated",
+  "analysisUsage": {
+   "calls": 3,
+   "input": 14470,
+   "output": 4065,
+   "reasoning": 0,
+   "total": 18535,
+   "maxCalls": 4,
+   "maxTokens": 120000
+  },
+  "analysis": [
+   {
+    "name": "정답 번호",
+    "pass": false,
+    "detail": "읽음 0 / 기대 2"
+   },
+   {
+    "name": "선택지 수",
+    "pass": false,
+    "detail": "읽음 0 / 기대 5"
+   },
+   {
+    "name": "해설 STEP 수",
+    "pass": true,
+    "detail": "정리 3 / 해설 3"
+   },
+   {
+    "name": "STEP 제목이 해설과 일치",
+    "pass": false,
+    "detail": "STEP 3 \"보기 분석\" (유사도 0.00)"
+   },
+   {
+    "name": "문제에 \"휴지 전위\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"1cm/ms\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"시냅스\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"탈분극\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"2cm/ms\" 없음 (필기·오독)",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"4ms\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"4 ms\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"시냅스 존재\" 없음 (필기·오독)",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"재분극\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"막전위\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"흥분 전도 속도\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"시냅스\" 있음",
+    "pass": true,
+    "detail": ""
+   }
+  ],
+  "read": {
+   "steps": [
+    "막전위를 이용한 지점 매칭",
+    "신경 A의 전도 속도 및 시냅스 위치 추론",
+    "보기 분석"
+   ],
+   "question": "choices: [\"ㄱ\", \"ㄴ\", \"ㄷ\", \"ㄱ, ㄴ\", \"ㄴ, ㄷ\", \"ㄱ, ㄴ, ㄷ\"],",
+   "proofread": [
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2"
+   ]
+  },
+  "minutes": 0.9
+ },
+ {
+  "case": "chem-molar-mass",
+  "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "provider": "deepseek",
+  "stage": "analyze",
+  "mode": "integrated",
+  "analysisUsage": {
+   "calls": 2,
+   "input": 11035,
+   "output": 11947,
+   "reasoning": 9232,
+   "total": 22982,
+   "maxCalls": 4,
+   "maxTokens": 120000
+  },
+  "analysis": [
+   {
+    "name": "정답 번호",
+    "pass": true,
+    "detail": "읽음 2 / 기대 2"
+   },
+   {
+    "name": "선택지 수",
+    "pass": true,
+    "detail": "읽음 5 / 기대 5"
+   },
+   {
+    "name": "해설 STEP 수",
+    "pass": false,
+    "detail": "정리 4 / 해설 3"
+   },
+   {
+    "name": "STEP 제목이 해설과 일치",
+    "pass": true,
+    "detail": "0.64, 0.69, 0.50"
+   },
+   {
+    "name": "문제에 \"몰질량\" 있음",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"상댓값\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"반응 계수\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"물질량\" 없음 (필기·오독)",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"x=15\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"x = 15\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"b=3\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"b = 3\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"몰질량\" 있음",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"모순\" 있음",
+    "pass": true,
+    "detail": ""
+   }
+  ],
+  "read": {
+   "steps": [
+    "실험 Ⅰ에서 한계 반응물 구하기",
+    "반응 후 기체의 질량 및 양(mol) 구하기",
+    "A~D의 물질량을 구하고 $x$, $y$ 값 계산하기",
+    "반응 계수 $b$와 최종 계산값 구하기"
+   ],
+   "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 물질량} + \\text{D의 물질량}}{\\text{B의 물질량}}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+   "proofread": []
+  },
+  "minutes": 0.9
+ },
+ {
+  "case": "chem-molar-mass",
+  "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "provider": "gemma",
+  "stage": "analyze",
+  "mode": "integrated",
+  "analysisUsage": {
+   "calls": 3,
+   "input": 16426,
+   "output": 3104,
+   "reasoning": 0,
+   "total": 19530,
+   "maxCalls": 4,
+   "maxTokens": 120000
+  },
+  "analysis": [
+   {
+    "name": "정답 번호",
+    "pass": true,
+    "detail": "읽음 2 / 기대 2"
+   },
+   {
+    "name": "선택지 수",
+    "pass": true,
+    "detail": "읽음 5 / 기대 5"
+   },
+   {
+    "name": "해설 STEP 수",
+    "pass": false,
+    "detail": "정리 2 / 해설 3"
+   },
+   {
+    "name": "STEP 제목이 해설과 일치",
+    "pass": false,
+    "detail": "STEP 2 \"최종 답 구하기\" (유사도 0.00); STEP 3 \"\" (유사도 0.00)"
+   },
+   {
+    "name": "문제에 \"몰질량\" 있음",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"상댓값\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"반응 계수\" 있음",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"물질량\" 없음 (필기·오독)",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"x=15\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"x = 15\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"b=3\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "문제에 \"b = 3\" 없음 (필기·오독)",
+    "pass": true,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"몰질량\" 있음",
+    "pass": false,
+    "detail": ""
+   },
+   {
+    "name": "해설 STEP에 \"모순\" 있음",
+    "pass": true,
+    "detail": ""
+   }
+  ],
+  "read": {
+   "steps": [
+    "실험 I에서 한계 반응물을 구하고 A~D의 물질량 및 관련 변수들을 산출한다.",
+    "최종 답 구하기"
+   ],
+   "question": "ㅁ. 1",
+   "proofread": [
+    "해설의 단계 표시(2개)에 맞춰 STEP을 합쳤습니다: STEP 1+2 → STEP 1"
+   ]
+  },
+  "minutes": 0.7
+ }
+]

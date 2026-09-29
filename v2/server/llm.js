@@ -3,6 +3,7 @@ const http = require('node:http');
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const { jsonrepair } = require('jsonrepair');
 // DeepSeek chat client with a per-job budget and a usage ledger.
 // Every paid call is recorded (tokens only — never prompts, images or keys).
 const { newId } = require('./store');
@@ -43,7 +44,10 @@ function extractJson(text) {
   try { return restoreLatex(JSON.parse(json)); } catch { /* try the LaTeX-escape repair below */ }
   // Models often forget to double LaTeX backslashes: "\ce{A}" is an invalid JSON escape. Double every
   // backslash that does not start a valid JSON escape, then parse again.
-  try { return restoreLatex(JSON.parse(json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\'))); }
+  const latexFixed = json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+  try { return restoreLatex(JSON.parse(latexFixed)); } catch { /* try a general repair below */ }
+  // Unescaped quotes inside strings, trailing commas, missing brackets: repair locally before asking again.
+  try { return restoreLatex(JSON.parse(jsonrepair(latexFixed))); }
   catch (e) { throw new LlmFormatError('모델 응답 JSON을 읽지 못했습니다: ' + e.message); }
 }
 
@@ -57,6 +61,55 @@ function restoreLatex(value) {
   if (Array.isArray(value)) return value.map(restoreLatex);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, restoreLatex(v)]));
   return value;
+}
+
+// Fields each kind of call must return; checked after JSON repair so silent data loss is retried instead.
+const REQUIRED = {
+  analyze: ['problem', 'steps'],
+  generate: ['problem', 'solution', 'verification'],
+  repair: ['problem', 'solution', 'verification'],
+  solve: ['answer'],
+  regroup: ['groups'],
+  'reread-question': ['question'],
+  'reread-problem': ['text'],
+  'fix-verification': ['verification'],
+};
+
+// The response schema of each call: which top-level keys exist and which keys belong inside each nested object.
+// A model that forgets one closing brace (DeepSeek, 2026-09-29: `problem` never closed) nests every later
+// top-level key inside the previous object; the JSON still parses (jsonrepair closes it at the end) but
+// `steps`/`verification` sit under `problem`. Keys that belong at the top level are moved back there.
+const PROBLEM_KEYS = ['text', 'choices', 'answer', 'figure'];
+const VERIFICATION_KEYS = ['program', 'answer', 'choices', 'free', 'checks'];
+const SHAPES = {
+  analyze: {
+    top: ['title', 'subject', 'topic', 'problem', 'annotations', 'solutionSource', 'steps', 'techniques', 'finalCheck', 'uncertainties', 'stepMarkers', 'verification'],
+    nested: { problem: PROBLEM_KEYS, verification: VERIFICATION_KEYS },
+  },
+  generate: {
+    top: ['problem', 'solution', 'usesSteps', 'designNote', 'appliedRules', 'verification'],
+    nested: { problem: PROBLEM_KEYS, solution: ['steps', 'summary'], verification: VERIFICATION_KEYS },
+  },
+};
+SHAPES.repair = SHAPES.generate;
+
+function fixShape(data, shape) {
+  if (!shape || !data || typeof data !== 'object' || Array.isArray(data)) return { data, moved: [] };
+  const moved = [];
+  // Walk nested objects in order; a key lifted out of one object may itself carry more stray keys.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [name, own] of Object.entries(shape.nested)) {
+      const child = data[name];
+      if (!child || typeof child !== 'object' || Array.isArray(child)) continue;
+      for (const key of Object.keys(child)) {
+        if (own.includes(key) || !shape.top.includes(key) || key === name) continue;
+        if (data[key] === undefined) { data[key] = child[key]; moved.push(`${name}.${key}`); changed = true; }
+        delete child[key];
+      }
+    }
+  }
+  return { data, moved };
 }
 
 const PROVIDERS = {
@@ -162,6 +215,8 @@ function createLlm({ config, store, apiKey, mock }) {
       fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
       content.push({ type: 'image', file });
     });
+    // A follow-up turn (e.g. "your JSON was invalid, send it again") travels as extra text parts.
+    for (const turn of messages.slice(2)) content.push({ type: 'text', text: `[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}` });
     const requestFile = path.join(dir, `${id}.request.json`);
     const responseFile = path.join(dir, `${id}.response.json`);
     fs.writeFileSync(requestFile, JSON.stringify({ id, purpose, system: messages[0].content, content, responseFile }, null, 1));
@@ -190,7 +245,7 @@ function createLlm({ config, store, apiKey, mock }) {
         ])]
       : text;
     const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
-    const messages = [{ role: 'system', content: system }, { role: 'user', content }];
+    let messages = [{ role: 'system', content: system }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
       budget.reserve();
@@ -219,12 +274,28 @@ function createLlm({ config, store, apiKey, mock }) {
       const choice = envelope.choices?.[0];
       const finish = choice?.finish_reason;
       store.usage.put({ ...record, durationMs: Date.now() - started, ...usage, outcome: finish || 'unknown' });
+      const raw = choice?.message?.content || '';
       try {
         if (finish === 'length') throw new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.');
-        return { data: extractJson(choice?.message?.content), usage };
+        const { data, moved } = fixShape(extractJson(raw), SHAPES[purpose]);
+        // A repaired-but-truncated answer (jsonrepair dropped everything after a broken bracket) must not pass.
+        const missing = (REQUIRED[purpose] || []).filter((k) => data[k] === undefined || data[k] === null || data[k] === '' || (Array.isArray(data[k]) && !data[k].length));
+        if (missing.length) throw new LlmFormatError(`응답에 필요한 항목이 없습니다: ${missing.join(', ')}`);
+        return { data, usage, shapeFixes: moved };
       } catch (e) {
         if (!(e instanceof LlmFormatError)) throw e;
         lastError = e;
+        // Keep what the model sent so a failure can be diagnosed later.
+        try {
+          fs.mkdirSync(path.join(store.dataDir, 'llm-failures'), { recursive: true });
+          fs.writeFileSync(path.join(store.dataDir, 'llm-failures', `${record.id}-${purpose}.txt`), `${e.message}\nfinish=${finish}\n\n${raw}`);
+        } catch { /* diagnostics only */ }
+        // Same request again would give the same broken answer (temperature 0). For unreadable JSON, show the
+        // model its answer and the error and ask for the corrected JSON; for a cut-off answer, allow more room.
+        if (finish !== 'length' && raw) {
+          messages = [...messages.slice(0, 2), { role: 'assistant', content: raw.slice(0, 60000) },
+            { role: 'user', content: `위 응답은 올바른 JSON이 아니다 (${e.message}). 같은 내용을 올바른 JSON 객체 하나로만 다시 출력하라. 문자열 안의 큰따옴표는 \\" 로, LaTeX 역슬래시는 \\\\ 로 쓴다.` }];
+        }
       }
     }
     throw lastError;
@@ -233,4 +304,4 @@ function createLlm({ config, store, apiKey, mock }) {
   return { json, mode, gemmaStatus };
 }
 
-module.exports = { PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson };
+module.exports = { PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

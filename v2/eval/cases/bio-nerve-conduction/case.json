@@ -1,0 +1,20 @@
+{
+  "title": "생명과학 · 흥분 전도와 전달 (막전위로 지점 매칭, 전도 속도, 시냅스 위치)",
+  "problem": "problem.png",
+  "solution": "solution.png",
+  "sameImage": false,
+  "expect": {
+    "answer": 2,
+    "choiceCount": 5,
+    "stepCount": 3,
+    "stepTitles": [
+      "막전위를 이용해 지점 매칭하기",
+      "신경 A의 흥분 전도 속도 구하기",
+      "t1과 시냅스가 있는 부분 추론하기"
+    ],
+    "problemMustContain": ["휴지 전위는 -70mV", "1cm/ms", "시냅스", "탈분극"],
+    "problemMustNotContain": ["2cm/ms", "4ms", "4 ms", "시냅스 존재", "재분극"],
+    "stepsMustContain": ["막전위", "흥분 전도 속도", "시냅스"],
+    "notes": "파란색 '2cm/ms', '1cm/ms'(A·B 옆), '4ms', '시냅스 존재', 표의 d4/d2/d3/d1·'재'·'탈'·'-70', 보기의 분홍 정정('4ms', '재분극')과 동그라미는 필기다. 본문의 'B를 구성하는 두 뉴런의 흥분 전도 속도는 1cm/ms'와 '휴지 전위는 -70mV'는 인쇄 문장이다."
+  }
+}

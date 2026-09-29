@@ -70,6 +70,14 @@ function mock(messages) {
   else if (system === prompts.REGROUP_SYSTEM) {
     const n = Number(/STEP을 (\d+)개 묶음/.exec(text)?.[1]); const total = Number(/이 (\d+)개 STEP을/.exec(text)?.[1]);
     data = { groups: Array.from({ length: n }, (_, i) => ({ steps: i < n - 1 ? [i + 1] : Array.from({ length: total - n + 1 }, (_, k) => n + k), title: `묶음 ${i + 1}` })) };
+  } else if (system === prompts.REREAD_QUESTION_SYSTEM) {
+    data = { question: SAMPLE.problem.text.split('\n').filter((l) => l.trim()).pop() };
+  } else if (system === prompts.FIX_VERIFICATION_SYSTEM) {
+    data = { verification: { program: ['a = 1'], answer: '', choices: [], free: [], checks: [{ expr: 'a == 1', desc: 'mock' }] } };
+  } else if (system === prompts.REREAD_PROBLEM_SYSTEM) {
+    data = { text: SAMPLE.problem.text, figure: SAMPLE.problem.figure || '' };
+  } else if (system === prompts.REREAD_HEADINGS_SYSTEM) {
+    data = { steps: SAMPLE.steps.map((s, i) => ({ marker: `step${i + 1}`, title: s.title })) };
   } else if (system === prompts.PROOFREAD_SYSTEM) data = { fixes: [{ field: 'problem.text', wrong: '실험 I~III에 대한', right: '실험 Ⅰ~Ⅲ에 대한', reason: '로마 숫자' }], solutionStepCount: 3 };
   else if (system === prompts.SOLVE_SYSTEM) data = solved(text);
   else data = generated(text);

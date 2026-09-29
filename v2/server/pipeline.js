@@ -2,6 +2,7 @@
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
 const { selectRules } = require('./learning');
+const harness = require('./harness');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
 const fixMath = (s) => s.replace(/\\ce\{([^{}]*)\}/g, (m, body) => (body.includes('$') ? `\\ce{${body.replace(/\$/g, '')}}` : m));
@@ -45,6 +46,9 @@ function normalizeMaterial(data) {
     uncertainties: arr(data?.uncertainties).map((u) => str(u, 500)).filter(Boolean).slice(0, 20),
     stepMarkers: [...new Set(arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean))].slice(0, 10),
     solutionStepCount: Number.parseInt(data?.solutionStepCount, 10) || 0,
+    sourceVerification: data?.verification && typeof data.verification === 'object' ? data.verification : (data?.sourceVerification || null),
+    stepHeadings: arr(data?.stepHeadings).map((h) => str(h, 300)).filter(Boolean).slice(0, 10),
+    checks: arr(data?.checks).slice(0, 20),
   };
 }
 
@@ -55,6 +59,7 @@ const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[
 
 /** How many STEPs the teacher's solution has, if the solution shows step markers. */
 function targetStepCount(material) {
+  if (material.stepHeadings?.length) return material.stepHeadings.length;
   // Models sometimes list one marker per STEP ("step1, step1, step2, step3, step3"), so count distinct
   // markers — from the marker list and from each STEP's own marker — and fall back to the proofreader's count.
   const distinct = (list) => new Set(list.map((m) => markerNumber(m) || String(m).trim()).filter(Boolean)).size;
@@ -180,19 +185,25 @@ async function analyzeMaterial(ctx, material) {
   const separate = src.solution && !src.sameImage;
   const role = (key) => (key === 'solution' ? '해설 이미지' : separate ? '문제 이미지' : src.sameImage ? '문제+해설 이미지' : '문제 이미지');
   const images = [];
+  const byRole = { problem: [], solution: [] };
   for (const key of separate ? ['problem', 'solution'] : ['problem']) {
     const views = src.views?.[key] || [];
-    if (views.length) views.forEach((id, i) => images.push({ label: `[${role(key)} — 확대 조각 ${i + 1}/${views.length}, 조각끼리 위아래가 조금 겹친다]`, dataUrl: store.files.dataUrl(id) }));
-    else images.push({ label: `[${role(key)}]`, dataUrl: store.files.dataUrl(src[key]) });
+    const list = views.length
+      ? views.map((id, i) => ({ label: `[${role(key)} — 확대 조각 ${i + 1}/${views.length}, 조각끼리 위아래가 조금 겹친다]`, dataUrl: store.files.dataUrl(id) }))
+      : [{ label: `[${role(key)}]`, dataUrl: store.files.dataUrl(src[key]) }];
+    images.push(...list);
+    byRole[key].push(...list);
   }
+  if (!separate) byRole.solution = byRole.problem; // one image holds both
   if (images.some((i) => !i.dataUrl)) throw new Error('저장된 원본 이미지를 찾지 못했습니다.');
   ctx.log('원본 이미지 판독과 풀이 STEP 정리 중');
-  const { data } = await llm.json({
+  const { data, shapeFixes: analyzeShape = [] } = await llm.json({
     purpose: 'analyze', jobId: ctx.job.id, budget, signal, vision: true, effort: 'off', maxTokens: 16000,
     system: prompts.ANALYZE_SYSTEM,
     text: prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note }),
     images,
   });
+  if (analyzeShape.length) ctx.log(`응답 JSON 구조 보정: ${analyzeShape.join(', ')}를 최상위로 옮김`);
   const result = normalizeMaterial(data);
   if (!result.steps.length) throw new Error('풀이 STEP을 만들지 못했습니다. 해설 이미지를 확인하거나 다시 분석해 주세요.');
 
@@ -215,6 +226,12 @@ async function analyzeMaterial(ctx, material) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
     result.uncertainties.push('원본 대조(교정) 단계를 건너뛰었습니다: ' + e.message);
   }
+  // Focused re-read (twice): the question sentence and the solution's printed step headings.
+  // A big one-shot transcription drifts toward familiar words (it read 몰질량 as 물질량 while a focused
+  // read of the same image gets it right), so trust two agreeing focused reads over the first pass.
+  await printedProblemReread(ctx, result, byRole.problem);
+  await focusedReread(ctx, result, byRole, Boolean(src.solution));
+
   // The teacher's solution decides the STEP count: merge extra STEPs automatically and say so.
   try {
     const proposal = await proposeStepAlignment({ llm, budget, jobId: ctx.job.id, signal }, result);
@@ -225,7 +242,164 @@ async function analyzeMaterial(ctx, material) {
   } catch (e) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError' && e.status !== 422) throw e;
   }
+  // Printed step headings are the truest STEP titles.
+  if (result.stepHeadings.length && result.stepHeadings.length === result.steps.length) {
+    result.steps.forEach((s, i) => {
+      const heading = result.stepHeadings[i];
+      if (heading && harness.plain(heading).replace(/\s/g, '') !== harness.plain(s.title).replace(/\s/g, '')) {
+        result.proofread.push(`STEP ${i + 1} 제목을 해설에 인쇄된 제목으로: "${s.title}" → "${heading}"`);
+        s.title = heading;
+      }
+    });
+  }
+  result.checks = await sourceChecks(result);
+  const source = result.checks.find((c) => c.id === 'source-calculation');
+  if (source?.runError) await fixSourceVerification(ctx, result, source.evidence);
+  for (const c of result.checks) if (c.state !== 'pass') result.uncertainties.push(`${c.label}: ${c.evidence}`);
+  // Two agreeing reads can share the same slip on a known confusable pair (Gemma read 몰질량 as 물질량 in all
+  // three reads), so the teacher is always asked to look at those words.
+  const allText = [result.problem.text, ...result.steps.map((s) => s.title + ' ' + s.work)].join(' ');
+  const seen = [...new Set(harness.CONFUSABLE.flat().filter((w) => allText.includes(w)))];
+  if (seen.length) result.uncertainties.push(`"${seen.join('", "')}"은(는) 판독에서 자주 뒤바뀌는 단어입니다(${harness.CONFUSABLE.map((p) => p.join('↔')).join(', ')}). 원본과 같은지 확인해 주세요.`);
   return refreshStepCountNote(result);
+}
+
+async function focusedReread(ctx, result, byRole, hasSolution) {
+  const read = async (purpose, system, text, images) => {
+    const out = [];
+    for (let i = 0; i < 2; i++) {
+      try {
+        const { data } = await ctx.llm.json({ purpose, jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, vision: true, effort: 'off', maxTokens: 2000, system, text, images });
+        out.push(data || {});
+      } catch (e) {
+        if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
+      }
+    }
+    return out;
+  };
+  const cleanHeading = (h) => str(h?.title ?? h, 300).replace(/^\s*(?:step|STEP)\s*\d+\s*[.:)·]?\s*/, '').replace(/[.。]\s*$/, '');
+  const questions = (await read('reread-question', prompts.REREAD_QUESTION_SYSTEM, '발문만 JSON으로 반환하라.', byRole.problem)).map((d) => str(d.question, 2000));
+  const headingReads = hasSolution
+    ? (await read('reread-headings', prompts.REREAD_HEADINGS_SYSTEM, '단계 제목만 JSON으로 반환하라.', byRole.solution)).map((d) => arr(d.steps).filter((s) => s?.marker || s?.title).map(cleanHeading).filter(Boolean))
+    : [];
+  result.rereads = { questions, headings: headingReads };
+  if (hasSolution && headingReads.length === 2 && headingReads[0].length && headingReads[0].length === headingReads[1].length) {
+    result.stepHeadings = headingReads[0];
+    result.solutionStepCount = headingReads[0].length;
+  } else if (hasSolution) {
+    result.uncertainties.push('해설 단계 제목 재판독 두 번의 결과가 달라 STEP 수를 교차 확인하지 못했습니다.');
+  }
+  if (questions.length < 2) { result.uncertainties.push('발문 재판독을 끝내지 못해 교차 확인을 건너뛰었습니다.'); return; }
+  const [a, b] = questions;
+  // Question: fix words that both focused reads read differently from the first pass (one-letter slips).
+  const lines = result.problem.text.split('\n');
+  const qIndex = lines.map((l, i) => [i, harness.hangulFixes(l, a, b).length || 0, (harness.plain(l).match(/[가-힣]+/g) || []).length]).filter(([, , n]) => n > 0);
+  const target = qIndex.map(([i]) => i).reverse().find((i) => /[?？]|은\?|는\?|것은|인가/.test(lines[i])) ?? qIndex.map(([i]) => i).pop();
+  if (target === undefined) return;
+  const fixes = harness.hangulFixes(lines[target], a, b);
+  if (!fixes.length) return;
+  lines[target] = harness.applyWordFixes(lines[target], fixes);
+  result.problem.text = lines.join('\n');
+  result.proofread.push(...fixes.map(([w, r]) => `발문 재판독(2회 일치): "${w}" → "${r}"`));
+  // The question confirmed a word of a known confusable pair: the same reader's slips to its partner in the
+  // choices and the solution are the same systematic misread.
+  const known = harness.confusableFixes(fixes.map(([, r]) => r));
+  if (known.length) {
+    const fixText = (t) => harness.applySubstringFixes(t, known);
+    result.problem.choices = result.problem.choices.map(fixText);
+    for (const s of result.steps) for (const k of ['title', 'purpose', 'technique', 'work', 'result']) s[k] = fixText(s[k]);
+    result.techniques = result.techniques.map(fixText);
+    result.stepHeadings = (result.stepHeadings || []).map(fixText);
+    result.proofread.push(...known.map(([w, r]) => `같은 오독을 해설 STEP 전체에도 적용: "${w}" → "${r}"`));
+  }
+}
+
+// A value the solution derives (x=15, 2cm/ms) that already sits in the problem text was most likely handwriting.
+function derivedLeaks(material, text) {
+  const problem = harness.plain(text).replace(/\s+/g, '');
+  const leaks = [];
+  material.steps.forEach((s, i) => {
+    const tokens = [
+      ...[...harness.plain(s.result).matchAll(/([a-zA-Z](?:_?\d)?)\s*=\s*(-?[\d./]+)/g)].map((m) => `${m[1].replace('_', '')}=${m[2]}`),
+      ...[...harness.plain(s.result).matchAll(/(-?\d+(?:\.\d+)?)\s*(cm\/ms|m\/s|ms|mV|g\/mol)/g)].map((m) => m[1] + m[2]),
+    ];
+    for (const t of tokens) if (problem.includes(t.replace(/\s+/g, '')) && !leaks.some((l) => l.token === t)) leaks.push({ step: i + 1, token: t });
+  });
+  return leaks;
+}
+
+// When the problem text holds a value the solution derives, read the printed problem again (problem images
+// only, handwriting excluded) and take that text if the value is gone and it is still the same problem.
+async function printedProblemReread(ctx, result, images) {
+  const leaks = derivedLeaks(result, result.problem.text);
+  if (!leaks.length || !images.length) return;
+  const suspects = leaks.map((l) => l.token);
+  ctx.log(`문제 본문에 해설에서 구하는 값(${suspects.join(', ')})이 있어 인쇄된 글자만 다시 읽는 중`);
+  const words = (t) => new Set(harness.plain(t).match(/[가-힣]{2,}/g) || []);
+  const before = words(result.problem.text);
+  for (let i = 0; i < 2; i++) {
+    let data;
+    try {
+      ({ data } = await ctx.llm.json({ purpose: 'reread-problem', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, vision: true, effort: 'off', maxTokens: 6000,
+        system: prompts.REREAD_PROBLEM_SYSTEM, text: prompts.rereadProblemText(suspects), images }));
+    } catch (e) {
+      if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
+      break;
+    }
+    const text = str(data?.text, 8000);
+    const after = words(text);
+    const shared = [...after].filter((w) => before.has(w)).length;
+    // Same problem: most of the re-read's words were in the first transcription, and it is not a fragment.
+    const same = after.size >= 5 && shared / after.size >= 0.7 && shared / Math.max(1, before.size) >= 0.4;
+    if (!same || derivedLeaks(result, text).length) continue;
+    result.problem.text = text;
+    if (str(data?.figure, 3000)) result.problem.figure = str(data.figure, 3000);
+    result.proofread.push(`문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 ${suspects.join(', ')}이(가) 빠진 본문으로 교체`);
+    return;
+  }
+  result.uncertainties.push(`문제 본문에 해설에서 구하는 값(${suspects.join(', ')})이 있는데, 인쇄된 글자만 다시 읽어도 확인하지 못했습니다. 필기인지 원본과 대조해 주세요.`);
+}
+
+// The original's verification program did not run (undefined name, syntax): show the model the error and
+// ask for a runnable program once, like the repair step of a generated problem.
+async function fixSourceVerification(ctx, result, error) {
+  ctx.log('원본 검산 프로그램이 실행되지 않아 고치는 중');
+  let data;
+  try {
+    ({ data } = await ctx.llm.json({ purpose: 'fix-verification', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: 'off', maxTokens: 6000,
+      system: prompts.FIX_VERIFICATION_SYSTEM, text: prompts.fixVerificationText(result, error) }));
+  } catch (e) {
+    if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
+    return;
+  }
+  if (!data?.verification || typeof data.verification !== 'object') return;
+  const previous = result.sourceVerification;
+  result.sourceVerification = data.verification;
+  const checks = await sourceChecks(result);
+  if (checks.find((c) => c.id === 'source-calculation')?.runError) { result.sourceVerification = previous; return; }
+  result.checks = checks;
+  result.proofread.push('원본 검산 프로그램의 실행 오류를 고쳐 다시 검산했습니다.');
+}
+
+/** Checks on the transcribed original (v1 source-calculation / source-quantity, generalized). */
+async function sourceChecks(material) {
+  const checks = [];
+  if (material.sourceVerification) {
+    const r = await codeCheck(material.sourceVerification, { answer: material.problem.answer, choiceCount: material.problem.choices.length });
+    // A program that does not run says nothing about the transcribed numbers: report it as unverified.
+    if (r.runError) {
+      checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: 'unknown', runError: true, evidence: `검산 프로그램이 실행되지 않아 수치를 확인하지 못했습니다: ${r.reasons.join('; ')}` });
+    } else {
+      checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: r.status === 'fail' ? 'fail' : 'pass',
+        evidence: r.status === 'fail' ? `옮겨 적은 수치로 해설대로 계산하면 정답과 맞지 않습니다: ${r.reasons.join('; ')}` : r.status === 'skip' ? '수치로 검산할 대상 없음' : '해설대로 계산한 값이 원본 정답과 일치' });
+    }
+  } else {
+    checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: 'unknown', evidence: '분석 결과에 검산 프로그램이 없습니다.' });
+  }
+  const leaks = derivedLeaks(material, material.problem.text).map((l) => `STEP ${l.step}에서 구하는 ${l.token}`);
+  checks.push({ id: 'derived-value-in-problem', label: '해설에서 구하는 값이 문제에 없음', state: leaks.length ? 'fail' : 'pass',
+    evidence: leaks.length ? `${[...new Set(leaks)].join(', ')}이(가) 문제 본문에 있습니다. 필기를 조건으로 옮긴 것일 수 있습니다.` : '' });
+  return checks;
 }
 
 // ---------------------------------------------------------------- generation
@@ -342,12 +516,16 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
   // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
   if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
   soft.push(...cov.notes);
+  // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
+  const codeChecks = harness.inspectItem(material, item, mode);
+  for (const c of codeChecks.filter((x) => x.state === 'fail')) (c.severity === 'hard' ? hard : soft).push(`${c.label}: ${c.evidence}`);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
     ...blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`),
     ...(integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
+    ...codeChecks.filter((c) => c.state === 'fail' && c.severity === 'design').map((c) => `${c.label}: ${c.evidence}`),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
@@ -362,6 +540,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
       blind,
       coverage: cov,
+      harness: codeChecks,
       rules: ruleResults,
     },
   };
@@ -372,11 +551,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   const total = material.steps.length;
   item.status = 'generating'; item.error = ''; ctx.save();
   ctx.log(`${item.label}: 문제 설계 중`);
-  const { data } = await ctx.llm.json({
+  const { data, shapeFixes: generateShape = [] } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
     text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, usedRows: usedRowsFor(item, prior, material) }),
   });
+  if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
   Object.assign(item, normalizeGenerated(data));
   item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];
   item.status = 'verifying'; ctx.save();
@@ -393,11 +573,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
     ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중`);
-    const { data: fixed } = await ctx.llm.json({
+    const { data: fixed, shapeFixes: repairShape = [] } = await ctx.llm.json({
       purpose: 'repair', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
       system: prompts.REPAIR_SYSTEM,
       text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item, failures: repairReasons(check), blind: check.verification.blind }),
     });
+    if (repairShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${repairShape.join(', ')})`);
     Object.assign(item, normalizeGenerated(fixed));
     item.status = 'verifying'; ctx.save();
     check = await verifyItem(ctx, item, material, rules, mode, prior);
@@ -436,4 +617,4 @@ function pickRules(store, material) {
   return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
 }
 
-module.exports = { tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

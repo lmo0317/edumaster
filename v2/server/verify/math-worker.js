@@ -57,7 +57,7 @@ function runTrial(numberMode, spec, trial) {
   const choices = spec.choices.map((expr, i) => (expr === '' || expr === null ? undefined : value(expr, `${i + 1}번 선택지 식`)));
   const checks = spec.checks.map((c) => {
     const v = value(c.expr, '조건 검사');
-    return { expr: c.expr, desc: c.desc || '', ok: v === true, value: describe(math, v) };
+    return { expr: c.expr, desc: c.desc || '', ok: v === true, boolean: typeof v === 'boolean', value: describe(math, v) };
   });
   const matches = answer === undefined ? [] : choices.map((c, i) => (c !== undefined && near(math, c, answer) ? i + 1 : 0)).filter(Boolean);
   const ugly = [];

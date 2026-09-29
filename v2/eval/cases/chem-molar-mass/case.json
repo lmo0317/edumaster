@@ -1,0 +1,20 @@
+{
+  "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "problem": "problem.png",
+  "solution": "solution.png",
+  "sameImage": false,
+  "expect": {
+    "answer": 2,
+    "choiceCount": 5,
+    "stepCount": 3,
+    "stepTitles": [
+      "Ⅰ에서 한계 반응물을 구한다",
+      "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+      "A~D의 몰질량을 구한다"
+    ],
+    "problemMustContain": ["몰질량", "상댓값", "반응 계수"],
+    "problemMustNotContain": ["물질량", "x=15", "x = 15", "b=3", "b = 3"],
+    "stepsMustContain": ["몰질량", "모순|맞지 않"],
+    "notes": "발문은 'C의 몰질량+D의 몰질량 / B의 몰질량'이다. 표 Ⅰ의 x 옆 '=15', b 아래 '3', 반응 후 칸의 파란 A/A/B, 발문 아래 계산식은 필기다."
+  }
+}

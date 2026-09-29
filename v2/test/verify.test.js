@@ -66,3 +66,30 @@ test('dangerous functions are disabled and syntax errors fail cleanly', async ()
   const s = await codeCheck({ program: ['ans = (1 +'], answer: 'ans', choices: [] }, { answer: 0, choiceCount: 0 });
   assert.equal(s.status, 'fail');
 });
+
+// The three source checks that failed a correct transcription in the 2026-09-29 harness run.
+test('ㄱㄴㄷ problems are checked by their conditions only; a leftover answer symbol is not an error', async () => {
+  const deepseekBio = await codeCheck({
+    program: ['d3=5', 'd4=7', 'vA=2', 'vB=1', 't1=4', 't_d3_d4_A=(d4-d3)/vA', 't_d3_d4_B=(d4-d3)/vB'],
+    answer: 'ans', choices: [], checks: [{ expr: 't_d3_d4_A==1', desc: 'A 1ms' }, { expr: 't_d3_d4_B==2', desc: 'B 2ms' }],
+  }, { answer: 2, choiceCount: 5 });
+  assert.equal(deepseekBio.status, 'pass', deepseekBio.reasons.join());
+  const gemmaBio = await codeCheck({
+    program: ['t1 = 4', 'A_speed = 2'], answer: '2', choices: ['ㄱ', 'ㄴ', 'ㄱ, ㄴ', 'ㄱ, ㄷ', 'ㄴ, ㄷ'], checks: [{ expr: 't1 == 4' }],
+  }, { answer: 2, choiceCount: 5 });
+  assert.equal(gemmaBio.status, 'pass', gemmaBio.reasons.join());
+  // A wrong condition still fails.
+  const wrong = await codeCheck({ program: ['t1 = 4'], answer: 'ans', choices: [], checks: [{ expr: 't1 == 5', desc: 't1' }] }, { answer: 2, choiceCount: 5 });
+  assert.equal(wrong.status, 'fail');
+});
+
+test('a check that computes a value instead of stating a condition is skipped with a warning, not failed', async () => {
+  const r = await codeCheck({
+    program: ['b = 3', 'x = 15', 'ratio = 2', 'result = (b / x) * ratio'], answer: '2/5',
+    choices: ['1/5', '2/5', '3/5', '4/5', '1'], checks: [{ expr: '(3 / 15) * 2', desc: '최종 계산식' }],
+  }, { answer: 2, choiceCount: 5 });
+  assert.equal(r.status, 'pass', r.reasons.join());
+  assert.ok(r.warnings.some((w) => w.includes('참/거짓 식이 아니어서')));
+  const onlyValue = await codeCheck({ program: ['a = 1'], answer: '', choices: [], checks: [{ expr: 'a + 1' }] }, { answer: 1, choiceCount: 5 });
+  assert.equal(onlyValue.status, 'skip', 'nothing was actually checked');
+});

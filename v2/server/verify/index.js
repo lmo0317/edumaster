@@ -16,12 +16,16 @@ function normalize(verification, choiceCount) {
   if (tooLong) return { error: '검산 식 한 줄이 너무 깁니다.' };
   const free = list(verification.free).map(String).filter((s) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)).slice(0, 6);
   let choices = list(verification.choices).map((c) => (c === null || c === undefined ? '' : String(c).trim()));
+  // ㄱ/ㄴ/ㄷ combinations or worded choices are not values: such a problem is checked by its conditions only.
+  if (choices.some((c) => /[ㄱ-ㆎ가-힣]/.test(c))) choices = [];
   if (choiceCount && choices.length && choices.length !== choiceCount) return { error: `선택지 식 개수(${choices.length})가 선택지 수(${choiceCount})와 다릅니다.` };
   const checks = list(verification.checks)
     .map((c) => (typeof c === 'string' ? { expr: c, desc: '' } : { expr: String(c?.expr ?? '').trim(), desc: String(c?.desc ?? '') }))
     .filter((c) => c.expr && c.expr.length <= MAX_CHARS)
     .slice(0, 30);
-  return { spec: { program, free, answer: String(verification.answer ?? '').trim(), choices, checks } };
+  // Without choice values the answer has nothing to be compared with, so it is not evaluated (a leftover
+  // "ans" that the program never assigns would otherwise fail a correct transcription).
+  return { spec: { program, free, answer: choices.length ? String(verification.answer ?? '').trim() : '', choices, checks } };
 }
 
 // The 4-second limit covers the model-written program only. Loading mathjs in a fresh worker can itself take
@@ -52,15 +56,20 @@ function runWorker(spec, timeoutMs = 4000, startupMs = 30000) {
  */
 async function codeCheck(verification, { answer, choiceCount }) {
   const { spec, error } = normalize(verification, choiceCount);
-  if (error) return { status: 'fail', reasons: [error] };
+  // runError: the program itself could not run (undefined name, syntax) — says nothing about the numbers.
+  if (error) return { status: 'fail', reasons: [error], runError: true };
   const result = await runWorker(spec);
-  if (!result.ok) return { status: 'fail', reasons: [result.error], spec };
+  if (!result.ok) return { status: 'fail', reasons: [result.error], spec, runError: true };
   const reasons = [];
   const warnings = [];
   const claimed = Number(answer);
   result.trials.forEach((t, i) => {
     const label = t.free ? `(자유 문자 ${Object.entries(t.free).map(([k, v]) => `${k}=${v}`).join(', ')}) ` : '';
-    for (const c of t.checks) if (!c.ok) reasons.push(`${label}조건 검사 실패: ${c.desc || c.expr} → ${c.value}`);
+    for (const c of t.checks) {
+      // "(3/15)*2" computes a value but states nothing; it is not evidence either way.
+      if (!c.boolean) { if (i === 0) warnings.push(`참/거짓 식이 아니어서 건너뛴 검사: ${c.desc || c.expr} → ${c.value}`); continue; }
+      if (!c.ok) reasons.push(`${label}조건 검사 실패: ${c.desc || c.expr} → ${c.value}`);
+    }
     if (spec.answer && spec.choices.length) {
       if (!t.matches.length) reasons.push(`${label}계산한 정답 ${t.answer}과 같은 선택지가 없습니다. 선택지 값: ${t.choices.join(' | ')}`);
       else if (t.matches.length > 1) reasons.push(`${label}정답 값 ${t.answer}과 같은 선택지가 여러 개입니다 (${t.matches.join(', ')}번).`);
@@ -68,7 +77,7 @@ async function codeCheck(verification, { answer, choiceCount }) {
     }
     if (i === 0 && t.ugly.length) warnings.push('학생이 손으로 계산하기 어려운 수: ' + t.ugly.slice(0, 5).join(', '));
   });
-  const numeric = Boolean(spec.answer && spec.choices.length) || spec.checks.length > 0;
+  const numeric = Boolean(spec.answer && spec.choices.length) || (result.trials[0]?.checks || []).some((c) => c.boolean);
   return {
     status: reasons.length ? 'fail' : numeric ? 'pass' : 'skip',
     reasons: [...new Set(reasons)].slice(0, 12),

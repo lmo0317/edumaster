@@ -39,7 +39,9 @@ ${FORMAT}
  "annotations":["..."],"solutionSource":"provided|ai",
  "steps":[{"marker":"이 STEP이 속한 해설의 단계 표시(예: step1). 표시가 없으면 빈 문자열","title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
  "techniques":["..."],"finalCheck":"...","uncertainties":["..."],
- "stepMarkers":["해설에 인쇄된 단계 표시를 인쇄된 순서대로 한 번씩만, 예: step1, step2, step3 (STEP마다 반복하지 않는다. 없으면 빈 배열)"]}
+ "stepMarkers":["해설에 인쇄된 단계 표시를 인쇄된 순서대로 한 번씩만, 예: step1, step2, step3 (STEP마다 반복하지 않는다. 없으면 빈 배열)"],
+ "verification":{"program":["원본 문제의 주어진 값과 해설의 계산을 순서대로 적은 mathjs 문장"],"answer":"ans","choices":["각 선택지 값 식"],"free":[],"checks":[{"expr":"...","desc":"..."}]}}
+- verification: 원본 문제를 해설의 계산 그대로 따라가 정답을 계산하는 검산 프로그램이다. 서버가 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 확인한다. 한 줄에 mathjs 문장 하나, 변수 이름은 영문자·숫자·_ 만, 사용 가능: + - * / ^ ( ) sqrt abs min max 비교 and or not. 수치가 아닌 선택지(ㄱ,ㄴ,ㄷ)면 choices는 빈 배열, 계산할 수치가 없으면 program에 주어진 값만 적는다. 문제에서 값이 정해지지 않는 문자는 free에 넣는다.
 - steps의 개수는 stepMarkers의 개수와 같아야 한다 (stepMarkers가 있을 때).
 - problem.text에는 선택지(①~⑤)를 넣지 않는다. 선택지는 choices에만.`;
 
@@ -66,6 +68,46 @@ function regroupText(steps, count, markers) {
     `\n이 ${steps.length}개 STEP을 ${count}개 묶음으로 나눠 JSON만 반환하라.`,
   ].join('\n');
 }
+
+// Focused re-reads get only the image they read: shown the problem and the solution together, the model
+// drifted back to the familiar word (몰질량 → 물질량) that it copies correctly from the problem alone.
+const REREAD_QUESTION_SYSTEM = `너는 인쇄된 글자를 정확히 옮겨 적는 판독기다. 추론하거나 고치지 말고 보이는 글자 그대로 적는다. 필기(연필·색 펜)는 옮기지 않는다.
+이미지에서 발문(무엇을 묻는지 끝나는 질문 문장, 보통 ~은?, ~인가?, ~고른 것은?으로 끝남)만 인쇄된 그대로 옮긴다. 단서 괄호 "(단, …)"와 배점도 포함한다. 선택지는 넣지 않는다. 수식은 $...$ LaTeX.
+반환 JSON: {"question":"..."}`;
+
+const REREAD_PROBLEM_SYSTEM = `너는 인쇄된 글자를 정확히 옮겨 적는 판독기다. 추론하거나 고치지 말고 인쇄된 글자만 그대로 적는다.
+문제 이미지의 문제 본문(자료 설명, 표, <보기>, 발문, 단서 괄호, 배점)을 인쇄된 그대로 옮긴다.
+- 필기(연필·색 펜 글씨, 손으로 쓴 숫자·단어, 동그라미, X 표시, 화살표 메모)는 절대 옮기지 않는다. 필기로 채운 칸·빈칸은 인쇄된 기호(?, x 등)나 빈칸 그대로 둔다.
+- 그림을 말로 설명하지 않는다. 그림 안에 인쇄된 글자·수치·표시만 figure에 짧게 적는다 (본문에 "그림 설명"을 넣지 않는다).
+- 선택지(①~⑤)는 넣지 않는다. 표는 마크다운 표, 수식은 $...$ LaTeX.
+반환 JSON: {"text":"...","figure":"..."}`;
+
+function rereadProblemText(suspects) {
+  return `문제 본문을 인쇄된 글자만 JSON으로 반환하라.\n다음 값은 해설에서 구하는 값이라 필기일 가능성이 높다. 인쇄된 글자로 분명히 보일 때만 적는다: ${suspects.join(', ')}`;
+}
+
+const FIX_VERIFICATION_SYSTEM = `너는 원본 문제의 검산 프로그램을 고치는 사람이다. 앞서 쓴 프로그램이 실행 오류로 돌지 않았다.
+문제와 해설의 계산을 그대로 따라가는 mathjs 프로그램을 다시 쓴다. 해설에 없는 계산을 지어내거나 정답에 맞추려고 값을 바꾸지 않는다.
+- program: 한 줄에 mathjs 문장 하나. 모든 변수는 쓰기 전에 대입한다. 변수 이름은 영문자·숫자·_ 만. 사용 가능: + - * / ^ ( ) sqrt abs min max 비교 and or not. true/false는 소문자.
+- answer, choices: 선택지가 수치일 때만 정답 식과 선택지 값 식을 쓴다. ㄱ·ㄴ·ㄷ 조합처럼 수치가 아닌 선택지면 answer는 "", choices는 [].
+- checks: 해설이 확인하는 사실을 참/거짓 식으로 쓴다 (예: {"expr":"t1 == 4","desc":"t1은 4ms"}). 값만 계산하는 식은 넣지 않는다.
+반환 JSON: {"verification":{"program":["..."],"answer":"","choices":[],"free":[],"checks":[{"expr":"...","desc":"..."}]}}`;
+
+function fixVerificationText(material, error) {
+  return [
+    '[원본 문제]', material.problem.text,
+    material.problem.choices.length ? '[선택지]\n' + material.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') : '',
+    `[정답] ${material.problem.answer}번`,
+    '[해설 STEP]', ...material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}\n결과: ${s.result}`),
+    '[앞서 쓴 검산 프로그램]', JSON.stringify(material.sourceVerification),
+    `[실행 오류] ${error}`,
+    '고친 검산 프로그램을 JSON으로만 반환하라.',
+  ].filter(Boolean).join('\n');
+}
+
+const REREAD_HEADINGS_SYSTEM = `너는 인쇄된 글자를 정확히 옮겨 적는 판독기다. 추론하거나 고치지 말고 보이는 글자 그대로 적는다.
+해설 이미지에서 번호가 붙은 단계 표시(step1, step2, STEP 1 …) 옆에 인쇄된 제목만 순서대로 옮긴다. 번호 붙은 단계 표시가 없는 소제목(문제+자료 분석, 선택지 분석, 보기 분석 등)은 넣지 않는다. 단계 표시가 하나도 없으면 빈 배열.
+반환 JSON: {"steps":[{"marker":"step1","title":"..."}]}`;
 
 function proofreadText(fields) {
   return '[옮겨 적은 필드]\n' + JSON.stringify(fields, null, 1) + '\n\n이미지와 대조해 JSON만 반환하라.';
@@ -260,7 +302,7 @@ function repairText({ material, stage, total, mode, rules, item, failures, blind
 }
 
 module.exports = {
-  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText,
+  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
   GENERATE_SYSTEM, generateText,
   SOLVE_SYSTEM, solveText,
   REPAIR_SYSTEM, repairText,
