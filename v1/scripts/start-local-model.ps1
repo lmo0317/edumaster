@@ -3,7 +3,7 @@
 #   pwsh start-local-model.ps1 -Name gemma26     # Gemma 4 26B-A4B (MoE)
 #   pwsh start-local-model.ps1 -Name gemma12     # Gemma 4 12B (previous default)
 # Thinking stays available (--reasoning auto); v2 turns it on per request for design calls.
-param([ValidateSet('qwen36', 'gemma26', 'gemma12')][string]$Name = 'qwen36', [int]$Ctx = 49152)
+param([ValidateSet('qwen36', 'gemma26', 'gemma12')][string]$Name = 'qwen36', [int]$Ctx = 49152, [switch]$NoWait)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
 $server = 'D:\work\dev\blog\windows\bin\llama-server.exe'
@@ -26,6 +26,7 @@ $arguments = @('-m', $c.m, '--mmproj', $c.p, '--host', '127.0.0.1', '--port', '8
   '-b', '2048', '-ub', '2048', '--no-warmup', '--jinja', '--reasoning', 'auto', '--reasoning-budget', '-1') + $c.extra
 $p = Start-Process $server -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $logs "local-$Name.log") -RedirectStandardOutput (Join-Path $logs "local-$Name-out.log")
 $p.Id | Set-Content (Join-Path $logs 'local-model-pid.txt')
+if ($NoWait) { exit 0 }
 for ($i = 0; $i -lt 120; $i++) {
   Start-Sleep -Seconds 2
   try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8092/v1/models' -TimeoutSec 3; if ($r.data) { "ready $($c.alias) pid $($p.Id)"; exit 0 } } catch {}
