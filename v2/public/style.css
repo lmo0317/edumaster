@@ -175,18 +175,20 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .cv2-cell b { font-size: 15px; }
 .cv2-why { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .cv2-pdf { display: flex; align-items: center; justify-content: center; }
-.cv2-fb { margin-top: 16px; }
+.cv2-check { margin-bottom: 18px; }
+.cv2-h { margin: 6px 0 10px; }
+.cv2-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 640px; font-size: 13.5px; }
+.cv2-table th, .cv2-table td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+.cv2-table tr:first-child th { vertical-align: bottom; border-bottom: 2px solid var(--line); font-size: 14px; }
+.cv2-table tr > th:first-child { width: 34%; font-weight: 600; }
+.cv2-table tr.grp td { background: #f4f6fa; color: var(--accent); font-weight: 700; font-size: 12.5px; padding: 6px 10px; }
+.cv2-score { font-size: 26px; font-weight: 800; line-height: 1.1; margin-top: 4px; }
+.cv2-score.ok, .cv2-pct.ok { color: var(--ok); } .cv2-score.warn, .cv2-pct.warn { color: #b97d10; } .cv2-score.bad, .cv2-pct.bad { color: var(--bad); }
+.cv2-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-weight: 800; font-size: 13px; }
+.cv2-mark.ok { background: var(--ok-soft); color: var(--ok); } .cv2-mark.warn { background: var(--warn-soft); color: var(--warn); } .cv2-mark.bad { background: var(--bad-soft); color: var(--bad); }
+.cv2-note { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
 .cv2-quote summary { font-size: 13.5px; color: var(--accent); cursor: pointer; font-weight: 600; }
 .cv2-quote blockquote { margin: 8px 0 4px; padding: 10px 14px; border-left: 3px solid var(--accent); background: #f6f8fd; border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink); }
-.cv2-fb-point { border-top: 1px solid var(--line); padding: 14px 0 4px; margin-top: 12px; }
-.cv2-fb-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
-.cv2-fb-head .num { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; }
-.cv2-fb-head b { font-size: 15px; }
-.cv2-fb-grid { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 10px; }
-.cv2-fb-cell { border-radius: 10px; padding: 10px 12px; background: #f4f6fa; }
-.cv2-fb-cell.ok { background: var(--ok-soft); } .cv2-fb-cell.warn { background: var(--warn-soft); } .cv2-fb-cell.bad { background: var(--bad-soft); }
-.cv2-fb-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.cv2-fb-cell p { margin: 6px 0 0; font-size: 13px; color: var(--ink); line-height: 1.5; }
 
 /* ---- 시스템 안내 (teacher-facing) ---- */
 .sys-hero { background: linear-gradient(135deg, #2f5bea 0%, #4b3fd6 100%); color: #fff; border-radius: 14px; padding: 26px 26px 22px; margin-bottom: 16px; }
@@ -299,7 +301,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .mat-thumb { flex-basis: 48px; width: 48px; height: 64px; }
   .mat-open { display: none; }
   .cv2-row { grid-template-columns: minmax(0, 1fr); }
-  .cv2-fb-grid { grid-template-columns: minmax(0, 1fr); }
   .cv2-orig img { height: 80px; }
   .mat-card .set-list { padding: 2px 12px; }
   .set-row { flex-direction: column; align-items: flex-start; gap: 4px; }

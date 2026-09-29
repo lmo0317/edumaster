@@ -719,13 +719,21 @@
     };
     const stageName = (it) => (it.stage?.kind === 'twin' ? '최종 문제' : it.label.replace(' 누적', ''));
     const fb = b.feedback;
-    const GRADE = { ok: ['ok', '반영됨'], partial: ['warn', '일부 반영'], no: ['bad', '반영 안 됨'] };
-    const fbCount = (m) => (fb?.models[m.provider] ? Object.values(fb.models[m.provider]).filter(([g]) => g === 'ok').length : null);
+    const MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'] };
+    const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
+    // How faithfully a model met the checklist: ✓ counts 1, △ half.
+    const fidelity = (m) => {
+      const marks = allItems.map((it) => fb.models[m.provider]?.[it.id]?.[0]);
+      if (!fb?.models[m.provider]) return null;
+      const n = (g) => marks.filter((x) => x === g).length;
+      return { pct: Math.round(((n('ok') + n('partial') / 2) / allItems.length) * 100), ok: n('ok'), partial: n('partial'), no: n('no') };
+    };
+    const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
     const row = (m) => {
       const done = m.items.filter((it) => ['passed', 'warning'].includes(it.status)).length;
-      const f = fbCount(m);
+      const f = fidelity(m);
       return `<div class="cv2-row">
-        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span>${f != null ? `<span class="muted small">선생님 피드백 <b>${f}/${fb.points.length}</b> 반영</span>` : ''}</div>
+        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span>${f ? `<span class="small">요구사항 충실도 <b class="cv2-pct ${tone(f.pct)}">${f.pct}%</b></span>` : ''}</div>
         ${m.items.map((it) => {
           const [tone, label, extra] = RESULT[it.status] || ['', it.status, ''];
           const reason = it.status === 'passed' ? '' : why(it) || extra;
@@ -739,18 +747,21 @@
       <div class="panel cv2-orig"><span class="muted small">원본</span>
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
         <span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>
-      <div class="cv2">${b.models.map(row).join('')}</div>
-      ${fb ? `<div class="panel cv2-fb">
-        <h2>선생님 피드백을 얼마나 반영했나</h2>
+      ${fb ? `<div class="panel cv2-check">
+        <h2>요구사항 체크리스트</h2>
+        <div class="table-wrap"><table class="cv2-table">
+          <tr><th>항목</th>${b.models.map((m) => { const f = fidelity(m); return `<th><div>${esc(m.label)}</div>${f ? `<div class="cv2-score ${tone(f.pct)}">${f.pct}%</div><div class="muted tiny">✓ ${f.ok} · △ ${f.partial} · ✕ ${f.no}</div>` : ''}</th>`; }).join('')}</tr>
+          ${fb.groups.map((g) => `<tr class="grp"><td colspan="${b.models.length + 1}">${esc(g.title)}</td></tr>${g.items.map((it) => `<tr><th>${esc(it.text)}</th>${b.models.map((m) => {
+            const [grade, note] = fb.models[m.provider]?.[it.id] || ['', ''];
+            const [t, mark] = MARK[grade] || ['', '-'];
+            return `<td><div class="cv2-mark ${t}">${mark}</div><div class="cv2-note">${esc(note)}</div></td>`;
+          }).join('')}</tr>`).join('')}`).join('')}
+        </table></div>
+        <p class="muted small">✓ 충족 · △ 일부 충족 · ✕ 못 함. 충실도는 ✓를 1, △를 0.5로 셉니다. ${esc(fb.by)}.</p>
         <details class="cv2-quote" data-k="fb-quote"><summary>받은 피드백 원문 보기</summary><blockquote>${esc(fb.quote)}</blockquote></details>
-        ${fb.points.map((pt, k) => `<div class="cv2-fb-point">
-          <div class="cv2-fb-head"><span class="num">${k + 1}</span><div><b>${esc(pt.ask)}</b><div class="muted small">피드백: "${esc(pt.said)}"</div></div></div>
-          <div class="cv2-fb-grid" style="--n:${b.models.length}">${b.models.map((m) => {
-            const [g, text] = fb.models[m.provider]?.[pt.id] || ['', '평가 없음'];
-            const [tone, label] = GRADE[g] || ['', '-'];
-            return `<div class="cv2-fb-cell ${tone}"><div class="cv2-fb-top"><span class="small"><b>${esc(m.label)}</b></span><span class="chip ${tone}">${label}</span></div><p>${esc(text)}</p></div>`;
-          }).join('')}</div></div>`).join('')}
-        <p class="muted small">${esc(fb.by)}</p></div>` : ''}
+      </div>` : ''}
+      <h2 class="cv2-h">모델별 결과와 PDF</h2>
+      <div class="cv2">${b.models.map(row).join('')}</div>
       <p class="muted small">✓ 됨: 자동 검토를 통과해 바로 쓸 수 있음 (확인할 점은 가볍게 한 번 보시면 되는 내용) · △ 검토 필요: 만들었지만 선생님 확인이 필요함 · ✕ 안 됨: 문제를 만들지 못함</p>`;
   }
 
