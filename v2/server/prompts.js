@@ -294,11 +294,11 @@ function repairText({ material, stage, total, mode, rules, item, failures, blind
     stageInstruction(stage, total, mode),
     rulesBlock(rules),
     '\n[네가 만든 문제]',
-    JSON.stringify({ problem: item.problem, solution: item.solution, usesSteps: item.usesSteps, verification: item.verificationSpec }),
+    JSON.stringify({ problem: item.problem, solution: item.solution, usesSteps: item.usesSteps, designNote: item.designNote, appliedRules: item.appliedRules, verification: item.verificationSpec }),
     '\n[발견된 문제]',
     failures.map((f) => '- ' + f).join('\n'),
     blind?.solution ? '\n[독립 풀이 전문 — 정답을 모르는 검토자가 문제만 보고 푼 과정]\n' + blind.solution : '',
-    '\n수정한 전체 결과를 같은 JSON 형식으로만 반환하라.',
+    '\n수정한 전체 결과를 같은 JSON 형식으로만 반환하라. designNote와 appliedRules(지침마다 id와, 수정한 문제에서 어떻게 지켰는지)도 빠짐없이 다시 쓴다.',
   ].join('\n');
 }
 

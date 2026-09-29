@@ -627,7 +627,11 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
       text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item, failures: repairReasons(check), blind: check.verification.blind }),
     });
     if (repairShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${repairShape.join(', ')})`);
-    Object.assign(item, normalizeGenerated(fixed));
+    // Local models often return only the fixed problem; what they leave out (how each rule was kept, the design
+    // note) stays from the previous version instead of being wiped.
+    const next = normalizeGenerated(fixed);
+    for (const key of ['designNote', 'appliedRules', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
+    Object.assign(item, next);
     item.status = 'verifying'; ctx.save();
     check = await verifyItem(ctx, item, material, rules, mode, prior);
   }

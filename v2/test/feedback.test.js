@@ -105,3 +105,29 @@ test('a blind solver that cannot finish keeps the problem for teacher review ins
   assert.match(item.verification.blind.solution, /답을 내지 못했습니다/);
   assert.equal(solveCalls, 2, 'one repair, then stop because the complaint repeats');
 });
+
+test('a repair answer that leaves out how each rule was kept does not wipe the first answer\'s explanation', async () => {
+  // Qwen 3.6 / Gemma returned only the fixed problem on repair; the rule explanations were lost.
+  const rules = [{ id: 'r1', kind: 'dont', target: 'problem', text: '풀이에 쓰이지 않는 조건을 넣지 않는다.' }];
+  const solves = [
+    { answer: 3, stepsUsed: [1, 2], conditions: [{ text: '(단, 온도는 일정하다.)', used: false }], rules: [{ id: 'r1', ok: true, note: '' }] },
+    { answer: 3, stepsUsed: [1, 2], conditions: [], rules: [{ id: 'r1', ok: true, note: '' }] },
+  ];
+  const calls = [];
+  const llm = {
+    json: async ({ system, text }) => {
+      calls.push({ system, text });
+      if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+      if (system === prompts.REPAIR_SYSTEM) return { data: { ...generated('고친 문제'), designNote: '', appliedRules: [] } };
+      return { data: { ...generated('처음 문제'), appliedRules: [{ id: 'r1', how: '표만 남기고 온도 조건을 뺐다' }] } };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules, mode: 'integrated' });
+  const repairCall = calls.find((c) => c.system === prompts.REPAIR_SYSTEM);
+  assert.match(repairCall.text, /"appliedRules":\[\{"id":"r1"/, 'the repair sees its own rule explanations');
+  assert.equal(item.problem.text, '고친 문제');
+  assert.deepEqual(item.appliedRules, [{ id: 'r1', how: '표만 남기고 온도 조건을 뺐다' }]);
+  assert.equal(item.designNote, 'd');
+  assert.equal(item.verification.rules[0].how, '표만 남기고 온도 조건을 뺐다');
+});
