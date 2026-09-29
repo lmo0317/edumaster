@@ -179,6 +179,8 @@
       if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('materials'); await materialView(m[1], alive); }
       else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('materials'); await jobView(m[1], alive); }
       else if (hash.startsWith('#/materials')) { setNav('materials'); await materialsView(); }
+      else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
+      else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
       else if (hash.startsWith('#/rules')) { setNav('rules'); await rulesView(); }
       else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
       else { setNav('home'); await homeView(); }
@@ -698,6 +700,81 @@
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
     $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
+  }
+
+  // ------------------------------------------------------------------ model comparison
+  // The same original made into a problem set by each model, stage by stage, next to the original.
+  async function compareView(id) {
+    const list = (await api('GET', '/api/compare')).sort((a, b) => (a.id.startsWith('chem') ? -1 : b.id.startsWith('chem') ? 1 : a.id.localeCompare(b.id)));
+    if (!list.length) { view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">아직 비교 자료가 없습니다.</div>'; return; }
+    const b = await api('GET', '/api/compare/' + (id || list[0].id));
+    const pct = (s) => (s && s.total ? Math.round((s.pass / s.total) * 100) : null);
+    const tone = (v) => (v == null ? '' : v >= 95 ? 'ok' : v >= 75 ? 'warn' : 'bad');
+    const STAGE_NAME = (it) => (it.stage?.kind === 'twin' ? '최종 문제' : it.label.replace(' 누적', '').replace(' 연습', ' 연습'));
+    const stages = b.models[0].items.map((it, i) => ({ i, name: STAGE_NAME(it), full: it.label }));
+
+    const summary = b.models.map((m) => {
+      const v = pct(m.score?.make);
+      return `<div class="sys-card cv-sum">
+        <div class="model-head"><b>${esc(m.label)}</b>${v != null ? `<span class="cmp-big small-big ${tone(v)}">${v}<small>점</small></span>` : ''}</div>
+        <div class="cv-chips">${m.items.map((it) => `<span class="chip ${(ITEM_STATUS[it.status] || ['', ''])[1]}" title="${esc(it.label)}">${esc(STAGE_NAME(it))}: ${esc((ITEM_STATUS[it.status] || [it.status])[0])}</span>`).join('')}</div>
+        <div class="muted small">원본 읽기 ${pct(m.score?.read) ?? '-'}% · 세트 약 ${Math.round(m.score?.minutes || 0)}분</div>
+      </div>`;
+    }).join('');
+
+    const itemCard = (m, it) => {
+      const [st, stTone] = ITEM_STATUS[it.status] || [it.status, ''];
+      const p = it.problem;
+      return `<div class="cv-item">
+        <div class="cv-item-head"><b>${esc(m.label)}</b><span class="chip ${stTone}">${esc(st)}</span></div>
+        ${it.repairs ? `<div class="muted small">검토 후 ${it.repairs}번 고쳐서 만든 결과</div>` : ''}
+        ${!p ? `<div class="note bad small">만들지 못했습니다${it.error ? ': ' + esc(it.error) : ''}</div>` : `
+          <div class="rich cv-problem">${rich(p.text)}</div>
+          ${p.figure ? `<div class="note info small"><b>그림</b> ${inlineRich(p.figure)}</div>` : ''}
+          ${choicesHtml(p)}
+          <div class="small"><b>정답</b> ${p.answer ? circled(p.answer) : '-'}${it.blind ? ` · 독립 풀이 ${it.blind.answer ? circled(it.blind.answer) : '못 풂'} ${it.blind.answer === p.answer ? '<span class="chip ok">일치</span>' : '<span class="chip bad">불일치</span>'}` : ''}</div>
+          ${it.problems.length || it.warnings.length ? `<details class="cv-det" data-k="cv-rev"><summary>검토 결과 (${it.problems.length + it.warnings.length})</summary><ul class="cv-notes">
+            ${it.problems.map((x) => `<li class="bad">${esc(x)}</li>`).join('')}${it.warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : '<div class="small cv-ok">✓ 검토에서 지적 없음</div>'}
+          <details class="cv-det" data-k="cv-sol"><summary>풀이 보기</summary><div class="inner">
+            ${(it.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${inlineRich(s.title || '')}</div><div class="rich">${rich(s.work || '')}</div></div>`).join('')}
+            ${it.solution?.summary ? `<p><b>정리</b> ${inlineRich(it.solution.summary)}</p>` : ''}</div></details>
+          ${it.designNote ? `<details class="cv-det" data-k="cv-note"><summary>어떻게 설계했나 (모델 설명)</summary><div class="inner rich small">${rich(it.designNote)}</div></details>` : ''}`}
+      </div>`;
+    };
+
+    view.innerHTML = `<h1>모델 비교</h1>
+      <p class="muted">같은 원본 문제와 해설을 세 모델에 넣고, 똑같은 과정(판독 → 단계별 설계 → 자동 검토·수정)으로 만든 연습 문제를 나란히 놓았습니다. 선생님 지침도 똑같이 붙였습니다.</p>
+      ${list.length > 1 ? `<div class="tabs">${list.map((x) => `<a class="tab${x.id === b.id ? ' on' : ''}" href="#/compare/${x.id}">${esc(x.title.split('(')[0].trim())}</a>`).join('')}</div>` : ''}
+      <div class="sys-cards cv-sums">${summary}</div>
+
+      <div class="panel">
+        <h2>원본</h2>
+        <div class="cv-orig">
+          <figure><figcaption>원본 문제</figcaption><img data-zoom src="${b.original.problemImage}" alt="원본 문제"></figure>
+          ${b.original.solutionImage ? `<figure><figcaption>교사 해설</figcaption><img data-zoom src="${b.original.solutionImage}" alt="교사 해설"></figure>` : ''}
+          <div class="cv-orig-info">
+            <div><span class="lbl">정답</span><b>${b.original.answer ? circled(b.original.answer) : '-'}</b></div>
+            <div><span class="lbl">교사 해설의 풀이 단계</span><ol>${b.original.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>
+            <details class="cv-det" data-k="cv-read"><summary>각 모델이 읽은 발문과 STEP</summary><div class="inner">
+              ${b.models.map((m) => `<div class="cv-read"><b>${esc(m.label)}</b><div class="rich small">${rich(m.reading.question || '')}</div><div class="muted small">${m.reading.steps.map((s, i) => `${i + 1}) ${esc(s)}`).join(' / ')}</div></div>`).join('')}</div></details>
+            <p class="muted small">사진을 누르면 크게 볼 수 있습니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>단계별로 만든 문제</h2>
+        <div class="tabs cv-stages">${stages.map((s, k) => `<button type="button" class="tab${k ? '' : ' on'}" data-stage="${s.i}">${esc(s.name)}</button>`).join('')}</div>
+        ${stages.map((s, k) => `<div class="cv-stage" data-stage="${s.i}"${k ? ' hidden' : ''}>
+          <p class="muted small">${s.i === stages.length - 1 ? '원본의 모든 STEP이 필요한 최종 문제입니다. 앞 연습 문제의 아이디어를 엮어 원본과 다른 구조로 만들도록 했습니다(통합 변형).' : `원본 해설의 ${esc(s.full.replace(/ (누적 )?연습/, ''))}만 알면 풀리도록 만든 연습 문제입니다.`}</p>
+          <div class="cv-grid" style="--n:${b.models.length}">${b.models.map((m) => itemCard(m, m.items[s.i] || { status: 'failed', problems: [], warnings: [] })).join('')}</div>
+        </div>`).join('')}
+      </div>
+      <p class="muted small">평가 문제로 만든 결과입니다. 점수는 자동 검토 검사의 통과율이고, 모델 간 전체 비교는 <a href="#/system">시스템</a> 화면에 있습니다.</p>`;
+    $$('.cv-stages .tab').forEach((t) => t.addEventListener('click', () => {
+      $$('.cv-stages .tab').forEach((x) => x.classList.toggle('on', x === t));
+      $$('.cv-stage').forEach((x) => { x.hidden = x.dataset.stage !== t.dataset.stage; });
+    }));
   }
 
   // ------------------------------------------------------------------ rules
