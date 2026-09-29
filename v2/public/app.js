@@ -920,7 +920,8 @@
     const paid = MODELS.filter((m) => m.price && c.perProblem);
     const cheapest = paid.length ? paid.reduce((a, m) => (c.perProblem[m.price] < c.perProblem[a.price] ? m : a)) : null;
     const tag = (m) => [quality(m) === best ? '<span class="chip ok">문제 품질 1위</span>' : '', m === cheapest ? '<span class="chip run">저렴한 유료</span>' : '', !m.price ? '<span class="chip ok">무료</span>' : ''].join(' ');
-    const costOf = (m) => (!m.price ? '0원' : c.perProblem ? `약 ${krw(c.perProblem[m.price])}` : '-');
+    const range = (r) => `약 ${krw(r[0])} ~ ${krw(r[1])}`;
+    const costOf = (m) => (!m.price ? '0원' : m.price === 'opus' && c.opusRange ? range(c.opusRange.problem) : c.perProblem ? `약 ${krw(c.perProblem[m.price])}` : '-');
     const tone = (v) => (v == null ? '' : v >= 95 ? 'ok' : v >= 75 ? 'warn' : 'bad');
     const cell = (s) => {
       const v = pct(s);
@@ -943,7 +944,7 @@
     }).join('');
     const rows = cmp.metrics.map((x) => `<tr><th>${x.label}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
     const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange && krw(c.perProblemRange[m.price][0]) !== krw(c.perProblemRange[m.price][1]) ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
-    const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${m.price ? `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}` : '0원'}</b></td>`).join('')}</tr>` : '';
+    const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${!m.price ? '0원' : m.price === 'opus' && c.opusRange ? range(c.opusRange.set) : `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}`}</b></td>`).join('')}</tr>` : '';
     const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
     return `<div class="sys-cards cmp-cards">${cards}</div>
       <div class="table-wrap"><table class="cmp-table">
@@ -954,7 +955,7 @@
         ${costRow}${setRow}
       </table></div>
       <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
-      비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다. DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
+      비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. ${c.opusRange ? 'Opus는 토큰 수가 기록되지 않는 방식으로 돌렸기 때문에, 실제로 주고받은 글자 수로 추정한 범위입니다 (생각 토큰은 측정하지 못해 답변의 0~2배로 잡음).' : 'Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다.'} DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
   }
 
   // Technical view of the same system (prompt version, every check, eval runs), folded away for teachers.

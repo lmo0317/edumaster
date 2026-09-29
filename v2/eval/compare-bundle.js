@@ -2,6 +2,7 @@
 // Builds one model-comparison file for the 모델 비교 page: the original (images + the teacher's STEP titles) and,
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
 //   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
+//     [--relay-dir <relay folder of the Opus run> --relay-from <first request id of this case>]
 // Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
 // eval/compare/<case>/<provider>.pdf, are offered for download on the page.
 // Writes eval/compare/<case>.json (deploy ships it; the page reads it, nothing is stored in data/).
@@ -50,6 +51,26 @@ for (const f of fs.readdirSync(jobsDir)) {
   });
 }
 models.sort((a, b) => ORDER.indexOf(a.provider) - ORDER.indexOf(b.provider));
+// Opus ran through the relay, which records no token counts: keep the characters it actually exchanged so the
+// page can estimate its cost from real sizes instead of from DeepSeek's token use.
+let relayMeasure = null;
+if (args['relay-dir']) {
+  const dir = args['relay-dir'];
+  const ANALYSIS = new Set(['analyze', 'proofread', 'reread-question', 'reread-problem', 'reread-headings', 'regroup', 'fix-verification']);
+  const m = { analysis: { calls: 0, inChars: 0, outChars: 0, images: 0 }, generation: { calls: 0, inChars: 0, outChars: 0 } };
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.request.json') && (!args['relay-from'] || x >= args['relay-from']))) {
+    const r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    const resp = path.join(dir, f.replace('.request.json', '.response.txt'));
+    const k = ANALYSIS.has(r.purpose) ? m.analysis : m.generation;
+    k.calls++;
+    k.inChars += r.system.length + r.content.filter((c) => c.type === 'text').reduce((a, c) => a + c.text.length, 0);
+    k.outChars += fs.existsSync(resp) ? fs.readFileSync(resp, 'utf8').length : 0;
+    if (k.images !== undefined) k.images += r.content.filter((c) => c.type === 'image').length;
+  }
+  const opus = models.find((x) => x.provider === 'relay');
+  m.problems = opus ? opus.items.filter((i) => i.problem).length : 3;
+  relayMeasure = m;
+}
 const out = {
   id: args.case, title: spec.title, createdAt: new Date().toISOString(),
   original: {
@@ -57,6 +78,7 @@ const out = {
     answer: spec.expect?.answer, steps: spec.expect?.stepTitles || [],
   },
   models,
+  relayMeasure,
 };
 fs.mkdirSync(path.join(__dirname, 'compare'), { recursive: true });
 const file = path.join(__dirname, 'compare', `${args.case}.json`);

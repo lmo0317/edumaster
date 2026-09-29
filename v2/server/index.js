@@ -394,6 +394,19 @@ function createApp(options = {}) {
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
     // Quality and cost of each model on this case alone.
     bundle.overview = { compare: modelComparison(id), cost: costEstimate(id) };
+    // Opus cost from what its run actually exchanged: 0.6–1.0 token per character (Korean + LaTeX), reasoning
+    // tokens not measured so 0–2× the written answer, 1,000–1,600 tokens per image. A range, not one number.
+    const rm = bundle.relayMeasure;
+    const cost = bundle.overview.cost;
+    if (rm && cost.pricing) {
+      const pr = cost.pricing.opus;
+      const usd = (inTok, outTok) => (inTok * pr.input + outTok * pr.output) / 1e6;
+      const gen = rm.generation; const an = rm.analysis;
+      const problem = [usd(gen.inChars * 0.6, gen.outChars * 0.6) / rm.problems, usd(gen.inChars, gen.outChars * 3) / rm.problems];
+      const analysis = [usd(an.inChars * 0.6 + an.images * 1000, an.outChars * 0.6), usd(an.inChars + an.images * 1600, an.outChars * 3)];
+      cost.opusRange = { problem, analysis, set: [analysis[0] + problem[0] * 3, analysis[1] + problem[1] * 3] };
+      if (cost.perProblem) cost.perProblem.opus = (problem[0] + problem[1]) / 2;
+    }
     // Where the final problem was compared by hand, that verdict replaces the automatic "structural" check
     // (the automatic one passed DeepSeek's final, which only changed numbers).
     for (const [provider, m] of Object.entries(bundle.overview.compare.models)) {
