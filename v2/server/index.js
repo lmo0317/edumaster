@@ -335,6 +335,40 @@ function createApp(options = {}) {
       tokens: { problem, analysis },
     };
   }
+  // Model comparison for teachers: the newest full eval of each model, grouped into what a teacher cares about.
+  const QUALITY = [
+    ['made', '문제를 끝까지 만들어 냄', (n) => /: 문제 생성$/.test(n)],
+    ['correct', '계산과 정답이 맞음', (n) => /: (코드 검산|독립 풀이 정답 일치)$/.test(n)],
+    ['clean', '쓸모없는 조건이 없음', (n) => /: 모든 조건이 풀이에 쓰임$/.test(n)],
+    ['range', '목표한 STEP만으로 풀림', (n) => /: 목표 STEP 범위로 풀림$/.test(n)],
+    ['method', '선생님 풀이 방법 유지', (n) => /: 교사 풀이 방법 보존$/.test(n)],
+    ['structural', '최종 문제를 새 구조로 설계', (n) => /구조 변형/.test(n)],
+    ['clear', '교사 검토 없이 바로 쓸 수 있음', (n) => /: 교사 검토 필요 없음$/.test(n)],
+  ];
+  function modelComparison() {
+    const dir = path.join(cfg.root, 'eval', 'reports');
+    const out = {};
+    if (!fs.existsSync(dir)) return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort().reverse()) {
+      let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+      const results = Array.isArray(raw) ? raw : raw.results || [];
+      if ((raw.stage || results[0]?.stage) !== 'full') continue;
+      for (const provider of new Set(results.map((r) => r.provider))) {
+        if (out[provider]) continue;
+        const rows = results.filter((r) => r.provider === provider);
+        const tally = (pred, list) => { const hit = list.filter((c) => pred(c.name)); return { pass: hit.filter((c) => c.pass).length, total: hit.length }; };
+        const gen = rows.flatMap((r) => r.generation || []);
+        out[provider] = {
+          when: raw.stamp || f.slice(0, 15), cases: rows.map((r) => r.case),
+          read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
+          overall: tally(() => true, gen),
+          metrics: Object.fromEntries(QUALITY.map(([id, , pred]) => [id, tally(pred, gen)])),
+          minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
+        };
+      }
+    }
+    return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
+  }
   route('GET', /^\/api\/system$/, () => {
     const rules = store.rules.all();
     const corrections = store.corrections.all().sort((a, b) => b.count - a.count);
@@ -358,6 +392,7 @@ function createApp(options = {}) {
       usage: byProvider,
       evals: evalReports(),
       cost: costEstimate(),
+      compare: modelComparison(),
     };
   });
   route('GET', /^\/api\/usage$/, () => {

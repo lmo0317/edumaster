@@ -692,45 +692,6 @@
   // ------------------------------------------------------------------ system
   async function systemView() {
     const [status, sys] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/system')]);
-    const r = sys.rag;
-    const mock = status.llm === 'mock';
-
-    // Latest full evaluation per model: checks passed over both sample problems.
-    const evalOf = (provider) => {
-      for (const e of sys.evals) {
-        if (e.stage !== 'full') continue;
-        const rows = e.rows.filter((x) => x.provider === provider);
-        if (!rows.length) continue;
-        const sum = (k) => rows.reduce((a, x) => ({ pass: a.pass + (x[k]?.pass || 0), total: a.total + (x[k]?.total || 0) }), { pass: 0, total: 0 });
-        const read = sum('analysis'); const make = sum('generation');
-        return { read, make, cases: rows.length, minutes: Math.round(rows.reduce((a, x) => a + (x.minutes || 0), 0) / rows.length), when: e.stamp.slice(0, 8) };
-      }
-      return null;
-    };
-    const bar = (s) => {
-      const pct = s.total ? Math.round((s.pass / s.total) * 100) : 0;
-      return `<div class="meter"><span style="width:${pct}%" class="${pct >= 95 ? 'ok' : pct >= 75 ? 'warn' : 'bad'}"></span></div><span class="meter-num">${pct}%</span>`;
-    };
-    const MODELS = [
-      { id: 'deepseek', name: 'DeepSeek V4 Flash', where: '인터넷 · 유료', text: '평소에 쓰는 기본 모델입니다. 언제든 쓸 수 있고 비용이 낮습니다 (아래 예상 비용 참고).' },
-      { id: 'gemma', name: 'Gemma 12B', where: '선생님 PC · 무료', text: 'PC에서 직접 돌아가는 작은 모델입니다. 비용은 없지만 작은 글씨 판독과 긴 문제 설계에서 실수가 많습니다.' },
-      { id: 'relay', name: 'Claude Opus 5.5', where: '비교 실험용', text: '품질을 비교하려고 같은 과정으로 평가만 해 본 모델입니다. 현재 화면에서 선택해 쓰는 모델은 아닙니다.' },
-    ];
-    const modelCard = (m) => {
-      const p = status.providers?.[m.id];
-      const ev = evalOf(m.id);
-      if (!p && !ev) return '';
-      const state = mock ? '<span class="chip warn">모의 모드</span>' : p ? (p.available ? '<span class="chip ok">사용 가능</span>' : '<span class="chip">지금은 꺼짐</span>') : '<span class="chip">선택 불가</span>';
-      return `<div class="sys-card model">
-        <div class="model-head"><b>${m.name}</b>${state}</div>
-        <div class="muted small">${m.where}</div>
-        <p>${m.text}</p>
-        ${ev ? `<div class="model-eval"><div class="small muted">평가 문제 ${ev.cases}개로 확인한 결과</div>
-          <div class="meter-row"><span>원본 읽기</span>${bar(ev.read)}</div>
-          <div class="meter-row"><span>문제 만들기</span>${bar(ev.make)}</div>
-          <div class="small muted">원본 분석부터 문제 세트 완성까지 약 ${ev.minutes}분</div></div>` : '<div class="small muted">아직 평가하지 않았습니다.</div>'}
-      </div>`;
-    };
     const checks = [
       ['정답이 하나로 정해지는지', '보기 중 정답이 딱 하나인지, 조건끼리 모순은 없는지'],
       ['계산이 맞는지', '문제의 모든 수를 컴퓨터가 분수로 정확히 다시 계산'],
@@ -772,9 +733,8 @@
       </div>
 
       <div class="panel">
-        <h2>생성 모델</h2>
-        <p class="muted small">문제를 만들 때 모델을 고를 수 있습니다. 같은 평가 문제(화학 몰질량, 생명 흥분 전도)를 똑같은 과정으로 만들어 본 결과입니다.</p>
-        <div class="sys-cards">${MODELS.map(modelCard).join('')}</div>
+        <h2>모델 비교 — 누가 문제를 더 잘 만들고, 얼마가 드나요</h2>
+        ${compareHtml(sys, status)}
       </div>
 
       <div class="panel">
@@ -804,12 +764,6 @@
       </div>
 
       <div class="panel">
-        <h2>문제 1개당 예상 비용</h2>
-        ${costHtml(sys.cost)}
-        <p class="muted small">DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>
-      </div>
-
-      <div class="panel">
         <h2>알아 두실 점</h2>
         <ul class="plain-list">
           <li>그림이 꼭 필요한 문제는 그림 대신 글이나 표로 설명합니다. 그림을 새로 그리지는 않습니다.</li>
@@ -822,30 +776,58 @@
     api('GET', '/api/balance').then((b) => { $('#balance').textContent = b.balance; }).catch(() => { $('#balance').textContent = '확인 실패'; });
   }
 
-  // Per-problem model fees, from the tokens real eval runs used (design + blind check + repairs per problem).
-  function costHtml(c) {
-    const krw = (usd) => Math.round((usd * c.pricing.krwPerUsd) / 10) * 10;
-    const won = (usd) => `${krw(usd).toLocaleString()}원`;
-    if (!c.perProblem) {
-      return `<div class="sys-cards">${[['DeepSeek V4 Flash', '평가 기록이 쌓이면 표시됩니다'], ['Claude Opus 5.5', '평가 기록이 쌓이면 표시됩니다'], ['Gemma 4 12B', '무료']].map(([n, t]) => `<div class="sys-card price"><b>${n}</b><div class="price-big">${t}</div></div>`).join('')}</div>`;
-    }
-    const card = (name, key, note) => {
-      const [lo, hi] = c.perProblemRange[key];
-      const set = c.perAnalysis[key] + c.perProblem[key] * 3;
-      return `<div class="sys-card price"><div class="model-head"><b>${name}</b><span class="chip">유료</span></div>
-        <div class="price-big">약 ${won(c.perProblem[key])}<small> / 문제 1개</small></div>
-        <div class="small muted">문제에 따라 ${won(lo)} ~ ${won(hi)}</div>
-        <ul class="price-lines"><li>원본 1개 분석: 약 ${won(c.perAnalysis[key])} (처음 한 번)</li><li>3문제 세트 전체: 약 ${won(set)}</li></ul>
-        <div class="small muted">${note}</div></div>`;
+  // One comparison of the three models: how well each makes problems (newest harness run), what one problem
+  // costs, how long a set takes and when it can be used.
+  function compareHtml(sys, status) {
+    const c = sys.cost; const cmp = sys.compare;
+    const krw = (usd) => `${(Math.round((usd * c.pricing.krwPerUsd) / 10) * 10).toLocaleString()}원`;
+    const pct = (s) => (s && s.total ? Math.round((s.pass / s.total) * 100) : null);
+    const MODELS = [
+      { id: 'relay', name: 'Claude Opus 5.5', price: 'opus', use: status.providers?.relay ? '선택 가능' : '지금은 비교 평가만 (화면에서 선택 불가)' },
+      { id: 'deepseek', name: 'DeepSeek V4 Flash', price: 'deepseek', use: '언제든 사용 (인터넷)' },
+      { id: 'gemma', name: 'Gemma 4 12B', price: null, use: '선생님 PC가 켜져 있을 때만' },
+    ].filter((m) => cmp.models[m.id]);
+    if (!MODELS.length) return '<p class="muted small">아직 평가 결과가 없습니다. 평가를 돌리면 모델별 비교가 표시됩니다.</p>';
+    const quality = (m) => pct(cmp.models[m.id].overall) ?? 0;
+    const best = Math.max(...MODELS.map(quality));
+    const paid = MODELS.filter((m) => m.price && c.perProblem);
+    const cheapest = paid.length ? paid.reduce((a, m) => (c.perProblem[m.price] < c.perProblem[a.price] ? m : a)) : null;
+    const tag = (m) => [quality(m) === best ? '<span class="chip ok">문제 품질 1위</span>' : '', m === cheapest ? '<span class="chip run">저렴한 유료</span>' : '', !m.price ? '<span class="chip ok">무료</span>' : ''].join(' ');
+    const costOf = (m) => (!m.price ? '0원' : c.perProblem ? `약 ${krw(c.perProblem[m.price])}` : '-');
+    const tone = (v) => (v == null ? '' : v >= 95 ? 'ok' : v >= 75 ? 'warn' : 'bad');
+    const cell = (s) => {
+      const v = pct(s);
+      if (v == null) return '<td class="muted small">해당 없음</td>';
+      return `<td><div class="cmp-cell"><div class="meter"><span style="width:${v}%" class="${tone(v)}"></span></div><b>${v}%</b></div><div class="muted tiny">${s.pass}/${s.total}</div></td>`;
     };
-    return `<div class="sys-cards">
-        ${card('DeepSeek V4 Flash', 'deepseek', `단가: 입력 $${c.pricing.deepseek.input} · 출력 $${c.pricing.deepseek.output} (100만 토큰당)`)}
-        ${card('Claude Opus 5.5', 'opus', `단가: 입력 $${c.pricing.opus.input} · 출력 $${c.pricing.opus.output} (100만 토큰당). DeepSeek과 같은 양의 토큰을 쓴다고 보고 계산한 추정입니다.`)}
-        <div class="sys-card price free"><div class="model-head"><b>Gemma 4 12B</b><span class="chip ok">무료</span></div>
-          <div class="price-big">0원</div>
-          <div class="small muted">선생님 PC에서 직접 돌아가서 사용료가 없습니다. PC가 켜져 있을 때만 쓸 수 있고, 품질은 두 유료 모델보다 낮습니다.</div></div>
-      </div>
-      <p class="muted small">실제 평가 문제를 만들 때 쓴 양으로 계산했습니다. 문제 1개 비용에는 문제 설계, 독립 풀이 검토, 필요할 때의 수정이 모두 들어 있습니다. 환율은 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원으로 잡았습니다.</p>`;
+    const cards = MODELS.map((m) => {
+      const q = cmp.models[m.id];
+      const v = quality(m);
+      return `<div class="sys-card cmp-card">
+        <div class="model-head"><b>${m.name}</b></div>
+        <div class="cmp-tags">${tag(m)}</div>
+        <div class="cmp-score"><span class="cmp-big ${tone(v)}">${v}</span><span class="cmp-unit">점</span><span class="muted small">문제 만들기 검사 통과율</span></div>
+        <div class="cmp-facts">
+          <div><span>문제 1개 비용</span><b>${costOf(m)}</b></div>
+          <div><span>3문제 세트 시간</span><b>약 ${q.minutes}분</b></div>
+          <div><span>원본 읽기 정확도</span><b>${pct(q.read)}%</b></div>
+          <div><span>사용 조건</span><b class="small">${m.use}</b></div>
+        </div></div>`;
+    }).join('');
+    const rows = cmp.metrics.map((x) => `<tr><th>${x.label}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
+    const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
+    const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${m.price ? `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}` : '0원'}</b></td>`).join('')}</tr>` : '';
+    const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
+    return `<div class="sys-cards cmp-cards">${cards}</div>
+      <div class="table-wrap"><table class="cmp-table">
+        <tr><th></th>${MODELS.map((m) => `<th>${m.name}</th>`).join('')}</tr>
+        <tr class="grp"><td colspan="${MODELS.length + 1}">문제를 얼마나 잘 만드나</td></tr>
+        ${rows}
+        <tr class="grp"><td colspan="${MODELS.length + 1}">비용</td></tr>
+        ${costRow}${setRow}
+      </table></div>
+      <p class="muted small">같은 평가 문제 2개(화학 몰질량, 생명 흥분 전도)를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
+      비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다. DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
   }
 
   // Technical view of the same system (prompt version, every check, eval runs), folded away for teachers.
