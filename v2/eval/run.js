@@ -21,7 +21,7 @@ const mode = args.mode || 'integrated';
 const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir).filter((d) => fs.existsSync(path.join(casesDir, d, 'case.json'))) : args.cases.split(',');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
-const { jobTiming } = require('../server/scoring');
+const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
 const learning = {};
 
 function dataUrl(file) {
@@ -120,7 +120,7 @@ async function main() {
 
   fs.mkdirSync(path.join(__dirname, 'reports'), { recursive: true });
   const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}`);
-  fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, learning, results }, null, 1));
+  fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, reviewVersion: REVIEW_VERSION, learning, results }, null, 1));
   fs.writeFileSync(base_ + '.md', report(results));
   console.log(`\n\n${report(results)}\n보고서: ${base_}.md`);
 }

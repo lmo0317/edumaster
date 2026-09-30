@@ -55,10 +55,13 @@ function scoreGeneration(job) {
     out.push(check(`${label}: 코드 검산`, v.code?.status === 'pass' || v.code?.status === 'skip', (v.code?.reasons || []).join('; ')));
     out.push(check(`${label}: 독립 풀이 정답 일치`, v.blind?.answer && v.blind.answer === it.problem.answer, `독립 ${v.blind?.answer} / 표시 ${it.problem.answer}`));
     // Teacher feedback, measured one by one: unused conditions, STEP range, the teacher's method, the rules.
-    const unused = (v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text);
+    // Code checks count toward the item they are about (see server/harness.js ids).
+    const failed = (ids) => (v.harness || []).filter((c) => c.state === 'fail' && ids.includes(c.id));
+    const unused = [...(v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text), ...failed(['source-equation']).map((c) => c.evidence)];
     out.push(check(`${label}: 모든 조건이 풀이에 쓰임`, !unused.length, unused.join('; ')));
-    out.push(check(`${label}: 목표 STEP 범위로 풀림`, v.coverage?.status === 'pass', (v.coverage?.notes || []).join('; ')));
-    const method = (v.harness || []).filter((c) => c.state === 'fail' && /helper|method|assumption/.test(c.id));
+    const skipped = failed(['source-assumption-needed', 'stage-clue-leak']).map((c) => c.evidence);
+    out.push(check(`${label}: 목표 STEP 범위로 풀림`, v.coverage?.status === 'pass' && !skipped.length, [...(v.coverage?.notes || []), ...skipped].join('; ')));
+    const method = failed(['source-method', 'source-method-order', 'source-assumption', 'source-step-titles']);
     out.push(check(`${label}: 교사 풀이 방법 보존`, !method.length, method.map((c) => `${c.label}: ${c.evidence}`).join('; ')));
     const broken = (v.rules || []).filter((r) => r.judged && !r.judged.ok);
     const silent = (v.rules || []).filter((r) => !r.how);
@@ -66,7 +69,8 @@ function scoreGeneration(job) {
     out.push(check(`${label}: 교사 검토 필요 없음`, !(it.problems || []).length, (it.problems || []).join('; ')));
     out.push(check(`${label}: 확인할 점 없음`, !(it.warnings || []).length, (it.warnings || []).join('; ')));
     if (it.stage?.kind === 'twin' && job.options?.mode === 'integrated') {
-      out.push(check(`${label}: 구조 변형(숫자만 바꾸지 않음)`, v.blind?.variation === 'structural', v.blind?.variation || ''));
+      const shape = failed(['variant-shape', 'variant-design']).map((c) => c.evidence);
+      out.push(check(`${label}: 구조 변형(숫자만 바꾸지 않음)`, v.blind?.variation === 'structural' && !shape.length, [v.blind?.variation || '', ...shape].join('; ')));
     }
   }
   return out;

@@ -296,13 +296,15 @@
     },
     {
      "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
-     "pass": true,
-     "detail": "structural"
+     "pass": false,
+     "detail": "structural; 실험 3개, 열 5개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다."
     }
    ],
    "rulesAttached": 3,
    "jobId": "beb9ef5bd6e33d16ea099b5e",
    "minutes": 21.9
   }
- ]
+ ],
+ "reviewVersion": "review-2026-09-30",
+ "rechecked": "2026-09-30T04:57:36.718Z"
 }

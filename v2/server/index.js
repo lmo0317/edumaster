@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
 const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey } = require('./llm');
-const { DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
+const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
@@ -364,7 +364,7 @@ function createApp(options = {}) {
           if (!(r.generation || []).length) continue; // stopped before making anything
           const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
           if (only && !only.includes(key)) continue;
-          (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15) });
+          (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
         }
       }
     }
@@ -374,7 +374,7 @@ function createApp(options = {}) {
       // The review got stricter on 2026-09-30 (skippable STEPs, numbers-only finals, teacher's STEP titles, leftovers
       // printed or obvious): a model evaluated since then is scored on those runs only, so an earlier pass under the
       // looser review does not count; a model with no such run keeps its older runs and is marked as such.
-      const strict = all.filter((r) => r.when >= REVIEW_SINCE);
+      const strict = all.filter((r) => r.reviewVersion === REVIEW_VERSION);
       const rows = strict.length ? strict : all;
       const problems = rows.flatMap(problemResults);
       const verdict = rows.length === 1 ? verdicts[key] : null;
@@ -400,7 +400,6 @@ function createApp(options = {}) {
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
   const COMPARED = ['relay', 'deepseek', 'qwen36', 'gemma12'];
-  const REVIEW_SINCE = '20260930T0416'; // first run with every current check (report stamps are UTC)
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {

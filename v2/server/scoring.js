@@ -79,4 +79,8 @@ function timeSummary(timings) {
   };
 }
 
-module.exports = { DIMENSIONS, problemResults, problemScore, wilson, jobTiming, timeSummary };
+// Runs reviewed by the current checks carry this stamp (eval/run.js writes it; eval/recheck.js adds it to stored
+// runs whose independent review already used the current prompts). Bump it when the review changes.
+const REVIEW_VERSION = 'review-2026-09-30';
+
+module.exports = { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, jobTiming, timeSummary };
