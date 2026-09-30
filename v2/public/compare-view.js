@@ -63,14 +63,16 @@
     ].join('');
     const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${!m.price ? '0원' : m.price === 'opus' && c.opusRange ? range(c.opusRange.set) : `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}`}</b></td>`).join('')}</tr>` : '';
     const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
-    return `<div class="sys-cards cmp-cards">${cards}</div>
+    return `<p class="swipe-hint mobile-only">카드를 옆으로 넘기면 다른 모델을 볼 수 있습니다.</p>
+      <div class="sys-cards cmp-cards">${cards}</div>
+      <p class="swipe-hint mobile-only">표는 옆으로 밀어서 모델별로 볼 수 있습니다.</p>
       <div class="table-wrap"><table class="cmp-table">
         <tr><th></th>${MODELS.map((m) => `<th>${m.name}</th>`).join('')}</tr>
-        <tr class="grp"><td colspan="${MODELS.length + 1}">문제를 얼마나 잘 만드나 (만들려고 한 문제 하나하나를 기준으로)</td></tr>
+        <tr class="grp"><td colspan="${MODELS.length + 1}"><span class="grp-label">문제를 얼마나 잘 만드나 (만들려고 한 문제 하나하나를 기준으로)</span></td></tr>
         ${scoreRow}${rows}
-        <tr class="grp"><td colspan="${MODELS.length + 1}">시간 (평가 회차 평균)</td></tr>
+        <tr class="grp"><td colspan="${MODELS.length + 1}"><span class="grp-label">시간 (평가 회차 평균)</span></td></tr>
         ${timeRows}
-        <tr class="grp"><td colspan="${MODELS.length + 1}">비용</td></tr>
+        <tr class="grp"><td colspan="${MODELS.length + 1}"><span class="grp-label">비용</span></td></tr>
         ${costRow}${setRow}
       </table></div>
       <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토 결과를 문제 하나하나 채점한 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). <b>문제 품질 점수</b>는 문제마다 항목별 가중치(정답·계산 30, STEP 범위 15, 풀이 방법 15, 조건 10, 지침 10, 바로 사용 10, 최종 문제의 새 구조 10)로 채점해 평균한 값이고, 만들지 못한 문제는 0점으로 셉니다. 같은 모델도 돌릴 때마다 결과가 달라서 여러 번 평가한 모델은 모든 회차를 합쳤습니다. <b>믿을 수 있는 범위</b>는 평가한 문제 수로 본 95% 신뢰 구간(윌슨 구간)입니다. 문제가 적으면 넓어지므로, 범위가 겹치는 모델끼리는 차이가 확실하지 않습니다. 최종 문제의 새 구조는 한 번만 평가한 모델이면 직접 비교한 판정을 씁니다. 자동 검토는 2026-09-30에 강화되었습니다(건너뛸 수 있는 STEP, 숫자만 바꾼 최종 문제, 선생님 STEP 제목, 표에 드러난 남은 물질까지 확인). '현재 검토 기준' 모델은 그 뒤의 평가만, '이전 검토 기준' 모델은 그 전 평가로 채점해 이전 모델의 점수가 실제보다 후할 수 있습니다.
@@ -133,9 +135,10 @@
         <span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>
       ${fb ? `<div class="panel cv2-check">
         <h2>요구사항 체크리스트</h2>
+        <p class="swipe-hint mobile-only">표는 옆으로 밀어서 모델별로 볼 수 있습니다.</p>
         <div class="table-wrap"><table class="cv2-table">
           <tr><th>항목</th>${b.models.map((m) => { const f = fidelity(m); return `<th><div>${esc(m.label)}</div>${f ? `<div class="cv2-score ${tone(f.pct)}">${f.pct}%</div><div class="muted tiny">✓ ${f.ok} · △ ${f.partial} · ✕ ${f.no}</div>` : ''}</th>`; }).join('')}</tr>
-          ${fb.groups.map((g) => `<tr class="grp"><td colspan="${b.models.length + 1}">${esc(g.title)}</td></tr>${g.items.map((it) => `<tr><th>${esc(it.text)}</th>${b.models.map((m) => {
+          ${fb.groups.map((g) => `<tr class="grp"><td colspan="${b.models.length + 1}"><span class="grp-label">${esc(g.title)}</span></td></tr>${g.items.map((it) => `<tr><th>${esc(it.text)}</th>${b.models.map((m) => {
             const [grade, note] = fb.models[m.key]?.[it.id] || ['', ''];
             const [t, mark] = MARK[grade] || ['', '-'];
             return `<td><div class="cv2-mark ${t}">${mark}</div><div class="cv2-note">${esc(note)}</div></td>`;

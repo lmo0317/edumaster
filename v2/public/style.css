@@ -353,6 +353,27 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .drop { min-height: 110px; }
 }
 
+/* 모델 비교 on a phone: cards swipe sideways, wide tables keep their first column in view while they scroll. */
+.mobile-only { display: none; }
+@media (max-width: 600px) {
+  .mobile-only { display: block; }
+  .swipe-hint { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  .cmp-cards { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 86%; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  .cmp-cards > .cmp-card { scroll-snap-align: start; }
+  .cmp-big { font-size: 34px; }
+  .cmp-table { font-size: 12.5px; min-width: 560px; }
+  .cmp-table th, .cmp-table td { padding: 7px 8px; }
+  .cmp-table tr > :first-child:not([colspan]) { position: sticky; left: 0; z-index: 1; background: var(--panel); width: 118px; box-shadow: 1px 0 0 var(--line); }
+  .cmp-table tr.cmp-total > :first-child { background: #fafbfd; }
+  .cv2-table { min-width: 760px; font-size: 12.5px; }
+  .cv2-table th, .cv2-table td { padding: 8px; }
+  .cv2-table tr > th:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); width: 128px; box-shadow: 1px 0 0 var(--line); }
+  .grp-label { position: sticky; left: 8px; }
+  .cv2-row { padding: 12px; gap: 8px; }
+  .cv2-cell { padding: 8px 10px; }
+  .cv2-pdf .button { width: 100%; text-align: center; }
+}
+
 /* model picker */
 .providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .provider { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0; font-weight: 400; cursor: pointer; background: #fff; }

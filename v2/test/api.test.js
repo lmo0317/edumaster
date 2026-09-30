@@ -208,8 +208,8 @@ test('the public comparison page needs no login and exposes only the comparison'
     const pub = await fetch(s.base + '/api/public/compare');
     assert.equal(pub.status, 200, 'no session needed');
     const b = await pub.json();
-    assert.ok(b.models.length && b.models.every((m) => m.items.length));
-    assert.deepEqual(Object.keys(b).sort(), ['id', 'models', 'title'], 'results and PDFs only: no scores, checklist or feedback');
+    assert.ok(b.overview && b.models.length, 'the whole comparison');
+    assert.equal(b.feedback?.quote || '', '', 'the colleague\'s message stays private');
     assert.equal((await fetch(s.base + '/api/public/compare/other/pdf/relay')).status, 404);
     assert.equal((await fetch(s.base + '/api/compare/chem-molar-mass')).status, 401, 'the app route still needs login');
     assert.equal((await fetch(s.base + '/api/materials')).status, 401);

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploys v2 to the 112 server (run from Git Bash on the dev PC). Keeps the server's data/ folder.
-# eval/reports goes along (the 시스템 page lists them); reports made on the server are kept, tar only adds.
+# eval/reports goes along (the 시스템 page lists them). A file the server changed after the shipped copy (a report
+# made or rechecked there) is kept: shipping an older local copy once wiped the solution-review results.
 set -euo pipefail
 HOST=lmo0317@192.168.219.112
 APP=/home/lmo0317/apps/edumasterv2
@@ -11,7 +12,7 @@ ssh "$HOST" bash -s <<REMOTE
 set -euo pipefail
 mkdir -p $APP/data
 cd $APP
-tar xzf /tmp/edumasterv2.tgz && rm /tmp/edumasterv2.tgz
+tar xzf /tmp/edumasterv2.tgz --keep-newer-files --warning=no-ignore-newer && rm /tmp/edumasterv2.tgz
 npm ci --omit=dev --no-audit --no-fund --loglevel=error
 # First deploy: reuse v1's DeepSeek key and access code so both versions open with the same code.
 [ -s data/deepseek-api-key.txt ] || install -m 600 /home/lmo0317/apps/edumaster/backend/deepseek-api-key.txt data/deepseek-api-key.txt
