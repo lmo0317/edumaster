@@ -336,19 +336,20 @@
     return `<div class="step"><div class="head"><span class="badge">STEP ${i + 1}</span>${rich(s.title).replace(/^<p>|<\/p>$/g, '')}</div>
       ${s.purpose ? `<div class="meta"><b>결정하는 것</b> ${rich(s.purpose).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
       ${s.technique ? `<div class="meta"><b>핵심 기법</b> ${rich(s.technique).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}
-      <div class="rich">${rich(s.work)}</div>
+      <div class="meta"><b>해설</b></div><div class="rich">${rich(s.work)}</div>
       ${s.result ? `<div class="meta"><b>결론</b> ${rich(s.result).replace(/^<p>|<\/p>$/g, '')}</div>` : ''}</div>`;
   }
   function choicesHtml(p, showAnswer = true) {
     if (!p.choices?.length) return '';
     return `<div class="choices">${p.choices.map((c, i) => `<div class="c ${showAnswer && p.answer === i + 1 ? 'answer' : ''}"><span>${circled(i + 1)}</span><span class="rich">${rich(c).replace(/^<p>|<\/p>$/g, '')}</span></div>`).join('')}</div>`;
   }
-  function originals(images) {
+  function originalsInner(images) {
     const src = (id) => 'api/files/' + id;
-    return `<div class="orig">${images.sameImage
+    return images.sameImage
       ? `<figure><figcaption>원본 (문제+해설)</figcaption><img data-zoom src="${src(images.problem)}" alt="원본"></figure>`
-      : `<figure><figcaption>원본 문제</figcaption><img data-zoom src="${src(images.problem)}" alt="원본 문제"></figure>${images.solution ? `<figure><figcaption>교사 해설</figcaption><img data-zoom src="${src(images.solution)}" alt="원본 해설"></figure>` : ''}`}</div>`;
+      : `<figure><figcaption>원본 문제</figcaption><img data-zoom src="${src(images.problem)}" alt="원본 문제"></figure>${images.solution ? `<figure><figcaption>교사 해설</figcaption><img data-zoom src="${src(images.solution)}" alt="원본 해설"></figure>` : ''}`;
   }
+  const originals = (images) => `<div class="orig">${originalsInner(images)}</div>`;
 
   async function materialView(id, alive) {
     let m = await api('GET', '/api/materials/' + id);
@@ -383,53 +384,47 @@
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = m.jobs.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Top to bottom: the original problem and the teacher's solution side by side, the reading (problem, then each
+    // STEP), this problem's feedback, making variants from it, and the variants made so far.
     view.innerHTML = `
       <div class="row"><h1 style="margin-right:auto">${esc(m.title)}</h1>${chip(MAT_STATUS, m.status)}</div>
-      <div class="grid2">
-        <div class="panel">${originals(m.images)}</div>
-        <div class="panel" id="analysis"></div>
-      </div>
+      <div class="panel"><div class="orig orig-2">${originalsInner(m.images)}</div></div>
+      <div class="panel" id="analysis"></div>
       <div class="panel" id="feedback"></div>
       <div class="panel" id="generate"></div>
-      <div class="panel"><h2>이 문제로 만든 변형 세트</h2><div class="set-list" id="sets">${gens.map((j, i) => jobEntry(j, gens.length - i)).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>`;
+      <div class="panel" id="variants"></div>`;
     if (editing) editAnalysis(m); else showAnalysis(m);
     feedbackPanel(m, gens);
     generatePanel(m, n);
   }
 
-  // This problem's own feedback: what the teacher taught about it (on its variants or in general). Every variant
-  // made from it gets all of it; "모든 문제에 적용" widens one to every problem.
-  const KIND_TXT = { feedback: '피드백', do: '꼭 할 것', dont: '하지 말 것' };
+  // This problem's own feedback: what the teacher taught about it (on the problem page or on one of its variants).
+  // Every variant made from it gets all of it.
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '설계', all: '전체' };
   async function feedbackPanel(m, gens) {
     const el = $('#feedback');
     if (!el) return;
     const rules = await api('GET', '/api/rules');
     const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const widened = rules.filter((r) => r.scope !== 'material' && r.source?.materialId === m.id);
     const on = own.filter((r) => r.status === 'approved');
-    const entry = (r) => `<div class="learn-item" data-rule="${r.id}">
-      <div class="learn-item-main"><div class="learn-text">${esc(r.text)}</div>
-        <div class="learn-meta"><span class="chip">${TARGET_TXT[r.target] || r.target}</span><span class="chip">${KIND_TXT[r.kind] || r.kind}</span>
-          ${r.status === 'approved' ? '' : '<span class="chip warn">꺼짐</span>'}
-          <span class="muted small">${fmtTime(r.createdAt)}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">${esc(r.source.label || '변형 문제')}에 대한 피드백</a>` : ''}</span></div></div>
-      <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small" data-act="widen">모든 문제에 적용</button><button class="small danger" data-act="del">삭제</button></div></div>`;
+    const entry = (r, i) => `<div class="learn-item" data-rule="${r.id}">
+      <div class="learn-item-main"><div class="learn-text"><b>${i + 1}.</b> ${esc(r.text)}</div>
+        <div class="learn-meta"><span class="chip">${TARGET_TXT[r.target] || '전체'}</span>${r.status === 'approved' ? '' : '<span class="chip warn">꺼짐</span>'}
+          <span class="muted small">${fmtTime(r.createdAt)}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">${esc(r.source.label || '변형 문제')}에서 남김</a>` : ''}</span></div></div>
+      <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div></div>`;
     el.innerHTML = `
-      <div class="row"><h2 style="margin:0">이 문제의 피드백</h2><span class="spacer"></span><span class="muted small">켜진 것 ${on.length}개 · 이 문제로 만드는 모든 변형에 붙음</span></div>
-      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 아래에서 추가하거나, 만든 변형 문제 카드의 "피드백 남기기"에서 남기면 여기에 모입니다.</p>'}</div>
-      ${widened.length ? `<p class="muted small">이 문제에서 나와 모든 문제에 적용 중인 피드백 ${widened.length}개는 <a href="#/learn">전체 피드백</a>에 있습니다.</p>` : ''}
-      <div class="cols cols-3" style="margin-top:10px">
-        <div><label>대상</label><select id="fb-target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
-        <div><label>종류</label><select id="fb-kind"><option value="feedback">피드백</option><option value="do">꼭 할 것</option><option value="dont">하지 말 것</option></select></div>
-        <div><label>적용 범위</label><select id="fb-scope"><option value="material">이 문제만</option><option value="global">모든 문제</option></select></div>
-      </div>
-      <label>내용</label><textarea id="fb-text" placeholder="예: STEP 1 연습에서는 남는 물질이 무엇인지 표에 적지 말 것. 최종 문제는 Ⅱ에서 가정→모순을 판정하게 만들 것."></textarea>
-      <div class="row" style="margin-top:8px"><span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>`;
+      <div class="row"><h2 style="margin:0">피드백</h2><span class="spacer"></span><span class="muted small">켜진 ${on.length}개가 이 문제의 모든 변형에 반영됩니다</span></div>
+      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 이 문제로 변형 문제를 만들 때 지켜야 할 점을 적어 주세요.</p>'}</div>
+      <div class="fb-add">
+        <div><label>대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계 (단계·최종 문제 구성)</option></select></div>
+        <div style="flex:1"><label>내용</label><textarea id="fb-text" rows="2" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea></div>
+        <div><button class="primary" id="fb-add">추가</button></div>
+      </div>`;
     $('#fb-add', el).addEventListener('click', guard(async () => {
       const text = $('#fb-text', el).value.trim();
       if (!text) throw new Error('피드백 내용을 입력해 주세요.');
-      await api('POST', '/api/rules', { text, target: $('#fb-target', el).value, kind: $('#fb-kind', el).value, scope: $('#fb-scope', el).value, source: { materialId: m.id } });
-      toast('저장했습니다. 다음 변형 생성부터 적용됩니다.');
+      await api('POST', '/api/rules', { text, target: $('#fb-target', el).value, kind: 'feedback', scope: 'material', source: { materialId: m.id } });
+      toast('저장했습니다. 다음 변형 생성부터 반영됩니다.');
       feedbackPanel(m, gens);
       rulesPreview(m);
     }));
@@ -441,21 +436,26 @@
         const text = prompt('피드백 수정', own.find((r) => r.id === id)?.text || '');
         if (text === null) return;
         await api('PUT', '/api/rules/' + id, { text });
-      } else if (act === 'widen') {
-        if (!confirm('이 피드백을 모든 문제에 적용할까요? (전체 피드백으로 옮겨집니다)')) return;
-        await api('PUT', '/api/rules/' + id, { scope: 'global' });
       } else await api('PUT', '/api/rules/' + id, { status: act === 'on' ? 'approved' : 'pending' });
       feedbackPanel(m, gens);
       rulesPreview(m);
     })));
-    // A set made before some of this problem's feedback was written does not reflect it yet.
-    const sets = $('#sets');
-    if (sets && gens.length) {
-      sets.innerHTML = gens.map((j, i) => {
-        const later = on.filter((r) => r.createdAt > j.createdAt).length;
-        return jobEntry(j, gens.length - i).replace('</a>', `${later ? `<span class="chip warn small">이후 피드백 ${later}개 미반영</span>` : ''}</a>`);
-      }).join('');
-    }
+    variantsPanel(gens, on);
+  }
+
+  // The variants made from this problem, set by set, each problem with its state; a set made before later
+  // feedback says how much of it it does not reflect.
+  function variantsPanel(gens, on) {
+    const el = $('#variants');
+    if (!el) return;
+    el.innerHTML = `<h2>변형 문제</h2>${gens.length ? gens.map((j, i) => {
+      const st = setStatus(j);
+      const later = on.filter((r) => r.createdAt > j.createdAt).length;
+      return `<div class="variant-set">
+        <a class="variant-head" href="#/j/${j.id}"><b>세트 ${gens.length - i}</b><span class="muted small">${fmtTime(j.createdAt)} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'}</span>
+          <span class="spacer"></span><span class="chip ${st.tone}">${esc(st.label)}</span>${later ? `<span class="chip warn">이후 피드백 ${later}개 미반영</span>` : ''}<span class="mat-open">열기 ›</span></a>
+        <div class="variant-items">${j.items.map((it) => `<a class="variant-item" href="#/j/${j.id}"><span>${esc(it.label)}</span>${chip(ITEM_STATUS, it.status)}</a>`).join('')}</div></div>`;
+    }).join('') : '<p class="muted small">아직 없습니다. 위에서 변형 문제를 만들어 주세요.</p>'}`;
   }
 
   function showAnalysis(m) {
@@ -468,7 +468,7 @@
       ${m.uncertainties?.filter((u) => !u.startsWith('해설의 단계 표시는')).length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.filter((u) => !u.startsWith('해설의 단계 표시는')).map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
       ${m.proofread?.length ? `<details data-k="proof"><summary>원본 대조로 자동 교정한 곳 ${m.proofread.length}건</summary><div class="inner"><ul class="small">${m.proofread.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div></details>` : ''}
       ${m.annotations?.length ? `<div class="note info"><b>문제 조건에서 뺀 필기·표시</b><ul>${m.annotations.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
-      <h3>문제</h3><div class="rich">${rich(m.problem.text)}</div>
+      <h3>읽은 문제</h3><div class="rich">${rich(m.problem.text)}</div>
       ${m.problem.figure ? `<div class="note info"><b>그림 설명</b><div class="rich">${rich(m.problem.figure)}</div></div>` : ''}
       ${choicesHtml(m.problem)}
       <p class="small muted">정답: ${m.problem.answer ? circled(m.problem.answer) : '없음/서술형'}</p>
@@ -570,8 +570,9 @@
     const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
     el.innerHTML = `
-      <h2>변형 문제 만들기</h2>
-      <p class="muted small">원본 풀이 STEP ${n}개를 기준으로 합니다. 각 문제는 서버가 검산 프로그램을 정확한 분수로 실행해 정답을 확인하고, 별도의 독립 풀이가 정답을 모른 채 다시 풀어 대조합니다. 어긋나면 한 번만 수정하고, 그래도 어긋나면 '교사 검토 필요'로 그대로 보여 줍니다.</p>
+      <h2>피드백·지침으로 변형 문제 만들기</h2>
+      <p class="muted small">위 풀이 STEP ${n}개와 이 문제의 피드백, 공통 지침을 함께 AI에게 줍니다. 만든 문제는 서버가 정답을 계산으로 확인하고, 다른 풀이가 정답을 모른 채 다시 풀어 대조합니다. 고쳐지지 않는 문제는 '교사 검토 필요'로 표시됩니다.</p>
+      <div class="note info small" id="rules-preview">반영할 피드백과 지침을 확인하는 중…</div>
       <label>만들 문제</label>
       <div>${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 누적 연습`}</label>`).join('')}
         <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 쌍둥이 문제 (STEP 1~${n} 전체)</label></div>
@@ -584,7 +585,6 @@
         <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
         <div><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
       </div>
-      <div class="note info small" id="rules-preview">적용할 교사 지침을 확인하는 중…</div>
       <div class="row"><span class="muted small" id="estimate"></span><span class="spacer"></span><button class="primary" id="go">생성 시작</button></div>`;
     const estimate = () => {
       const gemma = $('[name=genProvider]:checked', el)?.value === 'gemma';
@@ -617,8 +617,10 @@
     const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
     const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
     if (!$('#rules-preview')) return;
-    $('#rules-preview').innerHTML =`<b>붙일 피드백: 이 문제 ${own.length}개 + 모든 문제용 ${global.length}개</b>${global.length ? '<ul>' + global.slice(0, 8).map((r) => `<li>[모든 문제·${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : ''}
-      ${topic.length ? `<div>예전에 남긴 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 골라 붙입니다. <a href="#/learn">전체 피드백</a></div>` : ''}`;
+    $('#rules-preview').innerHTML = `<b>반영할 내용: 이 문제의 피드백 ${own.length}개 · 공통 지침 ${global.length}개</b>
+      ${own.length ? '<div>피드백: 위 목록의 켜진 항목 전부</div>' : '<div>피드백: 아직 없음</div>'}
+      ${global.length ? '<div>공통 지침:</div><ul>' + global.slice(0, 8).map((r) => `<li>${esc(r.text)}</li>`).join('') + '</ul>' : ''}
+      ${topic.length ? `<div class="muted">예전 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 함께 반영됩니다. <a href="#/learn">전체 피드백</a></div>` : ''}`;
   }
 
   // ------------------------------------------------------------------ job
@@ -742,11 +744,7 @@
       ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
       <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 / 다시 만들기</summary><div class="inner">
         <p class="muted small">남긴 피드백은 <a href="#/m/${job.materialId}">원본 문제</a>의 피드백으로 모여, 이 문제로 만드는 모든 변형에 이 변형 문제 내용과 함께 전달됩니다.</p>
-        <div class="cols cols-3">
-          <div><label>대상</label><select name="target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
-          <div><label>종류</label><select name="kind"><option value="feedback">피드백</option><option value="do">앞으로 꼭 할 것</option><option value="dont">앞으로 하지 말 것</option></select></div>
-          <div><label>적용 범위</label><select name="scope"><option value="material">이 원본 문제만</option><option value="global">모든 문제</option></select></div>
-        </div>
+        <div><label>대상</label><select name="target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계 (단계·최종 문제 구성)</option></select></div>
         <label>내용</label><textarea name="fb" placeholder="예: STEP 1 연습인데 남는 물질이 B라고 문제에서 알려줘서 STEP 1을 안 거쳐도 풀립니다. 추론할 결론은 주지 마세요."></textarea>
         <label class="inline"><input type="checkbox" name="approve" checked> 바로 켜기 — 다음 생성부터 적용</label>
         <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">피드백 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
@@ -760,7 +758,7 @@
       if (!text && !andRegen) throw new Error('피드백 내용을 입력해 주세요.');
       if (text) {
         await api('POST', '/api/rules', {
-          text, kind: $('[name=kind]', card).value, target: $('[name=target]', card).value, scope: $('[name=scope]', card).value,
+          text, kind: 'feedback', target: $('[name=target]', card).value, scope: 'material',
           status: $('[name=approve]', card).checked ? 'approved' : 'pending', source: { jobId: job.id, itemIndex: item.index },
         });
       }
