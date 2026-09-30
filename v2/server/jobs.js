@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget } = require('./llm');
+const { Budget, pcModelLabel } = require('./llm');
 const pipeline = require('./pipeline');
 const { PROMPT_VERSION } = require('./prompts');
 
@@ -86,7 +86,11 @@ function createJobs({ store, llm, config }) {
       job.status = 'running'; job.startedAt = job.startedAt || new Date().toISOString();
       const ctx = context(job, controller);
       ctx.save();
-      workers[job.type](ctx).then(() => {
+      // The PC provider serves whichever local model is loaded; the job keeps its name (reports, PDFs).
+      const named = ctx.provider === 'gemma' && llm.gemmaStatus
+        ? llm.gemmaStatus(true).then((s) => { if (s.model) job.modelLabel = pcModelLabel(s.model).replace(' (PC)', ''); }).catch(() => {})
+        : Promise.resolve();
+      named.then(() => workers[job.type](ctx)).then(() => {
         job.status = 'done';
       }).catch((e) => {
         job.status = controller.signal.aborted ? 'cancelled' : 'failed';

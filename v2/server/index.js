@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey } = require('./llm');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
@@ -357,44 +357,52 @@ function createApp(options = {}) {
     ['structural', '최종 문제를 새 구조로 설계', (n) => /구조 변형/.test(n)],
     ['clear', '교사 검토 없이 바로 쓸 수 있음', (n) => /: 교사 검토 필요 없음$/.test(n)],
   ];
-  function modelComparison(onlyCase) {
+  // Every full run of a model counts (one run swings by ±4 of 29 checks). The PC provider is split by the local
+  // model each run used; `only` limits the models shown (the comparison page leaves out rejected candidates).
+  function modelComparison(onlyCase, only) {
     const dir = path.join(cfg.root, 'eval', 'reports');
-    const out = {};
-    if (!fs.existsSync(dir)) return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
-    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort().reverse()) {
-      let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
-      const results = (Array.isArray(raw) ? raw : raw.results || []).filter((r) => !onlyCase || r.case === onlyCase);
-      if (!results.length) continue;
-      if ((raw.stage || results[0]?.stage) !== 'full') continue;
-      for (const provider of new Set(results.map((r) => r.provider))) {
-        if (out[provider]) continue;
-        const rows = results.filter((r) => r.provider === provider);
-        const tally = (pred, list) => { const hit = list.filter((c) => pred(c.name)); return { pass: hit.filter((c) => c.pass).length, total: hit.length }; };
-        const gen = rows.flatMap((r) => r.generation || []);
-        out[provider] = {
-          when: raw.stamp || f.slice(0, 15), cases: rows.map((r) => r.case),
-          // The PC provider serves whichever local model was loaded for that run.
-          label: provider === 'gemma' && rows[0].model ? pcModelLabel(rows[0].model).replace(' (PC)', '') : undefined,
-          read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
-          overall: tally(() => true, gen),
-          metrics: Object.fromEntries(QUALITY.map(([id, , pred]) => [id, tally(pred, gen)])),
-          minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
-        };
+    const runs = {};
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
+        let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+        const results = (Array.isArray(raw) ? raw : raw.results || []).filter((r) => !onlyCase || r.case === onlyCase);
+        if (!results.length || (raw.stage || results[0]?.stage) !== 'full') continue;
+        for (const r of results) {
+          if (!(r.generation || []).length) continue; // stopped before making anything
+          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
+          if (only && !only.includes(key)) continue;
+          (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15) });
+        }
       }
+    }
+    const tally = (pred, list) => { const hit = list.filter((c) => pred(c.name)); return { pass: hit.filter((c) => c.pass).length, total: hit.length }; };
+    const out = {};
+    for (const [key, rows] of Object.entries(runs)) {
+      const gen = rows.flatMap((r) => r.generation || []);
+      const pc = rows[0].provider === 'gemma';
+      out[key] = {
+        when: rows[rows.length - 1].when, runs: rows.length, pc,
+        label: pc ? pcModelLabel(rows[rows.length - 1].model || 'gemma-4-12b').replace(' (PC)', '') : undefined,
+        read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
+        overall: tally(() => true, gen),
+        metrics: Object.fromEntries(QUALITY.map(([id, , pred]) => [id, tally(pred, gen)])),
+        minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
+      };
     }
     return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
   }
+  const COMPARED = ['relay', 'deepseek', 'qwen36', 'gemma12'];
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
-    return { id: b.id, title: b.title, models: b.models.map((m) => ({ label: m.label, provider: m.provider, score: m.score?.make || null })) };
+    return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
-  const PDF_NAME = { relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', gemma: 'Gemma_4_12B' };
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|gemma)$/, (req, res, [id, provider]) => {
-    const file = path.join(compareDir, id, `${provider}.pdf`);
+  const PDF_NAME = { relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+    const file = path.join(compareDir, id, `${key}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
-    const name = `${id}_${PDF_NAME[provider]}.pdf`;
+    const name = `${id}_${PDF_NAME[key]}.pdf`;
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${name}"`, 'Content-Length': fs.statSync(file).size, ...security });
     fs.createReadStream(file).pipe(res);
     return undefined;
@@ -407,7 +415,7 @@ function createApp(options = {}) {
     const feedback = path.join(compareDir, `${id}.feedback.json`);
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
     // Quality and cost of each model on this case alone.
-    bundle.overview = { compare: modelComparison(id), cost: costEstimate(id) };
+    bundle.overview = { compare: modelComparison(id, COMPARED), cost: costEstimate(id) };
     // Opus cost from what its run actually exchanged: 0.6–1.0 token per character (Korean + LaTeX), reasoning
     // tokens not measured so 0–2× the written answer, 1,000–1,600 tokens per image. A range, not one number.
     const rm = bundle.relayMeasure;
@@ -423,11 +431,10 @@ function createApp(options = {}) {
     }
     // Where the final problem was compared by hand, that verdict replaces the automatic "structural" check
     // (the automatic one passed DeepSeek's final, which only changed numbers).
-    for (const [provider, m] of Object.entries(bundle.overview.compare.models)) {
-      const verdict = bundle.feedback?.models?.[provider]?.final?.[0];
-      // The hand verdict is about this bundle's problems; a newer run of another PC model keeps its own check.
-      const bundled = bundle.models.find((x) => x.provider === provider)?.label;
-      if (m.label && bundled && m.label !== bundled) continue;
+    // It judges one problem set, so it stands in only for a model evaluated once.
+    for (const [key, m] of Object.entries(bundle.overview.compare.models)) {
+      const verdict = bundle.feedback?.models?.[key]?.final?.[0];
+      if (m.runs !== 1) continue;
       const auto = m.metrics.structural;
       if (!verdict || !auto?.total) continue;
       const pass = verdict === 'ok' ? auto.total : 0;

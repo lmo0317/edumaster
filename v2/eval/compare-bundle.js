@@ -3,19 +3,26 @@
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
 //   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
 //     [--relay-dir <relay folder of the Opus run> --relay-from <first request id of this case>]
+//     [--keys <jobId>=<key>,...] [--merge]
+// Each model has a key (relay, deepseek, or the local model: gemma12, qwen36); a PC job is gemma12 unless --keys
+// says otherwise. --merge keeps the models already in the file and replaces only those with the same key.
 // Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
-// eval/compare/<case>/<provider>.pdf, are offered for download on the page.
+// eval/compare/<case>/<key>.pdf, are offered for download on the page.
 // Writes eval/compare/<case>.json (deploy ships it; the page reads it, nothing is stored in data/).
 const fs = require('node:fs');
 const path = require('node:path');
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1]]] : acc), []));
+// --name value, or a bare --flag (true).
+const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : acc), []));
 if (!args.data || !args.case) { console.error('usage: --data <dir> --case <case>'); process.exit(1); }
 const caseDir = path.join(__dirname, 'cases', args.case);
 const spec = JSON.parse(fs.readFileSync(path.join(caseDir, 'case.json'), 'utf8'));
 const dataUrl = (file) => `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,` + fs.readFileSync(file).toString('base64');
-const LABEL = { deepseek: 'DeepSeek V4 Flash', gemma: 'Gemma 4 12B', relay: 'Claude Opus 5.5' };
-const ORDER = ['relay', 'deepseek', 'gemma'];
+const { pcModelKey } = require('../server/llm');
+const LABEL = { deepseek: 'DeepSeek V4 Flash', relay: 'Claude Opus 5.5', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
+const ORDER = ['relay', 'deepseek', 'qwen36', 'gemma12'];
+const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
+const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider);
 
 // Harness scores of each model on this case, from the newest full report that has them.
 const scores = {};
@@ -23,9 +30,9 @@ const reportsDir = path.join(__dirname, 'reports');
 for (const f of fs.readdirSync(reportsDir).filter((x) => x.endsWith('.json')).sort().reverse()) {
   const raw = JSON.parse(fs.readFileSync(path.join(reportsDir, f), 'utf8'));
   for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-    if (r.case !== args.case || r.stage !== 'full' || scores[r.provider]) continue;
+    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || scores[keyOf(r.provider, r.model)]) continue;
     const t = (list) => ({ pass: (list || []).filter((c) => c.pass).length, total: (list || []).length });
-    scores[r.provider] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
+    scores[keyOf(r.provider, r.model)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
   }
 }
 
@@ -35,10 +42,11 @@ for (const f of fs.readdirSync(jobsDir)) {
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, f), 'utf8'));
   if (job.type !== 'generate' || !String(job.title).includes(args.title || `${args.case} · `)) continue;
   const provider = job.options?.provider || 'deepseek';
+  const key = KEYS[job.id] || keyOf(provider, '');
   const m = job.material;
   models.push({
-    provider, label: LABEL[provider] || provider, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${provider}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,
-    score: scores[provider] || null,
+    key, provider, label: LABEL[key] || key, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${key}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,
+    score: scores[key] || null,
     reading: { question: (m.problem.text || '').split('\n').filter((l) => l.trim()).pop(), steps: m.steps.map((s) => s.title), answer: m.problem.answer },
     items: job.items.map((it) => ({
       label: it.label, stage: it.stage, status: it.status, error: it.error || '',
@@ -50,7 +58,10 @@ for (const f of fs.readdirSync(jobsDir)) {
     })),
   });
 }
-models.sort((a, b) => ORDER.indexOf(a.provider) - ORDER.indexOf(b.provider));
+const file = path.join(__dirname, 'compare', `${args.case}.json`);
+const previous = args.merge && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+if (previous) models.push(...previous.models.filter((p) => !models.some((m) => m.key === p.key)));
+models.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
 // Opus ran through the relay, which records no token counts: keep the characters it actually exchanged so the
 // page can estimate its cost from real sizes instead of from DeepSeek's token use.
 let relayMeasure = null;
@@ -78,9 +89,8 @@ const out = {
     answer: spec.expect?.answer, steps: spec.expect?.stepTitles || [],
   },
   models,
-  relayMeasure,
+  relayMeasure: relayMeasure || previous?.relayMeasure || null,
 };
 fs.mkdirSync(path.join(__dirname, 'compare'), { recursive: true });
-const file = path.join(__dirname, 'compare', `${args.case}.json`);
 fs.writeFileSync(file, JSON.stringify(out));
-console.log(file, models.map((m) => `${m.provider}:${m.items.map((i) => i.status).join('/')}`).join('  '), Math.round(fs.statSync(file).size / 1024) + 'KB');
+console.log(file, models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '), Math.round(fs.statSync(file).size / 1024) + 'KB');

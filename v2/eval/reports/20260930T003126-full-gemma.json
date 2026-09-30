@@ -1,0 +1,243 @@
+{
+ "stamp": "20260930T003126",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "61ad825516",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-ornith-1.5-35b-a3b",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 8,
+    "input": 29323,
+    "output": 6017,
+    "reasoning": 0,
+    "total": 35340,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "0.91, 0.94, 0.75"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "I에서 한계 반응물을 구한다",
+     "I~III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A-D의 물질량을 구한다"
+    ],
+    "question": "은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "problem.text: \"반응전 A 또는 B의 질량(g)\" → \"반응 후 A 또는 B의 질량(g)\" (원본 표에서는 '반응 후' 열의 'A 또는 B의 질량(g)'인데, '반응전'으로 옮겨 적어 반응 전후가 바뀌었다.)",
+     "steps[1].work: \"B(g) $w\\,g$の 몰(mol)\" → \"B(g) $w\\,g$의 몰(mol)\" (한글 '의'를 일본 가나 'の'로 잘못 옮겼다.)",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 1+2 → STEP 1",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"한계 반응물을 결정하고 각 실험의 반응 후 기체 조성을 정리한다.\" → \"I에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"A-D의 물질량을 구한다.\" → \"I~III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"선택지 분석\" → \"A-D의 물질량을 구한다\"",
+     "원본 검산 프로그램의 실행 오류를 고쳐 다시 검산했습니다."
+    ]
+   },
+   "generationUsage": {
+    "calls": 15,
+    "input": 58850,
+    "output": 91975,
+    "reasoning": 0,
+    "total": 150825,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": false,
+     "detail": "4번째 줄 \"AII_after=2*w\" 계산 실패: Undefined symbol w"
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 0 / 표시 5"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": false,
+     "detail": "위반: 풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단, — 표의 수치 조합이 반응량 비의 일관성(소모 질량비 k 일정)을 만족하지 않아, 주어진 조건만으로 정답을 결정할 수 없다."
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 4번째 줄 \"AII_after=2*w\" 계산 실패: Undefined symbol w; 독립 풀이가 정답을 고르지 못했습니다: $n,m$를 각각 A·B 1g당 몰수로 둔다. 반응 $A+bB\\to2C+2D$에서 소모된 A와 B의 질량비는 $k=\\dfrac{m_A}{m_B}=\\dfrac{M_A}{bM_B}=\\dfrac{m}{bn}$로 모든 실험에서 일정하다. 각 실험의 소포 질량은 (전−남은)이므로, 각 실험에서 'A만 소모'일 때와 'B만 소모'일 때의 $k$를 구한다.\nI: A소모→$m_A=6w, m_B=7w-4w=3w$로 $k=2$ / B소모→$m_B=7w, m_A=6w-4w=2w$로 $k=\\tfrac27$\nII: A소모→$m_A=3w, m_B=8w-2w; 독립 풀이 지적(contradiction): 소포된 A와 B의 질량비 $k=M_A/(bM_B)$는 반응식이 정해지면 모든 실험에서 일정해야 하는데, 각 실험을 'A만 소모'/'B만 소모'로 가정해 구한 $k$는 각각 {2, 2/7}, {1/2, 1/8}, {5, 1/2}가 되어 공통된 $k$가 존재하지 않는다. 특히 I의 후보값이 II·III의 후보값과 전혀 일치하지 않아 모순이 생긴다."
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 2 로직이 필요했습니다.; 교사 지침 미준수 가능: 풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단, 실린더 속 기체의 온도와 압력은 일정하다.)\"를 붙이 — 표의 수치 조합이 반응량 비의 일관성(소모 질량비 k 일정)을 만족하지 않아, 주어진 조건만으로 정답을 결정할 수 없다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": false,
+     "detail": "모델 응답 JSON을 읽지 못했습니다: Unexpected character \",\" at position 2469"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": false,
+     "detail": "조건 검사 실패: 최종 대입 계산 결과 2/5 → false; 계산한 정답 4/15과 같은 선택지가 없습니다. 선택지 값: 1/5 | 2/5 | 3/5 | 4/5 | 1"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 0 / 표시 2"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": false,
+     "detail": "온도·압력 일정 (상댓값 비교에 필요)"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": false,
+     "detail": "적용 설명 없음: STEP 1~끝을 모두 쓰는 최종(끝판왕) 문제는 숫자만 바꾼 쌍둥이로 만들지 않는다. 앞; 적용 설명 없음: 풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단,; 적용 설명 없음: 해설은 교사 해설의 풀이 흐름과 표현을 그대로 따른다. 원본에서 읽히지 않거나 애매한 부분"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "코드 검산: 조건 검사 실패: 최종 대입 계산 결과 2/5 → false; 코드 검산: 계산한 정답 4/15과 같은 선택지가 없습니다. 선택지 값: 1/5 | 2/5 | 3/5 | 4/5 | 1; 독립 풀이가 정답을 고르지 못했습니다: $n=A$ 1g의 몰수, $m=B$ 1g의 몰수를 정의한다. 반응 $A+bB\\to 2C+2D$.\n\n**I:** A 잔류 $\\frac{10}{3}w$이므로 A는 남고 B가 한계. 반응한 A $\\frac{5w}{3}$, 반응한 B $5w$.\n$$\\frac{5wm}{\\frac{5w}{3}n}=b \\Rightarrow nb=3m$$\n**II:** A 잔류 $2w$, B 한계. 반응한 A $2w$, B $6w$.\n$$\\frac{6wm}{2wn}=b \\Rightarrow nb=3m \\;(\\text{일관})$$\n**III:** B 잔류 $w$,"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이 지적(other): 계산 결과 $b=3, x=15$이고 $\\frac{b}{x}\\times\\frac{C+D}{B}=\\frac{3}{15}\\times\\frac{4}{3}=\\frac{4}{15}\\approx0.267$가 나오나, 5개 선택지 $\\{\\frac15,\\frac25,\\frac35,\\frac45,1\\}$ 중 어느 것과도 일치하지 않는다. 선택지 설계 오류.; 풀이에 쓰이지 않는 조건: 온도·압력 일정 (상댓값 비교에 필요); 통합 변형인데 원본에서 숫자만 바뀌었습니다. 원본과 반응식·표 구조·질문 식이 동일하고 실험 수치만 변경되었다. 또한 원본의 정답(2) $\\frac25$와 이 문제가 계산한 $\\frac{4}{15}$가 달라, 답이 선택지에 없는 상태다.; 원본의 실험 수치(5w,5w)를 그대로 썼습니다 (I 행).; 원본의 실험 수치(4w,6w)를 그대로 썼습니다 (II 행).; 원본의 실험 수치(2w,7w)를 그대로 썼습니다 (III 행)."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": false,
+     "detail": "numbers-only"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "fd760e0403b312b62801a4e0",
+   "minutes": 25
+  }
+ ]
+}

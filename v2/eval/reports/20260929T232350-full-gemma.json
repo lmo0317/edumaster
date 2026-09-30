@@ -1,0 +1,42 @@
+{
+ "stamp": "20260929T232350",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "61ad825516",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-qwen3.8-27b",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 1,
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "total": 0,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "분석 완료",
+     "pass": false,
+     "detail": "aborted"
+    }
+   ],
+   "read": {
+    "steps": [],
+    "proofread": []
+   },
+   "minutes": 0.6
+  }
+ ]
+}

@@ -132,6 +132,7 @@ test('model choice: Gemma runs every call of the job and is free; refused while 
     const job = await s.waitJob(gen.data.jobId);
     assert.equal(job.status, 'done', job.error);
     assert.equal(job.options.provider, 'gemma');
+    assert.equal(job.modelLabel, 'mock-gemma', 'the job keeps the name of the local model that made it');
     const usage = (await s.call('GET', '/api/usage')).data;
     assert.ok(usage.all.calls > 0);
     assert.equal(usage.all.paidInput, 0, 'Gemma calls are not billed');

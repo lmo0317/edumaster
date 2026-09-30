@@ -459,4 +459,16 @@ function pcModelLabel(id) {
   return id ? `${id} (PC)` : 'PC 모델';
 }
 
-module.exports = { repeating, pcModelLabel, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+// A short key per local model for evaluation results (reports only name the PC provider "gemma"). Runs from before
+// the model was recorded were all Gemma 4 12B.
+function pcModelKey(id) {
+  const s = String(id || '').toLowerCase();
+  if (!s || s === 'gemma' || /gemma-4-12b/.test(s)) return 'gemma12';
+  if (/gemma-4-26b/.test(s)) return 'gemma26';
+  if (/qwen3\.6/.test(s)) return 'qwen36';
+  if (/qwen3\.8/.test(s)) return 'qwen38';
+  if (/ornith/.test(s)) return 'ornith';
+  return s.replace(/^edumaster-/, '');
+}
+
+module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

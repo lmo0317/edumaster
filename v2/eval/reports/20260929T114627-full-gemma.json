@@ -1,0 +1,195 @@
+{
+ "stamp": "20260929T114627",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "fb74416e10",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-gemma-4-12b-vision",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 8,
+    "input": 38305,
+    "output": 52934,
+    "reasoning": 0,
+    "total": 91239,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "0.91, 0.94, 0.75"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "I에서 한계 반응물을 구한다",
+     "I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 물질량을 구한다"
+    ],
+    "question": "⑤ 1",
+    "proofread": [
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 I에서 한계 반응물 구하기\" → \"I에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다.\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"비례식을 이용한 x, b, m 구하기 및 최종 값 계산\" → \"A~D의 물질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 9,
+    "input": 39168,
+    "output": 219488,
+    "reasoning": 0,
+    "total": 258656,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 0 / 표시 4"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 1, 2 로직 없이 풀렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "f935a2a81e9d13b41d90eb76",
+   "minutes": 53.2
+  }
+ ]
+}

@@ -1,0 +1,282 @@
+{
+ "stamp": "20260929T164430",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "fb74416e10",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-qwen3.6-35b-a3b",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 7,
+    "input": 28268,
+    "output": 7702,
+    "reasoning": 0,
+    "total": 35970,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 0.75"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": false,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 물질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 물질량} + \\text{D의 물질량}}{\\text{B의 물질량}}$은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "problem.text: \"| 실험 | 반응 전 | | | 반응 후 | | | | | | | |\n| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| | A의 질량(g) | B의 질량(g) | A 또는 B의 질량(g) | | | | | | D의 양(mol) / 전체 기체의 양(mol) (상댓값) |\n| | | | | A(g) | B(g) | C(g) | D(g) | | |\n| I | $5w$ | $5w$ | A $\\frac{10}{3}w$ | | | | | | $x$ |\n| II | $4w$ | $6w$ | A $2w$ | | | | | | 18 |\n| III | $2w$ | $7w$ | B $w$ | | | \" → \"| 실험 | 반응 전 | | | A 또는 B의 질량(g) | 반응 후 |\n| :---: | :---: | :---: | :---: | :---: | :---: |\n| | A의 질량(g) | B의 질량(g) | | | D의 양(mol) / 전체 기체의 양(mol) (상댓값) |\n| I | $5w$ | $5w$ | A $\\frac{10}{3}w$ | $x$ |\n| II | $4w$ | $6w$ | A $2w$ | 18 |\n| III | $2w$ | $7w$ | B $w$ | 20 |\" (문제 이미지의 표 구조와 일치하도록 수정함. 원본 표에는 '반응 후'에 A(g), B(g), C(g), D(g) 열이 없으며, '반응 전' 아래에 A의 질량, B의 질량, 'A 또는 B의 질량' 열이 있고 마지막 열에 비율이 있음.)",
+     "steps[0].work: \"III에서는 A $4w$g과 B $\\frac{4}{3}w$g이 반응해서 반\n응 후 B $\\frac{14}{3}w$g이 남아야 하는데 주어진 자료와 맞지 않다.\" → \"II에서는 A $4w$g과 B $\\frac{4}{3}w$g이 반응해서 반\n응 후 B $\\frac{14}{3}w$g이 남아야 하는데 주어진 자료와 맞지 않다.\" (해설 이미지와 논리적으로 'II' 실험 데이터를 확인하는 과정임. 또한 III 실험은 A가 2w이므로 4w가 아님.)",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"I에서 한계 반응물(B)을 구한다.\" → \"Ⅰ에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"반응 후 기체의 양을 구하고 A~D의 물질량을 계산한다.\" → \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"선택지 분석 및 정답 도출\" → \"A~D의 물질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 19,
+    "input": 92884,
+    "output": 147451,
+    "reasoning": 0,
+    "total": 240335,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": false,
+     "detail": "적용 설명 없음: STEP 1~끝을 모두 쓰는 최종(끝판왕) 문제는 숫자만 바꾼 쌍둥이로 만들지 않는다. 앞; 적용 설명 없음: 풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단,; 적용 설명 없음: 해설은 교사 해설의 풀이 흐름과 표현을 그대로 따른다. 원본에서 읽히지 않거나 애매한 부분"
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": false,
+     "detail": "1번째 줄 \"mA0_I = 12, mB0_I = 8, mA_left_I = 8\" 계산 실패: Unexpected operator , (char 11)"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 4 / 표시 1"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": false,
+     "detail": "(단, 실린더 속 기체의 온도와 압력은 일정하다.)"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": false,
+     "detail": "위반: 풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단, — 문제 풀이에 직접적으로 필요하지 않은 '(단, 실린더 속 기체의 온도와 압력은 일정하다.)' 조건이 포함되어 있음. 또한 표의 헤더가 모호하여 정답을 유도하는 데 불필요한 추론을 요구함."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 5 / 표시 2"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": false,
+     "detail": "원본 풀이의 보조 문자 유지: 원본 해설이 정의한 n, m가 변형 해설에서 사라졌습니다. 같은 문자 정의와 계산 방법을 새 수치로 적용해야 합니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "독립 풀이의 정답은 5번(1)인데 표시된 정답은 2번입니다. 독립 풀이 요약: 반응식: $A(g) + bB(g) \\longrightarrow 2C(g) + 2D(g)$\n반응 진행 정도를 $\\xi$ (mol)라 하면, 반응 후 각 기체의 몰수는 다음과 같다.\n$n_A = n_{A0} - \\xi$, $n_B = n_{B0} - b\\xi$, $n_C = 2\\xi$, $n_D = 2\\xi$\n전체 몰수 $n_{total} = n_{A0} + n_{B0} + (3-b)\\xi$\n\n[실험 I]\n반응 후 A가 6 mol 남았으므로 $n_{A0} - \\xi = 10 - \\xi = 6 \\Rightarrow \\xi = 4$.\nA가 남았으므로 B는 한계 반응물이며 모두 소모됨: $n_{B0} - 4b = 12 - 4b = 0 \\Rightarrow b = 3$.\n\n[실험 III] 검증\n반응 후 B가 2 mol 남았으므로 $n_{B0} - b\\xi = 14 - 3\\xi = 2 \\Rightarrow 3\\xi = 12 \\Rightarrow \\xi = 4$.\nA는 모두 소모됨: $n_{A0} = 4 = \\xi$. 일치.\n따라서 $b = 3$임이 확정됨.\n\n[상댓값 비율 확인]\n반응 계수 합이 같으므로($1+3=2+2$) 반응 중 전체 몰수는 일정하다.\nI: $n_{t"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": false,
+     "detail": "원본 풀이의 보조 문자 유지: 원본 해설이 정의한 n, m가 변형 해설에서 사라졌습니다. 같은 문자 정의와 계산 방법을 새 수치로 적용해야 합니다.; 표기 형식(수식·표): 해설 STEP 2: $ 기호 짝이 맞지 않습니다; 해설 STEP 2: 수식 기호가 $ 밖에 있습니다 (\\frac \\times \\text); 원본 풀이의 보조 문자 유지: 원본 해설이 정의한 n, m가 변형 해설에서 사라졌습니다. 같은 문자 정의와 계산 방법을 새 수치로 적용해야 합니다.; 표기 형식(수식·표): 해설 STEP 2: $ 기호 짝이 맞지 않습니다; 해설 STEP 2: 수식 기호가 $ 밖에 있습니다 (\\frac \\times \\text)"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "587ca38d701d0de0506b3792",
+   "minutes": 43.1
+  }
+ ]
+}

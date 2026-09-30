@@ -78,7 +78,7 @@
   const PRICE = { deepseek: [0.30, 1.20], claude: [4, 20] };
   const cost = (u, provider = 'deepseek') => (PRICE[provider] ? ((u.paidInput ?? u.input ?? 0) * PRICE[provider][0] + (u.paidOutput ?? u.output ?? 0) * PRICE[provider][1]) / 1e6 : 0);
   const tokens = (u, provider) => u ? `모델 호출 ${u.calls}회 · ${Number(u.total || 0).toLocaleString()}토큰 · ${provider === 'gemma' ? '무료(PC 모델)' : provider === 'relay' ? '토큰 집계 없음(세션 중계)' : `최대 약 $${cost(u, provider).toFixed(3)}`}` : '';
-  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'Gemma', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5' };
+  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
   const loadStatus = async () => (statusCache = await api('GET', '/api/status'));
@@ -289,7 +289,7 @@
   const jobEntry = (j, no) => {
     const st = setStatus(j);
     return `<a class="set-row" href="#/j/${j.id}">
-      <div class="set-main"><b>${no ? `문제 세트 ${no}` : esc(j.title || '문제 세트')}</b><span class="muted small">${j.items.length}문제 · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'} · ${PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'} · ${fmtTime(j.createdAt)}</span></div>
+      <div class="set-main"><b>${no ? `문제 세트 ${no}` : esc(j.title || '문제 세트')}</b><span class="muted small">${j.items.length}문제 · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · ${fmtTime(j.createdAt)}</span></div>
       <div class="set-state"><span class="chip ${st.tone}">${esc(st.label)}</span>${st.detail ? `<span class="muted small">${esc(st.detail)}</span>` : ''}</div></a>`;
   };
 
@@ -603,7 +603,7 @@
     const done = job.items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
     return `<div class="panel">
       <div class="row"><h1 style="margin:0 auto 0 0">${esc(job.title)} <span class="muted" style="font-weight:500">— ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} 세트</span></h1>${chip(JOB_STATUS, job.status)}</div>
-      <p class="muted small" style="margin:6px 0">${fmtTime(job.createdAt)} · ${done}/${job.items.length}문제 처리 · ${PROVIDER_LABEL[job.options.provider] || 'DeepSeek'} · ${tokens(job.usage, job.options.provider)} (상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰) · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}</p>
+      <p class="muted small" style="margin:6px 0">${fmtTime(job.createdAt)} · ${done}/${job.items.length}문제 처리 · ${esc(job.modelLabel || PROVIDER_LABEL[job.options.provider] || 'DeepSeek')} · ${tokens(job.usage, job.options.provider)} (상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰) · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}</p>
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
       ${regenerating.length ? `<div class="note info">문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 피드백으로 다시 만드는 중입니다.</div>` : ''}
       <div class="progress">${job.items.map((i) => `<span class="chip ${(ITEM_STATUS[i.status] || [])[1] || ''}">${i.index + 1}. ${esc(i.label)} · ${(ITEM_STATUS[i.status] || [i.status])[0]}</span>`).join('')}</div>
@@ -726,8 +726,8 @@
     const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
     // How faithfully a model met the checklist: ✓ counts 1, △ half.
     const fidelity = (m) => {
-      const marks = allItems.map((it) => fb.models[m.provider]?.[it.id]?.[0]);
-      if (!fb?.models[m.provider]) return null;
+      const marks = allItems.map((it) => fb.models[m.key]?.[it.id]?.[0]);
+      if (!fb?.models[m.key]) return null;
       const n = (g) => marks.filter((x) => x === g).length;
       return { pct: Math.round(((n('ok') + n('partial') / 2) / allItems.length) * 100), ok: n('ok'), partial: n('partial'), no: n('no') };
     };
@@ -742,7 +742,7 @@
           const reason = it.status === 'passed' ? '' : why(it) || extra;
           return `<div class="cv2-cell ${tone}"><span class="cv2-stage">${esc(stageName(it))}</span><b>${label}</b>${reason ? `<span class="cv2-why">${esc(reason)}</span>` : ''}</div>`;
         }).join('')}
-        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="api/compare/${b.id}/pdf/${m.provider}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
+        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="api/compare/${b.id}/pdf/${m.key}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
       </div>`;
     };
     view.innerHTML = `<h1>모델 비교</h1>
@@ -751,7 +751,7 @@
         ${compareHtml(b.overview, status)}
       </div>
       <h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2>
-      <p class="muted">같은 몰질량 원본 문제와 해설을 세 모델에 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.</p>
+      <p class="muted">같은 몰질량 원본 문제와 해설을 네 모델에 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.</p>
       <div class="panel cv2-orig"><span class="muted small">원본</span>
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
         <span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>
@@ -760,7 +760,7 @@
         <div class="table-wrap"><table class="cv2-table">
           <tr><th>항목</th>${b.models.map((m) => { const f = fidelity(m); return `<th><div>${esc(m.label)}</div>${f ? `<div class="cv2-score ${tone(f.pct)}">${f.pct}%</div><div class="muted tiny">✓ ${f.ok} · △ ${f.partial} · ✕ ${f.no}</div>` : ''}</th>`; }).join('')}</tr>
           ${fb.groups.map((g) => `<tr class="grp"><td colspan="${b.models.length + 1}">${esc(g.title)}</td></tr>${g.items.map((it) => `<tr><th>${esc(it.text)}</th>${b.models.map((m) => {
-            const [grade, note] = fb.models[m.provider]?.[it.id] || ['', ''];
+            const [grade, note] = fb.models[m.key]?.[it.id] || ['', ''];
             const [t, mark] = MARK[grade] || ['', '-'];
             return `<td><div class="cv2-mark ${t}">${mark}</div><div class="cv2-note">${esc(note)}</div></td>`;
           }).join('')}</tr>`).join('')}`).join('')}
@@ -958,7 +958,8 @@
     const MODELS = [
       { id: 'relay', name: 'Claude Opus 5.5', price: 'opus', use: status.providers?.relay ? '선택 가능' : '지금은 비교 평가만 (화면에서 선택 불가)' },
       { id: 'deepseek', name: 'DeepSeek V4 Flash', price: 'deepseek', use: '언제든 사용 (인터넷)' },
-      { id: 'gemma', name: `${cmp.models.gemma?.label || 'PC 모델'} (PC)`, price: null, use: '선생님 PC가 켜져 있을 때만' },
+      { id: 'qwen36', name: 'Qwen 3.6-35B (PC)', price: null, use: '선생님 PC가 켜져 있을 때만 (지금 쓰는 PC 모델)' },
+      { id: 'gemma12', name: 'Gemma 4 12B (PC)', price: null, use: '선생님 PC가 켜져 있을 때만 (이전 PC 모델)' },
     ].filter((m) => cmp.models[m.id]);
     if (!MODELS.length) return '<p class="muted small">아직 평가 결과가 없습니다. 평가를 돌리면 모델별 비교가 표시됩니다.</p>';
     const quality = (m) => pct(cmp.models[m.id].overall) ?? 0;
@@ -984,6 +985,7 @@
         <div class="cmp-facts">
           <div><span>문제 1개 비용</span><b>${costOf(m)}</b></div>
           <div><span>3문제 세트 시간</span><b>약 ${q.minutes}분</b></div>
+          <div><span>평가 횟수</span><b>${q.runs}회${q.runs > 1 ? ' 합산' : ''}</b></div>
           <div><span>원본 읽기 정확도</span><b>${pct(q.read)}%</b></div>
           <div><span>사용 조건</span><b class="small">${m.use}</b></div>
         </div></div>`;
@@ -1000,7 +1002,7 @@
         <tr class="grp"><td colspan="${MODELS.length + 1}">비용</td></tr>
         ${costRow}${setRow}
       </table></div>
-      <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
+      <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 같은 모델도 돌릴 때마다 결과가 달라서, 여러 번 평가한 모델은 모든 회차를 합산했습니다. 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
       비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. ${c.opusRange ? 'Opus는 토큰 수가 기록되지 않는 방식으로 돌렸기 때문에, 실제로 주고받은 글자 수로 추정한 범위입니다 (생각 토큰은 측정하지 못해 답변의 0~2배로 잡음).' : 'Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다.'} DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
   }
 

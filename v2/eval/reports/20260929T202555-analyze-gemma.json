@@ -1,0 +1,122 @@
+{
+ "stamp": "20260929T202555",
+ "stage": "analyze",
+ "mode": "integrated",
+ "promptVersion": "61ad825516",
+ "learning": {
+  "used": "eval/learn-corr",
+  "rules": 3,
+  "corrections": 1
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-qwen3.6-35b-a3b",
+   "stage": "analyze",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 6,
+    "input": 27524,
+    "output": 5756,
+    "reasoning": 0,
+    "total": 33280,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "0.91, 0.94, 0.75"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "read": {
+    "steps": [
+     "I 에서 한계 반응물을 구한다",
+     "I ~ III 에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 물질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 몰질량} + \\text{D의 몰질량}}{\\text{B의 몰질량}}$은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"I에서 한계 반응물 확인\" → \"I 에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"반응 후 기체의 질량과 몰수 계산\" → \"I ~ III 에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"상댓값을 이용한 몰질량 관계 및 b, x 구하기\" → \"A~D의 물질량을 구한다\"",
+     "과거 교사 교정 1건을 판독에 참고했습니다."
+    ]
+   },
+   "minutes": 2
+  }
+ ]
+}

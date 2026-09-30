@@ -1,0 +1,196 @@
+{
+ "stamp": "20260929T124110",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "fb74416e10",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-gemma-4-26b-a4b",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 8,
+    "input": 30834,
+    "output": 18615,
+    "reasoning": 0,
+    "total": 49449,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "0.91, 0.94, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": false,
+     "detail": "검산 프로그램이 실행되지 않아 수치를 확인하지 못했습니다: 검산 프로그램이 비어 있습니다."
+    }
+   ],
+   "read": {
+    "steps": [
+     "I 에서 한계 반응물을 구한다",
+     "I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A-D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 몰질량} + \\text{D의 몰질량}}{\\text{B의 몰질량}}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "problem.text: \"다음은 $\\ce{A(g) + bB(g -> 2C(g) + 2D(g)}$ (단, $b$는 반응 계수)인 반응의 화학 반응식이다.\" → \"다음은 $A(g)$와 $B(g)$가 반응하여 $C(g)$와 $D(g)$를 생성하는 반응의 화학 반응식이다. $A(g) + bB(g) \\rightarrow 2C(g) + 2D(g)$ (단, $b$는 반응 계수)\" (문장의 내용이 누락되었고 화학 반응식의 표기가 잘못되었습니다.)",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"I에서 한계 반응물 구하기\" → \"I 에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"I~III에서 반응 후 기체의 질량(g)과 양(mol) 구하기\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"A-D의 몰질량 구하기 및 선택지 분석\" → \"A-D의 몰질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 11,
+    "input": 35196,
+    "output": 249759,
+    "reasoning": 0,
+    "total": 284955,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 0 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 1 로직 없이 풀렸습니다."
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "독립 풀이가 정답을 고르지 못했습니다: 독립 풀이가 출력 한도 안에서 답을 내지 못했습니다 (모델 출력이 길이 제한에서 잘렸습니다.)."
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 1 로직 없이 풀렸습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": false,
+     "detail": "모델 출력이 길이 제한에서 잘렸습니다."
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "55460a7be3d232368dcfcb78",
+   "minutes": 100.4
+  }
+ ]
+}
