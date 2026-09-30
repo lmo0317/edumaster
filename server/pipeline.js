@@ -160,16 +160,20 @@ function applyFixes(material, fixes) {
   return { applied, unresolved };
 }
 
+function normalizeSolution(solution) {
+  return {
+    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: str(s?.title, 300), work: str(s?.work, 8000) })).filter((s) => s.work).slice(0, 12),
+    summary: str(solution?.summary, 1000),
+  };
+}
+
 function normalizeGenerated(data) {
   const problem = normalizeProblem(data?.problem);
   if (problem.text.length < 5) throw Object.assign(new Error('모델이 문제 본문을 만들지 않았습니다.'), { status: 422 });
   if (problem.choices.length && !problem.answer) throw Object.assign(new Error('모델이 정답 번호를 주지 않았습니다.'), { status: 422 });
   return {
     problem,
-    solution: {
-      steps: arr(data?.solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: str(s?.title, 300), work: str(s?.work, 8000) })).filter((s) => s.work).slice(0, 12),
-      summary: str(data?.solution?.summary, 1000),
-    },
+    solution: normalizeSolution(data?.solution),
     usesSteps: arr(data?.usesSteps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0).slice(0, 12),
     designNote: str(data?.designNote, 3000),
     appliedRules: arr(data?.appliedRules).map((r) => ({ id: str(r?.id, 40), how: str(r?.how, 600) })).filter((r) => r.id).slice(0, 30),
@@ -561,51 +565,146 @@ function repeatsPrior(item, prior) {
   return notes;
 }
 
-async function verifyItem(ctx, item, material, rules, mode, prior = []) {
+// ---------------------------------------------------------------- lean mixed runs
+// options.lean with designWith: the designer (strong, expensive) writes the problem, its verification program and a
+// STEP outline; the job's own model writes the full solution from the outline in the teacher's format. Faults in the
+// written solution go back to that writer, not to the designer. The solver's judgment calls (unused conditions,
+// shortcuts, numbers-only, STEP coverage, problem-rule checks) stay in the record but do not send the problem back —
+// a weak solver raised them falsely (Qwen 3.6, 2026-09-30: three of four repairs); an answer mismatch is first put
+// to the designer, who decides whether the problem or the solver is wrong. Code checks stay as they are.
+const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'source-step-titles', 'source-tables']);
+const solutionOnly = (c) => SOLUTION_CHECKS.has(c.id) || (c.id === 'format' && c.evidence.split('; ').every((e) => e.startsWith('해설')));
+
+const flat = (s) => harness.plain(s).replace(/\\left|\\right|\s/g, '');
+/** Values the outline derives (the last side of each "$…=…$") that the written solution must still show. */
+function missingValues(outline, solution) {
+  const text = flat(solution.steps.map((s) => s.work).join('\n') + '\n' + solution.summary);
+  const values = new Set();
+  for (const s of outline.steps) {
+    for (const m of String(s.work).matchAll(/\$([^$]+)\$/g)) {
+      const v = flat(m[1].split('=').pop());
+      if (/\d/.test(v) && v.length <= 24) values.add(v);
+    }
+  }
+  return [...values].filter((v) => !text.includes(v));
+}
+
+/** The job's own model writes the outline out as a full solution; returns warnings for the teacher. */
+async function writeSolution(ctx, item, material, rules, fixes = []) {
+  ctx.log(`${item.label}: 해설 풀어 쓰는 중${fixes.length ? ` (고칠 점 ${fixes.length}건)` : ''}`);
+  let written = null;
+  let missing = [];
+  for (let attempt = 0; attempt < 2 && (!written || missing.length); attempt++) {
+    const notes = [...fixes, ...missing.map((v) => `출제자 요지의 값 ${v}가 해설에 없습니다. 요지의 판정과 값을 그대로 쓴다.`)];
+    let data;
+    try {
+      ({ data } = await ctx.llm.json({
+        // With thinking off, Qwen 3.6 copied the outline instead of rewriting it in the teacher's format.
+        purpose: 'write-solution', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 20000,
+        system: prompts.WRITE_SOLUTION_SYSTEM, text: prompts.writeSolutionText({ item, material, rules, outline: item.outline, fixes: notes }),
+      }));
+    } catch (e) {
+      if (e.name !== 'LlmFormatError') throw e;
+      continue;
+    }
+    const solution = normalizeSolution(data?.solution);
+    if (!solution.steps.length) continue;
+    written = solution;
+    missing = missingValues(item.outline, solution);
+  }
+  if (!written) { item.solution = item.outline; return ['해설 풀어쓰기에 실패해 출제자의 요지를 해설로 둡니다.']; }
+  item.solution = written;
+  return missing.length ? [`풀어 쓴 해설에 출제자 요지의 값(${missing.join(', ')})이 보이지 않습니다.`] : [];
+}
+
+/** The designer checks a disagreeing solver's work: is the problem at fault, or the solver? */
+async function adjudicate(ctx, item, blind, issues) {
+  ctx.log(`${item.label}: 독립 풀이와 달라 출제자가 재확인 중`);
+  try {
+    const { data } = await ctx.llm.json({
+      purpose: 'adjudicate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 8000,
+      system: prompts.ADJUDICATE_SYSTEM, text: prompts.adjudicateText({ item, blind, issues }),
+    });
+    return { problemAtFault: data?.problemAtFault === true, reason: str(data?.reason, 600) };
+  } catch (e) {
+    if (e.name !== 'LlmFormatError') throw e;
+    return { problemAtFault: true, reason: `재확인 응답을 읽지 못함 (${e.message})` };
+  }
+}
+
+async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = null) {
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
   // For an integrated final problem the solver also sees the original, to tell a real redesign from new numbers.
   const integratedFinal = item.stage.kind === 'twin' && mode === 'integrated';
-  const blind = await blindSolve(ctx, item, material, rules, integratedFinal);
+  // A rewrite of the solution alone keeps the problem, so the solve (and its adjudication) is not repeated.
+  const blind = keep?.blind || await blindSolve(ctx, item, material, rules, integratedFinal);
   const solutionReview = await reviewSolution(ctx, item, material, rules);
+  const lean = Boolean(ctx.lean);
   const hard = [];
   const soft = [];
+  const rewriteNotes = [];
+  let adjudication = keep?.adjudication || null;
   if (code.status === 'fail') hard.push(...code.reasons.map((r) => '코드 검산: ' + r));
   soft.push(...(code.warnings || []));
-  if (item.problem.choices.length) {
-    if (!blind.answer) hard.push('독립 풀이가 정답을 고르지 못했습니다: ' + blind.solution.slice(0, 300));
-    else if (blind.answer !== item.problem.answer) hard.push(`독립 풀이의 정답은 ${blind.answer}번(${blind.answerValue})인데 표시된 정답은 ${item.problem.answer}번입니다. 독립 풀이 요약: ${blind.solution.slice(0, 600)}`);
+  const mismatch = !item.problem.choices.length ? ''
+    : !blind.answer ? '독립 풀이가 정답을 고르지 못했습니다: ' + blind.solution.slice(0, 300)
+    : blind.answer !== item.problem.answer ? `독립 풀이의 정답은 ${blind.answer}번(${blind.answerValue})인데 표시된 정답은 ${item.problem.answer}번입니다. 독립 풀이 요약: ${blind.solution.slice(0, 600)}`
+    : '';
+  const blocking = blind.issues.filter((i) => BLOCKING_ISSUES.has(i.type)).map((i) => `독립 풀이 지적(${i.type}): ${i.detail}`);
+  if (lean && (mismatch || blocking.length) && code.status !== 'fail') {
+    adjudication = adjudication || await adjudicate(ctx, item, blind, [mismatch, ...blocking].filter(Boolean));
+    if (adjudication.problemAtFault) hard.push(...[mismatch, ...blocking].filter(Boolean), `출제자 재확인: ${adjudication.reason}`);
+    else soft.push(`독립 풀이와 결과가 달랐지만 출제자가 재확인함: ${adjudication.reason}`);
+  } else {
+    if (mismatch) hard.push(mismatch);
+    hard.push(...blocking);
   }
-  for (const issue of blind.issues) (BLOCKING_ISSUES.has(issue.type) ? hard : soft).push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
+  if (!lean) for (const issue of blind.issues.filter((i) => !BLOCKING_ISSUES.has(i.type))) soft.push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
   const cov = coverage(item.stage, material.steps.length, blind.stepsUsed, blind.shortcuts);
-  // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
-  if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
-  soft.push(...cov.notes);
+  if (!lean) {
+    // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
+    if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
+    soft.push(...cov.notes);
+  }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
   const codeChecks = harness.inspectItem(material, item, mode);
-  for (const c of codeChecks.filter((x) => x.state === 'fail')) (c.severity === 'hard' ? hard : soft).push(`${c.label}: ${c.evidence}`);
+  const failed = codeChecks.filter((x) => x.state === 'fail');
+  for (const c of failed) {
+    if (lean && solutionOnly(c)) rewriteNotes.push(`${c.label}: ${c.evidence}`);
+    else (c.severity === 'hard' ? hard : soft).push(`${c.label}: ${c.evidence}`);
+  }
+  const reviewNotes = solutionReview.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`));
+  if (lean) rewriteNotes.push(...reviewNotes);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
-    ...blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`),
-    ...(integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
+    ...(lean ? [] : blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
+    ...(!lean && integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
-    ...codeChecks.filter((c) => c.state === 'fail' && c.severity === 'design').map((c) => `${c.label}: ${c.evidence}`),
-    ...solutionReview.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`)),
+    ...failed.filter((c) => c.severity === 'design' && !(lean && solutionOnly(c))).map((c) => `${c.label}: ${c.evidence}`),
+    ...(lean ? [] : reviewNotes),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
     // Problem rules are judged by the independent solver, solution rules by the solution reviewer.
-    const judged = blind.rules.find((b) => b.id === r.id) || solutionReview.rules.find((b) => b.id === r.id);
-    // A rule the independent reviewer finds broken is sent back for repair like any other design fault.
-    if (judged && !judged.ok) designNotes.push(`교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`);
+    const byReviewer = solutionReview.rules.find((b) => b.id === r.id);
+    const judged = blind.rules.find((b) => b.id === r.id) || byReviewer;
+    // A rule the independent reviewer finds broken is sent back for repair like any other design fault (in a lean
+    // run a solution rule goes back to the writer, and a problem rule judged by the solver is only recorded).
+    if (judged && !judged.ok) {
+      const note = `교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`;
+      if (!lean) designNotes.push(note);
+      else if (judged === byReviewer) rewriteNotes.push(note);
+    }
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
-    hard, soft, coverageNotes: cov.notes, designNotes,
+    hard, soft, coverageNotes: cov.notes, designNotes, rewriteNotes,
     verification: {
+      ...(adjudication ? { adjudication } : {}),
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
       blind,
       solutionReview,
@@ -619,26 +718,40 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
 /** Generates, checks, and (at most once) repairs one problem. Mutates `item` and saves progress. */
 async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous }) {
   const total = material.steps.length;
+  const lean = Boolean(ctx.lean);
   item.status = 'generating'; item.error = ''; ctx.save();
   ctx.log(`${item.label}: 문제 설계 중`);
   const { data, shapeFixes: generateShape = [] } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
-    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, usedRows: usedRowsFor(item, prior, material) }),
+    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, usedRows: usedRowsFor(item, prior, material) }) + (lean ? prompts.LEAN_DESIGN : ''),
   });
   if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
   Object.assign(item, normalizeGenerated(data));
   item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];
+  // Lean run: what the designer wrote is the outline; the job's own model writes it out as the solution.
+  let writeNotes = [];
+  if (lean) { item.outline = item.solution; writeNotes = await writeSolution(ctx, item, material, rules); }
   item.status = 'verifying'; ctx.save();
 
   let check = await verifyItem(ctx, item, material, rules, mode, prior);
   // A STEP-range mismatch is the teacher's core requirement, so it also earns the single repair;
   // if it remains afterwards it is only a warning (the blind solver's STEP tagging can be noisy).
-  const repairReasons = (c) => [...c.hard, ...c.coverageNotes.map((n) => 'STEP 범위: ' + n), ...c.designNotes.map((n) => '문제 설계: ' + n)];
+  // In a lean run the solver's STEP tagging does not send the problem back (see verifyItem).
+  const repairReasons = (c) => [...c.hard, ...(lean ? [] : c.coverageNotes.map((n) => 'STEP 범위: ' + n)), ...c.designNotes.map((n) => '문제 설계: ' + n)];
   // Up to ctx.maxRepairs repairs, but a further one only when the previous repair changed what is wrong;
   // the same complaints twice means the model is stuck, so stop and show them to the teacher.
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-  for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
+  let rewrites = 0;
+  for (let round = 0; ;) {
+    // Lean: a fault only in the written solution is rewritten once by the writer — no design repair, no new solve.
+    if (lean && check.rewriteNotes.length && !repairReasons(check).length && rewrites < 1) {
+      rewrites++;
+      writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes);
+      check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
+      continue;
+    }
+    if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
     if (round > 0 && same(repairReasons(check), item.attempts[item.attempts.length - 1].failures)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
     if (ctx.budget.affords && !ctx.budget.affords(3 + (ctx.reserveCalls || 0))) {
@@ -646,29 +759,45 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
       check.soft.push('토큰 상한 때문에 자동 수정을 건너뛰었습니다. 교사 검토가 필요합니다.');
       break;
     }
+    round++;
     item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
-    ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중${ctx.routes?.repair ? ` (${ctx.routes.repair})` : ''}`);
+    const purpose = lean ? 'repair-lean' : 'repair';
+    ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중${ctx.routes?.[purpose] ? ` (${ctx.routes[purpose]})` : ''}`);
     const { data: fixed, shapeFixes: repairShape = [] } = await ctx.llm.json({
-      purpose: 'repair', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
+      purpose, jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
       system: prompts.REPAIR_SYSTEM,
-      text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item, failures: repairReasons(check), blind: check.verification.blind }),
+      // A lean repair sees the designer's own outline (not the long written solution) and returns only what changed.
+      text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item: lean ? { ...item, solution: item.outline } : item, failures: repairReasons(check), blind: check.verification.blind })
+        + (lean ? prompts.LEAN_REPAIR : ''),
     });
     if (repairShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${repairShape.join(', ')})`);
-    // Local models often return only the fixed problem; what they leave out (how each rule was kept, the design
-    // note) stays from the previous version instead of being wiped.
-    const next = normalizeGenerated(fixed);
-    for (const key of ['designNote', 'appliedRules', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
-    Object.assign(item, next);
+    if (lean) {
+      const kept = { problem: item.problem, solution: item.outline, usesSteps: item.usesSteps, designNote: item.designNote, appliedRules: item.appliedRules, verification: item.verificationSpec };
+      const changed = Object.fromEntries(Object.entries(fixed || {}).filter(([k, v]) => k in kept && v != null && v !== ''));
+      Object.assign(item, normalizeGenerated({ ...kept, ...changed }));
+      item.outline = item.solution;
+      writeNotes = await writeSolution(ctx, item, material, rules);
+      rewrites = 0;
+    } else {
+      // Local models often return only the fixed problem; what they leave out (how each rule was kept, the design
+      // note) stays from the previous version instead of being wiped.
+      const next = normalizeGenerated(fixed);
+      for (const key of ['designNote', 'appliedRules', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
+      Object.assign(item, next);
+    }
     item.status = 'verifying'; ctx.save();
     check = await verifyItem(ctx, item, material, rules, mode, prior);
   }
   item.verification = check.verification;
   // What the repairs could not fix goes to the teacher: a wrong answer, a problem that skips or overshoots its
   // STEPs, an unused condition, a numbers-only final, a broken rule. Only light notes leave it usable.
-  const unresolved = [...check.hard, ...check.coverageNotes.map((n) => 'STEP 범위: ' + n), ...check.designNotes.map((n) => '문제 설계: ' + n)];
+  const unresolved = repairReasons(check);
   item.problems = unresolved;
-  item.warnings = check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w));
+  item.warnings = [
+    ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w)),
+    ...(lean ? [...check.rewriteNotes.map((n) => '해설: ' + n), ...writeNotes] : []),
+  ];
   item.status = unresolved.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
   ctx.log(`${item.label}: ${{ passed: '검증 통과', warning: '통과 (확인할 점 있음)', needs_review: '교사 검토 필요' }[item.status]}`);
   ctx.save();
@@ -733,4 +862,4 @@ const SYSTEM_CHECKS = {
   repair: '발견된 문제를 모델에 보여 주고 최대 2번 수정한다. 같은 지적이 반복되면 멈추고, 뒤에 만들 문제의 토큰이 부족해질 것 같으면 수정을 건너뛴다. 남은 문제는 교사 검토 필요 또는 확인할 점으로 표시한다.',
 };
 
-module.exports = { reviewSolution, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { reviewSolution, writeSolution, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

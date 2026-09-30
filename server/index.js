@@ -241,9 +241,11 @@ function createApp(options = {}) {
     const other = async (name) => (name && name !== provider ? chooseProvider(name) : undefined);
     const designWith = await other(body.designWith);
     const repairWith = designWith || (await other(body.repairWith));
+    // lean: the design model writes only an outline and the chosen provider writes the solution out (pipeline).
+    const lean = Boolean(body.lean && designWith) || undefined;
     const rules = pipeline.pickRules(store, material);
     const { images, ...snapshot } = material;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, perStage: items.length / stages.length } });
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {
@@ -303,6 +305,7 @@ function createApp(options = {}) {
     'reread-headings': '해설의 단계 제목만 다시 읽기 (2회)', regroup: 'STEP을 해설 단계 수에 맞게 묶기',
     'fix-verification': '실행되지 않는 원본 검산 프로그램 고치기', generate: '단계별 변형 문제 설계',
     solve: '정답을 모르는 독립 풀이 검토', 'review-solution': '만든 해설을 선생님 해설과 STEP별로 대조', repair: '검토에서 나온 문제를 고쳐 다시 설계',
+    'write-solution': '출제 모델의 STEP 요지를 선생님 해설 형식으로 풀어 쓰기 (혼합 실행)', adjudicate: '독립 풀이와 정답이 다를 때 출제 모델이 누가 옳은지 재확인 (혼합 실행)',
   };
   function evalReports(limit = 4) {
     const dir = path.join(cfg.root, 'eval', 'reports');

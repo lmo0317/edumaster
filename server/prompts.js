@@ -336,10 +336,81 @@ function solutionReviewText({ item, material, rules }) {
   ].join('\n');
 }
 
+// Lean mixed runs: the designer (strong, expensive) writes only what needs judgment — the problem, its verification
+// program and a STEP-by-STEP outline — and a cheaper model writes the full solution from that outline.
+const LEAN_DESIGN = `
+[간결 모드 — 해설은 다른 작성자가 선생님 해설 형식으로 풀어 쓴다]
+- solution.steps[].work에는 STEP마다 요지만 쓴다: 그 STEP에서 내린 판정(예: 가정→모순으로 Ⅰ에서 모두 반응한 것은 B), 구한 비·값과 그 식(예: A : B $=1:2$, Ⅲ에서 남은 B $8w-6w=2w$). STEP마다 1~4줄. 문장 틀·표·설명은 쓰지 않는다.
+- 작성자가 새로 계산하거나 판단하지 않도록 해설에 필요한 중간값은 모두 적는다. 보조 문자(n, m 등)를 쓰면 무엇인지 적는다.
+- title은 원본 STEP 제목 그대로. summary는 한 줄.
+- designNote는 2문장 이내, appliedRules의 how는 지침마다 1문장.
+- problem과 verification은 평소대로 완전하게 쓴다.`;
+
+const LEAN_REPAIR = `
+[간결 모드 — 바뀐 항목만 반환한다]
+- 고친 최상위 항목만 JSON에 넣는다 (problem, solution, verification, usesSteps, designNote, appliedRules 중). 바뀌지 않은 항목은 넣지 않는다.
+- solution을 고치면 위 [네가 만든 문제]의 solution처럼 STEP별 요지로 쓴다 (작성자가 다시 풀어 쓴다). problem을 고치면 solution 요지와 verification도 새 문제에 맞게 함께 고친다.`;
+
+const WRITE_SOLUTION_SYSTEM = `너는 해설 작성자다. 출제자가 정한 문제와 STEP별 풀이 요지를 선생님 해설과 같은 형식의 완성된 해설로 풀어 쓴다.
+- 새로 판단하거나 다른 방법으로 풀지 않는다. 요지에 있는 판정·비·값·식을 그대로 쓰고, 요지의 값에서 바로 나오는 사칙연산만 채운다. 네 계산이 요지와 다르면 요지를 따른다.
+- 요지는 재료다. 요지의 짧은 문장·화살표(→)·빗금(/) 나열을 그대로 옮기지 말고, STEP마다 선생님 해설의 같은 STEP을 본보기로 삼아 같은 모양으로 다시 쓴다.
+- 선생님 해설의 STEP 제목, 문장 틀, 순서, 표 구성(열), 보조 문자(n, m 등)와 그 도입 위치를 그대로 따른다. 수치와 실험 번호만 이 문제에 맞춘다. 예: 선생님이 "만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 B이다."로 쓰면 같은 틀로 쓴다.
+- 선생님 해설의 STEP에 표가 있으면 그 STEP에도 같은 열 구성의 Markdown 표를 만들어 요지의 값을 채운다 (예: 실험별 반응 후 A, B, C+D의 질량 표, 실험별 양(mol)과 몰분율 표).
+- 선생님 해설에 없는 설명·경우 나누기·검산을 더하지 않는다. 요지에 있는 STEP만 쓴다.
+- 마지막 STEP은 정답 번호와 값으로 끝낸다 (예: 정답은 ④ $\\frac{7}{3}$이다).
+${FORMAT}
+반환 JSON 형식:
+{"solution":{"steps":[{"step":1,"title":"...","work":"..."}],"summary":"최종 정답 도출 한 줄"}}`;
+
+function writeSolutionText({ item, material, rules, outline, fixes = [] }) {
+  const solutionRules = rules.filter((r) => r.target === 'solution' || r.target === 'all');
+  return [
+    '[선생님 해설 — 형식의 기준]',
+    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n'),
+    '\n[문제]',
+    item.problem.text,
+    item.problem.figure ? '[그림 설명]\n' + item.problem.figure : '',
+    item.problem.choices?.length ? item.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') + `\n정답: ${item.problem.answer}번` : '',
+    '\n[출제자의 풀이 요지 — 이 판정과 값을 그대로 쓴다]',
+    outline.steps.map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
+    outline.summary ? `요약: ${outline.summary}` : '',
+    solutionRules.length ? '\n[해설 지침 — 지킨다]\n' + solutionRules.map((r) => `- ${r.text}`).join('\n') : '',
+    fixes.length ? '\n[앞서 쓴 해설에서 고칠 점 — 반드시 고친다]\n' + fixes.map((f) => '- ' + f).join('\n') : '',
+    '\n해설 JSON만 반환하라.',
+  ].filter(Boolean).join('\n');
+}
+
+// The independent solver disagreed with the designer. A weak solver is often simply wrong, so before a (costly)
+// repair the designer checks who is right.
+const ADJUDICATE_SYSTEM = `너는 이 문제의 출제자다. 정답을 모르는 검토자가 문제만 보고 풀었는데 네 정답과 다른 답을 냈거나 문제에 결함이 있다고 했다.
+- 네 풀이를 처음부터 다시 계산하고, 검토자 풀이를 따라가며 어디서 달라졌는지 찾는다.
+- 네 정답·해설에 실제 오류가 있거나, 문제 문장이 검토자의 해석도 허용하면(모호함) problemAtFault=true.
+- 검토자의 계산 실수, 조건을 빠뜨리거나 잘못 읽은 것(문제 문장이 분명한데 틀린 것)이면 problemAtFault=false.
+반환 JSON 형식:
+{"problemAtFault":false,"reason":"어디서 누가 틀렸는지 한두 문장"}`;
+
+function adjudicateText({ item, blind, issues }) {
+  return [
+    '[문제]',
+    item.problem.text,
+    item.problem.figure ? '[그림 설명]\n' + item.problem.figure : '',
+    item.problem.choices?.length ? item.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') : '',
+    `\n[네 정답] ${item.problem.answer}번`,
+    '[네 풀이 요지]',
+    ((item.outline || item.solution)?.steps || []).map((s) => `STEP ${s.step}. ${s.work}`).join('\n'),
+    `\n[검토자의 답] ${blind.answer ? `${blind.answer}번 (${blind.answerValue})` : '답을 내지 못함'}`,
+    issues.length ? '[검토자가 지적한 결함]\n' + issues.map((i) => '- ' + i).join('\n') : '',
+    '[검토자 풀이]',
+    blind.solution,
+    '\nJSON만 반환하라.',
+  ].filter(Boolean).join('\n');
+}
+
 const SYSTEMS = {
   analyze: ANALYZE_SYSTEM, proofread: PROOFREAD_SYSTEM, 'reread-question': REREAD_QUESTION_SYSTEM, 'reread-problem': REREAD_PROBLEM_SYSTEM,
   'reread-headings': REREAD_HEADINGS_SYSTEM, regroup: REGROUP_SYSTEM, 'fix-verification': FIX_VERIFICATION_SYSTEM,
   generate: GENERATE_SYSTEM, solve: SOLVE_SYSTEM, 'review-solution': SOLUTION_REVIEW_SYSTEM, repair: REPAIR_SYSTEM,
+  'write-solution': WRITE_SOLUTION_SYSTEM, adjudicate: ADJUDICATE_SYSTEM,
 };
 const PROMPT_VERSION = require('node:crypto').createHash('sha256')
   .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
@@ -351,5 +422,6 @@ module.exports = {
   SOLVE_SYSTEM, solveText,
   SOLUTION_REVIEW_SYSTEM, solutionReviewText,
   REPAIR_SYSTEM, repairText,
+  LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, ADJUDICATE_SYSTEM, adjudicateText,
   stageInstruction, rulesBlock,
 };

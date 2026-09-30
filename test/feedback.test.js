@@ -205,3 +205,57 @@ test('run cost: list prices per provider, DeepSeek peak hours double, cached inp
   assert.equal(c.byProvider.claude.usd, +(0.1 * 4 + 0.05 * 20).toFixed(3));
   assert.equal(c.byProvider.claude.calls, 1);
 });
+
+test('lean run: a solution-format fault is rewritten by the writer, and a disagreeing solver is checked by the designer before any repair', async () => {
+  const calls = [];
+  let writes = 0;
+  const llm = {
+    json: async ({ system }) => {
+      calls.push(system);
+      if (system === prompts.SOLVE_SYSTEM) return { data: { answer: 2, answerValue: '2', stepsUsed: [1], conditions: [{ text: '표', used: false }] } };
+      if (system === prompts.SOLUTION_REVIEW_SYSTEM) return { data: { steps: [{ step: 1, ok: true, issues: [] }], rules: [] } };
+      if (system === prompts.ADJUDICATE_SYSTEM) return { data: { problemAtFault: false, reason: '검토자가 표의 Ⅱ행을 잘못 읽음' } };
+      if (system === prompts.WRITE_SOLUTION_SYSTEM) {
+        writes++;
+        return { data: { solution: { steps: [{ step: 1, title: writes === 1 ? '다른 제목' : 'S1', work: '풀어 쓴 해설: $3$' }], summary: '3' } } };
+      }
+      return { data: generated('처음 문제') };
+    },
+  };
+  const ctx = { ...ctxFor(llm), lean: true };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(calls.filter((s) => s === prompts.REPAIR_SYSTEM).length, 0, 'no design repair');
+  assert.equal(writes, 2, 'the wrong STEP title was sent back to the writer once');
+  assert.equal(calls.filter((s) => s === prompts.SOLVE_SYSTEM).length, 1, 'rewriting the solution does not solve again');
+  assert.equal(calls.filter((s) => s === prompts.ADJUDICATE_SYSTEM).length, 1);
+  assert.equal(item.outline.steps[0].work, '3', 'the designer\'s outline is kept');
+  assert.equal(item.solution.steps[0].title, 'S1');
+  assert.deepEqual(item.problems, [], 'the solver\'s unused-condition claim and wrong answer do not send it to the teacher');
+  assert.equal(item.status, 'warning');
+  assert.match(item.warnings.join(), /출제자가 재확인함: 검토자가 표의 Ⅱ행을 잘못 읽음/);
+});
+
+test('lean run: when the designer agrees the problem is at fault, the repair returns only what changed and the rest is kept', async () => {
+  const repairs = [];
+  let solves = 0;
+  const llm = {
+    json: async ({ system, text }) => {
+      if (system === prompts.SOLVE_SYSTEM) { solves++; return { data: { answer: solves === 1 ? 2 : 3, stepsUsed: [1] } }; }
+      if (system === prompts.SOLUTION_REVIEW_SYSTEM) return { data: { steps: [], rules: [] } };
+      if (system === prompts.ADJUDICATE_SYSTEM) return { data: { problemAtFault: true, reason: 'Ⅱ행이 두 해석을 허용' } };
+      if (system === prompts.WRITE_SOLUTION_SYSTEM) return { data: { solution: { steps: [{ step: 1, title: 'S1', work: '해설 $3$' }], summary: '3' } } };
+      if (system === prompts.REPAIR_SYSTEM) { repairs.push(text); return { data: { problem: { text: '고친 문제', choices: ['1', '2', '3', '4', '5'], answer: 3 } } }; }
+      return { data: { ...generated('처음 문제'), designNote: '설계 메모' } };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem({ ...ctxFor(llm), lean: true }, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(repairs.length, 1);
+  assert.match(repairs[0], /간결 모드 — 바뀐 항목만 반환한다/);
+  assert.match(repairs[0], /"work":"3"/, 'the repair sees the outline, not the written solution');
+  assert.equal(item.problem.text, '고친 문제');
+  assert.equal(item.designNote, '설계 메모', 'what the repair left out is kept');
+  assert.ok(item.verificationSpec?.program?.length, 'the verification program is kept');
+  assert.equal(item.status, 'passed');
+});

@@ -100,6 +100,12 @@ function mock(messages) {
   } else if (system === prompts.PROOFREAD_SYSTEM) data = { fixes: [{ field: 'problem.text', wrong: '실험 I~III에 대한', right: '실험 Ⅰ~Ⅲ에 대한', reason: '로마 숫자' }], solutionStepCount: 3 };
   else if (system === prompts.SOLVE_SYSTEM) data = solved(text);
   else if (system === prompts.SOLUTION_REVIEW_SYSTEM) data = { steps: [{ step: 1, ok: true, issues: [] }], rules: [] };
+  else if (system === prompts.WRITE_SOLUTION_SYSTEM) {
+    // Writes the designer's outline out as is (the real writer expands it in the teacher's format).
+    const outline = (text.split('[출제자의 풀이 요지')[1] || '').split('\n[')[0];
+    const steps = [...outline.matchAll(/^STEP (\d+)\. ([^\n]*)\n([\s\S]*?)(?=\n\nSTEP \d+\.|\n요약:|$)/gm)].map((m) => ({ step: Number(m[1]), title: m[2], work: m[3].trim() }));
+    data = { solution: { steps, summary: '모의 해설' } };
+  } else if (system === prompts.ADJUDICATE_SYSTEM) data = { problemAtFault: false, reason: '모의 판정: 검토자 계산 실수' };
   else data = generated(text);
   const content = JSON.stringify(data);
   return new Promise((resolve) => setTimeout(() => resolve({

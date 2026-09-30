@@ -33,7 +33,12 @@ function createJobs({ store, llm, config }) {
       store, job, budget, signal: controller.signal, provider,
       // Every model call in this job goes to the provider the teacher picked.
       // Except the calls a mixed run gives to another model: the problems (designWith) or only the repairs (repairWith).
-      routes: { ...(job.options?.designWith ? { generate: job.options.designWith } : {}), ...(job.options?.repairWith ? { repair: job.options.repairWith } : {}) },
+      routes: {
+        ...(job.options?.designWith ? { generate: job.options.designWith, 'repair-lean': job.options.designWith, adjudicate: job.options.designWith } : {}),
+        ...(job.options?.repairWith ? { repair: job.options.repairWith } : {}),
+      },
+      // Lean mixed run: the designer writes only an outline; this job's model writes the solution (see pipeline).
+      lean: Boolean(job.options?.lean && job.options?.designWith),
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       maxRepairs: 2,

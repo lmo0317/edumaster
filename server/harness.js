@@ -155,6 +155,16 @@ function checkFormat(item) {
   return [result('format', '표기 형식(수식·표)', !issues.length, issues.slice(0, 6).join('; '))];
 }
 
+/** A STEP of the teacher's solution that works in a table is written with a table too (the lean run's writer once
+ * copied the designer's one-line outline and dropped the teacher's mass and mol tables). */
+const hasTable = (text) => String(text || '').split('\n').filter((l) => /^\s*\|.*\|\s*$/.test(l)).length >= 3;
+function checkSolutionTables(material, item) {
+  const missing = (item.solution?.steps || []).filter((s) => hasTable(material.steps[s.step - 1]?.work) && !hasTable(s.work)).map((s) => s.step);
+  if (!(item.solution?.steps || []).length) return [];
+  return [result('source-tables', '선생님 해설의 표를 해설에서도 씀', !missing.length,
+    missing.length ? `선생님 해설은 STEP ${missing.join(', ')}에서 표로 정리하는데 변형 해설에는 표가 없습니다. 같은 열 구성의 표로 써야 합니다.` : '')];
+}
+
 /** All code checks for one generated problem. */
 /** The solution keeps the teacher's STEP titles; only the experiment numbers (Ⅰ, Ⅱ, Ⅲ) may change. */
 const titleKey = (t) => plain(t).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
@@ -257,6 +267,7 @@ function inspectItem(material, item, mode) {
     ...checkHelpers(material, item),
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
+    ...checkSolutionTables(material, item),
     ...checkEquation(material, item),
     ...checkUnusedCoefficient(item),
     ...checkObviousLeftover(material, item),

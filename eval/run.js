@@ -25,9 +25,9 @@ const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
 const { runCost } = require('./cost');
 // Mixed runs: --analyze-with <p> reads the scans with another model, --design-with <p> writes the problems and their
 // repairs, --repair-with <p> only the repairs; the --providers model does the rest (independent solve, review, checks).
-const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'] };
+const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'], lean: args.lean === 'true' || undefined };
 for (const k of Object.keys(mixed)) if (!mixed[k]) delete mixed[k];
-const mixedName = Object.entries(mixed).map(([k, v]) => `-${k.replace('With', '')}-${v}`).join('');
+const mixedName = Object.entries(mixed).map(([k, v]) => (v === true ? `-${k}` : `-${k.replace('With', '')}-${v}`)).join('');
 const learning = {};
 
 function dataUrl(file) {
@@ -105,7 +105,7 @@ async function main() {
         row.read = { steps: (material.steps || []).map((s) => s.title), question: (material.problem?.text || '').split('\n').filter((l) => l.trim()).pop(), proofread: material.proofread || [] };
         if (stage === 'full' && material.status === 'ready') {
           process.stdout.write(' 생성 중…');
-          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider, designWith: mixed.designWith, repairWith: mixed.repairWith });
+          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider, designWith: mixed.designWith, repairWith: mixed.repairWith, lean: mixed.lean });
           const job = await wait(gen.jobId);
           row.generationUsage = job.usage;
           row.generation = scoreGeneration(job);

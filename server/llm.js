@@ -79,6 +79,9 @@ const REQUIRED = {
   'reread-question': ['question'],
   'reread-problem': ['text'],
   'fix-verification': ['verification'],
+  'write-solution': ['solution'],
+  adjudicate: ['problemAtFault', 'reason'],
+  // 'repair-lean' returns only what changed, so nothing in particular is required.
 };
 
 // The response schema of each call: which top-level keys exist and which keys belong inside each nested object.
@@ -98,6 +101,8 @@ const SHAPES = {
   },
 };
 SHAPES.repair = SHAPES.generate;
+SHAPES['repair-lean'] = SHAPES.generate;
+SHAPES['write-solution'] = { top: ['solution'], nested: { solution: ['steps', 'summary'] } };
 
 function fixShape(data, shape) {
   if (!shape || !data || typeof data !== 'object' || Array.isArray(data)) return { data, moved: [] };
@@ -262,7 +267,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     return JSON.parse(raw);
   }
 
-  async function sendGemma({ messages, maxTokens, effort, signal }) {
+  async function sendGemma({ messages, maxTokens, effort, signal, copying = false }) {
     const status = await gemmaStatus();
     if (!status.available) throw Object.assign(new Error('Gemma(PC)에 연결할 수 없습니다. PC가 켜져 있고 Gemma가 실행 중인지 확인해 주세요.'), { status: 503 });
     // JSON-constrained output that fits the context. Thinking (design/review calls) gets its own budget: left
@@ -271,9 +276,12 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     const maxOut = Math.min(maxTokens, config.gemma.maxOutputTokens);
     // Sampling against loops: at temperature 0.2 Gemma 26B repeated one line until the output limit (5 answers in
     // one set). DRY penalises re-emitting a sequence it just wrote; JSON punctuation resets it, so keys still repeat.
+    // Writing a solution out from an outline repeats the teacher's phrases and table headers on purpose; there DRY
+    // bent the repeats into typos ("반응 후" → "반앦 후", a header split mid-word), so it is off and the
+    // temperature low. The streamed-repeat stop still ends a real loop.
     const payload = {
-      model: status.model, messages, temperature: thinking ? 0.6 : 0.2, top_p: 0.95,
-      dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4,
+      model: status.model, messages, temperature: copying ? 0.2 : thinking ? 0.6 : 0.2, top_p: 0.95,
+      ...(copying ? {} : { dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4 }),
       max_tokens: maxOut,
       chat_template_kwargs: { enable_thinking: thinking },
       response_format: { type: 'json_object' },
@@ -392,7 +400,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       try {
         const tokens = attempt ? Math.min(maxTokens * 2, 128000) : maxTokens;
         envelope = mode === 'mock' ? await mock(messages)
-          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal })
+          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
