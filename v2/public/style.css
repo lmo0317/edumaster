@@ -269,6 +269,13 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .cmp-big { font-size: 40px; font-weight: 800; line-height: 1; }
 .cmp-big.ok { color: var(--ok); } .cmp-big.warn { color: #b97d10; } .cmp-big.bad { color: var(--bad); }
 .cmp-unit { font-size: 16px; font-weight: 700; margin-right: 6px; }
+/* 95% range of the score on a 0–100 track; the dot is the score itself */
+.cmp-range { display: flex; flex-direction: column; gap: 4px; }
+.cmp-band { position: relative; height: 8px; border-radius: 4px; background: var(--line); }
+.cmp-band span { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--accent-soft); border: 1px solid #b9c8f6; }
+.cmp-band i { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; background: var(--accent); }
+.cmp-table tr.cmp-total th, .cmp-table tr.cmp-total td { background: #fafbfd; }
+.cmp-pct { font-size: 17px; } .cmp-pct.ok { color: var(--ok); } .cmp-pct.warn { color: #b97d10; } .cmp-pct.bad { color: var(--bad); }
 .cmp-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-top: 1px dashed var(--line); padding-top: 10px; }
 .cmp-facts span { display: block; font-size: 12px; color: var(--muted); }
 .cmp-facts b { font-size: 15px; }

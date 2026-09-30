@@ -949,8 +949,8 @@
       <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
   }
 
-  // One comparison of the three models: how well each makes problems (newest harness run), what one problem
-  // costs, how long a set takes and when it can be used.
+  // One comparison of the models: a problem-level quality score with its 95% range, the items behind it, what one
+  // problem costs, how long a set takes and when each can be used.
   function compareHtml(sys, status) {
     const c = sys.cost; const cmp = sys.compare;
     const krw = (usd) => `${(Math.round((usd * c.pricing.krwPerUsd) / 10) * 10).toLocaleString()}원`;
@@ -962,14 +962,14 @@
       { id: 'gemma12', name: 'Gemma 4 12B (PC)', price: null, use: '선생님 PC가 켜져 있을 때만 (이전 PC 모델)' },
     ].filter((m) => cmp.models[m.id]);
     if (!MODELS.length) return '<p class="muted small">아직 평가 결과가 없습니다. 평가를 돌리면 모델별 비교가 표시됩니다.</p>';
-    const quality = (m) => pct(cmp.models[m.id].overall) ?? 0;
+    const quality = (m) => cmp.models[m.id].score ?? 0;
     const best = Math.max(...MODELS.map(quality));
     const paid = MODELS.filter((m) => m.price && c.perProblem);
     const cheapest = paid.length ? paid.reduce((a, m) => (c.perProblem[m.price] < c.perProblem[a.price] ? m : a)) : null;
     const tag = (m) => [quality(m) === best ? '<span class="chip ok">문제 품질 1위</span>' : '', m === cheapest ? '<span class="chip run">저렴한 유료</span>' : '', !m.price ? '<span class="chip ok">무료</span>' : ''].join(' ');
     const range = (r) => `약 ${krw(r[0])} ~ ${krw(r[1])}`;
     const costOf = (m) => (!m.price ? '0원' : m.price === 'opus' && c.opusRange ? range(c.opusRange.problem) : c.perProblem ? `약 ${krw(c.perProblem[m.price])}` : '-');
-    const tone = (v) => (v == null ? '' : v >= 95 ? 'ok' : v >= 75 ? 'warn' : 'bad');
+    const tone = (v) => (v == null ? '' : v >= 90 ? 'ok' : v >= 60 ? 'warn' : 'bad');
     const cell = (s) => {
       const v = pct(s);
       if (v == null) return '<td class="muted small">해당 없음</td>';
@@ -981,28 +981,31 @@
       return `<div class="sys-card cmp-card">
         <div class="model-head"><b>${m.name}</b></div>
         <div class="cmp-tags">${tag(m)}</div>
-        <div class="cmp-score"><span class="cmp-big ${tone(v)}">${v}</span><span class="cmp-unit">점</span><span class="muted small">문제 만들기 검사 통과율</span></div>
+        <div class="cmp-score"><span class="cmp-big ${tone(v)}">${v}</span><span class="cmp-unit">점</span><span class="muted small">문제 품질 점수</span></div>
+        <div class="cmp-range"><div class="cmp-band"><span style="left:${q.low}%;width:${Math.max(1, q.high - q.low)}%"></span><i style="left:${v}%"></i></div><span class="muted tiny">믿을 수 있는 범위 ${q.low}~${q.high}점 · ${q.problems}문제(${q.runs}회) 평가</span></div>
         <div class="cmp-facts">
+          <div><span>바로 쓸 수 있는 문제</span><b>${q.metrics.clear.pass}/${q.metrics.clear.total}</b></div>
+          <div><span>끝까지 만든 문제</span><b>${q.metrics.made.pass}/${q.metrics.made.total}</b></div>
+          <div><span>원본 읽기 정확도</span><b>${pct(q.read)}%</b></div>
           <div><span>문제 1개 비용</span><b>${costOf(m)}</b></div>
           <div><span>3문제 세트 시간</span><b>약 ${q.minutes}분</b></div>
-          <div><span>평가 횟수</span><b>${q.runs}회${q.runs > 1 ? ' 합산' : ''}</b></div>
-          <div><span>원본 읽기 정확도</span><b>${pct(q.read)}%</b></div>
           <div><span>사용 조건</span><b class="small">${m.use}</b></div>
         </div></div>`;
     }).join('');
-    const rows = cmp.metrics.map((x) => `<tr><th>${x.label}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
+    const scoreRow = `<tr class="cmp-total"><th>문제 품질 점수<div class="muted tiny">아래 항목의 가중 평균, 못 만든 문제는 0점</div></th>${MODELS.map((m) => { const q = cmp.models[m.id]; return `<td><b class="cmp-pct ${tone(q.score)}">${q.score}점</b><div class="muted tiny">범위 ${q.low}~${q.high} · ${q.problems}문제</div></td>`; }).join('')}</tr>`;
+    const rows = cmp.metrics.map((x) => `<tr><th>${x.label}${x.weight ? `<div class="muted tiny">가중치 ${x.weight}</div>` : ''}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
     const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange && krw(c.perProblemRange[m.price][0]) !== krw(c.perProblemRange[m.price][1]) ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
     const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${!m.price ? '0원' : m.price === 'opus' && c.opusRange ? range(c.opusRange.set) : `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}`}</b></td>`).join('')}</tr>` : '';
     const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
     return `<div class="sys-cards cmp-cards">${cards}</div>
       <div class="table-wrap"><table class="cmp-table">
         <tr><th></th>${MODELS.map((m) => `<th>${m.name}</th>`).join('')}</tr>
-        <tr class="grp"><td colspan="${MODELS.length + 1}">문제를 얼마나 잘 만드나</td></tr>
-        ${rows}
+        <tr class="grp"><td colspan="${MODELS.length + 1}">문제를 얼마나 잘 만드나 (만들려고 한 문제 하나하나를 기준으로)</td></tr>
+        ${scoreRow}${rows}
         <tr class="grp"><td colspan="${MODELS.length + 1}">비용</td></tr>
         ${costRow}${setRow}
       </table></div>
-      <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토의 검사 결과를 모은 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). 같은 모델도 돌릴 때마다 결과가 달라서, 여러 번 평가한 모델은 모든 회차를 합산했습니다. 문제 수가 적어 참고용이며, 평가를 다시 돌리면 갱신됩니다.
+      <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토 결과를 문제 하나하나 채점한 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). <b>문제 품질 점수</b>는 문제마다 항목별 가중치(정답·계산 30, STEP 범위 15, 풀이 방법 15, 조건 10, 지침 10, 바로 사용 10, 최종 문제의 새 구조 10)로 채점해 평균한 값이고, 만들지 못한 문제는 0점으로 셉니다. 같은 모델도 돌릴 때마다 결과가 달라서 여러 번 평가한 모델은 모든 회차를 합쳤습니다. <b>믿을 수 있는 범위</b>는 평가한 문제 수로 본 95% 신뢰 구간(윌슨 구간)입니다. 문제가 적으면 넓어지므로, 범위가 겹치는 모델끼리는 차이가 확실하지 않습니다. 최종 문제의 새 구조는 한 번만 평가한 모델이면 직접 비교한 판정을 씁니다.
       비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. ${c.opusRange ? 'Opus는 토큰 수가 기록되지 않는 방식으로 돌렸기 때문에, 실제로 주고받은 글자 수로 추정한 범위입니다 (생각 토큰은 측정하지 못해 답변의 0~2배로 잡음).' : 'Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다.'} DeepSeek 충전 잔액: <span id="balance">확인 중…</span></p>`;
   }
 

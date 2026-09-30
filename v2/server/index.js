@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
 const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey } = require('./llm');
+const { DIMENSIONS, problemResults, problemScore, wilson } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
@@ -347,19 +348,11 @@ function createApp(options = {}) {
       tokens: { problem, analysis },
     };
   }
-  // Model comparison for teachers: the newest full eval of each model, grouped into what a teacher cares about.
-  const QUALITY = [
-    ['made', '문제를 끝까지 만들어 냄', (n) => /: 문제 생성$/.test(n)],
-    ['correct', '계산과 정답이 맞음', (n) => /: (코드 검산|독립 풀이 정답 일치)$/.test(n)],
-    ['clean', '쓸모없는 조건이 없음', (n) => /: 모든 조건이 풀이에 쓰임$/.test(n)],
-    ['range', '목표한 STEP만으로 풀림', (n) => /: 목표 STEP 범위로 풀림$/.test(n)],
-    ['method', '선생님 풀이 방법 유지', (n) => /: 교사 풀이 방법 보존$/.test(n)],
-    ['structural', '최종 문제를 새 구조로 설계', (n) => /구조 변형/.test(n)],
-    ['clear', '교사 검토 없이 바로 쓸 수 있음', (n) => /: 교사 검토 필요 없음$/.test(n)],
-  ];
-  // Every full run of a model counts (one run swings by ±4 of 29 checks). The PC provider is split by the local
+  // Model comparison for teachers (scoring in scoring.js). Every full run of a model counts (one run swings by ±4 of 29 checks). The PC provider is split by the local
   // model each run used; `only` limits the models shown (the comparison page leaves out rejected candidates).
-  function modelComparison(onlyCase, only) {
+  // verdicts: a hand-checked verdict on a model's final problem ('ok' / 'no'), used for a model evaluated once
+  // (the automatic check passed DeepSeek's final, which only changed numbers).
+  function modelComparison(onlyCase, only, verdicts = {}) {
     const dir = path.join(cfg.root, 'eval', 'reports');
     const runs = {};
     if (fs.existsSync(dir)) {
@@ -378,18 +371,27 @@ function createApp(options = {}) {
     const tally = (pred, list) => { const hit = list.filter((c) => pred(c.name)); return { pass: hit.filter((c) => c.pass).length, total: hit.length }; };
     const out = {};
     for (const [key, rows] of Object.entries(runs)) {
-      const gen = rows.flatMap((r) => r.generation || []);
+      const problems = rows.flatMap(problemResults);
+      const verdict = rows.length === 1 ? verdicts[key] : null;
+      if (verdict) for (const p of problems) if (p.final && p.dims.made) p.dims.structural = verdict === 'ok';
+      for (const p of problems) p.score = problemScore(p);
       const pc = rows[0].provider === 'gemma';
+      const scores = problems.map((p) => p.score);
+      const mean = scores.reduce((a, s) => a + s, 0) / (scores.length || 1);
+      const [low, high] = wilson(mean, scores.length);
+      const rate = (dim) => { const hit = problems.filter((p) => p.dims[dim] !== undefined); return { pass: hit.filter((p) => p.dims[dim]).length, total: hit.length }; };
       out[key] = {
         when: rows[rows.length - 1].when, runs: rows.length, pc,
         label: pc ? pcModelLabel(rows[rows.length - 1].model || 'gemma-4-12b').replace(' (PC)', '') : undefined,
         read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
-        overall: tally(() => true, gen),
-        metrics: Object.fromEntries(QUALITY.map(([id, , pred]) => [id, tally(pred, gen)])),
+        problems: problems.length,
+        // 0–100 with a 95% range from the number of problems: 3 perfect problems prove less than 30 would.
+        score: Math.round(mean * 100), low: Math.round(low * 100), high: Math.round(high * 100),
+        metrics: Object.fromEntries(DIMENSIONS.map(([id]) => [id, { ...rate(id), ...(id === 'structural' && verdict ? { reviewed: true } : {}) }])),
         minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
       };
     }
-    return { metrics: QUALITY.map(([id, label]) => ({ id, label })), models: out };
+    return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
   const COMPARED = ['relay', 'deepseek', 'qwen36', 'gemma12'];
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
@@ -415,7 +417,8 @@ function createApp(options = {}) {
     const feedback = path.join(compareDir, `${id}.feedback.json`);
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
     // Quality and cost of each model on this case alone.
-    bundle.overview = { compare: modelComparison(id, COMPARED), cost: costEstimate(id) };
+    const verdicts = Object.fromEntries(Object.entries(bundle.feedback?.models || {}).map(([k, v]) => [k, v.final?.[0]]).filter(([, v]) => v));
+    bundle.overview = { compare: modelComparison(id, COMPARED, verdicts), cost: costEstimate(id) };
     // Opus cost from what its run actually exchanged: 0.6–1.0 token per character (Korean + LaTeX), reasoning
     // tokens not measured so 0–2× the written answer, 1,000–1,600 tokens per image. A range, not one number.
     const rm = bundle.relayMeasure;
@@ -428,18 +431,6 @@ function createApp(options = {}) {
       const analysis = [usd(an.inChars * 0.6 + an.images * 1000, an.outChars * 0.6), usd(an.inChars + an.images * 1600, an.outChars * 3)];
       cost.opusRange = { problem, analysis, set: [analysis[0] + problem[0] * 3, analysis[1] + problem[1] * 3] };
       if (cost.perProblem) cost.perProblem.opus = (problem[0] + problem[1]) / 2;
-    }
-    // Where the final problem was compared by hand, that verdict replaces the automatic "structural" check
-    // (the automatic one passed DeepSeek's final, which only changed numbers).
-    // It judges one problem set, so it stands in only for a model evaluated once.
-    for (const [key, m] of Object.entries(bundle.overview.compare.models)) {
-      const verdict = bundle.feedback?.models?.[key]?.final?.[0];
-      if (m.runs !== 1) continue;
-      const auto = m.metrics.structural;
-      if (!verdict || !auto?.total) continue;
-      const pass = verdict === 'ok' ? auto.total : 0;
-      m.overall = { pass: m.overall.pass - auto.pass + pass, total: m.overall.total };
-      m.metrics.structural = { pass, total: auto.total, reviewed: true };
     }
     return bundle;
   });
