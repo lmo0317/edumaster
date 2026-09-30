@@ -15,7 +15,7 @@ const material = {
 };
 const generated = (text) => ({
   problem: { text, choices: ['1', '2', '3', '4', '5'], answer: 3 },
-  solution: { steps: [{ step: 1, title: 'a', work: '3' }], summary: '3' },
+  solution: { steps: [{ step: 1, title: 'S1', work: '3' }], summary: '3' },
   usesSteps: [1, 2], designNote: 'd', appliedRules: [],
   verification: { program: ['ans = 3'], answer: 'ans', choices: ['1', '2', '3', '4', '5'] },
 });
@@ -49,7 +49,7 @@ test('an unused condition triggers the one repair, and the fixed problem passes'
   assert.equal(item.status, 'passed');
 });
 
-test('an integrated final that only changed numbers is sent back once and stays flagged if still so', async () => {
+test('an integrated final that only changed numbers is sent back once and goes to the teacher if still so', async () => {
   const llm = fakeLlm([
     { answer: 3, stepsUsed: [1, 2], variation: 'numbers-only', variationNote: '표 구조와 질문이 같다' },
     { answer: 3, stepsUsed: [1, 2], variation: 'numbers-only', variationNote: '여전히 같다' },
@@ -59,8 +59,9 @@ test('an integrated final that only changed numbers is sent back once and stays 
   const solveCalls = llm.calls.filter((c) => c.system === prompts.SOLVE_SYSTEM);
   assert.ok(solveCalls.every((c) => c.text.includes('[원본 문제 — variation 판정에만 사용')), 'solver sees the original for integrated finals');
   assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 1);
-  assert.equal(item.status, 'warning');
-  assert.match(item.warnings.join(), /숫자만 바뀌었습니다/);
+  // Numbers-only after the repair is the teacher's main complaint, so it is not left as a usable "check this".
+  assert.equal(item.status, 'needs_review');
+  assert.match(item.problems.join(), /숫자만 바뀌었습니다/);
 });
 
 test('numeric-twin mode does not ask for a structural redesign', async () => {
@@ -130,4 +131,26 @@ test('a repair answer that leaves out how each rule was kept does not wipe the f
   assert.deepEqual(item.appliedRules, [{ id: 'r1', how: '표만 남기고 온도 조건을 뺐다' }]);
   assert.equal(item.designNote, 'd');
   assert.equal(item.verification.rules[0].how, '표만 남기고 온도 조건을 뺐다');
+});
+
+test('a target STEP the solver could skip, and a STEP title that is not the teacher\'s, are sent back for repair', async () => {
+  const solves = [
+    { answer: 3, stepsUsed: [2], shortcuts: [{ step: 1, how: '남은 질량이 넣은 A보다 커서 남은 물질이 바로 보임' }], conditions: [] },
+    { answer: 3, stepsUsed: [1, 2], conditions: [] },
+  ];
+  const repairs = [];
+  const llm = {
+    json: async ({ system, text }) => {
+      if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+      if (system === prompts.REPAIR_SYSTEM) { repairs.push(text); return { data: generated('고친 문제') }; }
+      const first = generated('처음 문제');
+      return { data: { ...first, solution: { steps: [{ step: 1, title: '한계 반응물 판정 (경우 나누기)', work: '3' }], summary: '3' } } };
+    },
+  };
+  const item = { index: 1, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(repairs.length, 1);
+  assert.match(repairs[0], /STEP 1의 핵심 기법 없이 결론이 나옵니다: 남은 질량이/);
+  assert.match(repairs[0], /해설 STEP 제목을 선생님 해설의 제목대로/);
+  assert.equal(item.status, 'passed');
 });

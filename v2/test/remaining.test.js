@@ -32,7 +32,7 @@ const material = {
 };
 const generated = (n) => ({
   problem: { text: `문제 ${n}\n` + table([`| Ⅰ | $${n + 10}w$ | $${n + 20}w$ | $1w$ |`]), choices: ['1', '2', '3', '4', '5'], answer: 3 },
-  solution: { steps: [{ step: 1, title: 'a', work: '3' }], summary: '3' }, usesSteps: [1], designNote: 'd', appliedRules: [],
+  solution: { steps: [{ step: 1, title: 'S1', work: '3' }], summary: '3' }, usesSteps: [1], designNote: 'd', appliedRules: [],
   verification: { program: ['ans = 3'], answer: 'ans', choices: ['1', '2', '3', '4', '5'] },
 });
 function run(solves) {
@@ -60,7 +60,9 @@ test('the same complaint after a repair stops the loop (no token burn)', async (
     { answer: 3, stepsUsed: [1] },
   ]);
   assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 1);
-  assert.equal(item.status, 'warning');
+  // A problem still outside its STEP range is not handed out as usable; the teacher sees why.
+  assert.equal(item.status, 'needs_review');
+  assert.match(item.problems.join(), /STEP 범위/);
 });
 
 // Opus bio run (2026-09-29): membrane potentials read off one shared curve were flagged as "reused numbers".

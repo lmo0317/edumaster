@@ -103,3 +103,13 @@ test('duplicated marker lists (one per STEP) still resolve to the real step coun
   assert.deepEqual(view.stepMarkers, ['step1', 'step2', 'step3']);
   assert.equal(view.targetSteps, 3);
 });
+
+test('an integrated final keeping the original table shape and hidden-value cell is caught by code', () => {
+  const harness = require('../server/harness');
+  const table = (rows) => `| 실험 | A | B | 남은 | 상댓값 |\n|---|---|---|---|---|\n${rows}`;
+  const material = { problem: { text: table('| Ⅰ | $5w$ | $5w$ | $2w$ | $x$ |\n| Ⅱ | $4w$ | $6w$ | $2w$ | 18 |\n| Ⅲ | $2w$ | $7w$ | $w$ | 20 |') }, steps: [] };
+  const twin = (text) => ({ stage: { kind: 'twin' }, problem: { text, choices: [] }, solution: { steps: [] } });
+  const shape = (item) => harness.inspectItem(material, item, 'integrated').find((c) => c.id === 'variant-shape');
+  assert.equal(shape(twin(table('| Ⅰ | $4w$ | $3w$ | $2w$ | $x$ |\n| Ⅱ | $2w$ | $6w$ | $3w$ | 10 |\n| Ⅲ | $2w$ | $9w$ | $6w$ | 7 |'))).state, 'fail');
+  assert.equal(shape(twin(table('| Ⅰ | $4w$ | $4w$ | $2w$ | 16 |\n| Ⅱ | $3w$ | $8w$ | $2w$ | 15 |') + '\n실험 Ⅲ은 A $2w$ g, B $6w$ g')).state, 'pass');
+});

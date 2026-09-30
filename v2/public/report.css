@@ -10,6 +10,12 @@ body.report { background: #e9ecf1; }
 .ans { margin: 14px 0 22px; break-inside: avoid-page; }
 .ans .qhead { font-weight: 800; }
 .review-flag { font-size: 12px; color: var(--bad); font-weight: 700; margin-left: 6px; }
+/* A worksheet table must fit the page: the app's tables keep cells on one line and scroll sideways, which in a PDF
+   cut off the last column (the final problem's relative values were not printed). Wrap at word boundaries instead. */
+#doc .table-wrap { overflow-x: visible; }
+#doc .rich table { max-width: 100%; }
+#doc .rich th, #doc .rich td { white-space: normal; word-break: keep-all; }
+#doc .rich tr > :first-child { white-space: nowrap; }
 @media (max-width: 700px) { #doc { padding: 20px 16px; margin: 0; } }
 @media print {
   @page { size: A4; margin: 14mm 13mm; }

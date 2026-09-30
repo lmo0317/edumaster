@@ -10,9 +10,14 @@
     return tex.replace(/[가-힣]+(?:(?:\s|\\ )+[가-힣]+)*/g, (run) => `\\text{${run.replace(/\\ /g, ' ')}}`);
   }
 
+  // "\ce{A}(g)" leaves the state outside \ce, where it is set as an italic g; move it inside: "\ce{A(g)}".
+  function statesInsideCe(tex) {
+    return tex.replace(/\\ce\{([^{}]*)\}\s*\((g|l|s|aq)\)/g, '\\ce{$1($2)}');
+  }
+
   function renderMath(tex, display) {
     if (!window.katex) return escape(display ? `$$${tex}$$` : `$${tex}$`);
-    tex = hangulAsText(tex);
+    tex = hangulAsText(statesInsideCe(tex));
     try {
       return window.katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', trust: false, output: 'html' });
     } catch { return escape(tex); }

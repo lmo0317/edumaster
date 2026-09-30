@@ -25,6 +25,14 @@ const SAMPLE = {
 
 let counter = 0;
 
+// How many original STEPs a stage uses, from the stage name the prompt (or the problem's mock tag) carries.
+function stageSteps(label, total) {
+  const upto = /STEP 1~(\d+)/.exec(label || '');
+  if (upto) return Number(upto[1]);
+  if (/STEP 1 연습/.test(label || '')) return 1;
+  return total;
+}
+
 function generated(text) {
   counter++;
   const stageMatch = /\[이번에 만들 문제: ([^\]]+)\]/.exec(text);
@@ -36,6 +44,9 @@ function generated(text) {
   const answer = rotated.indexOf(answerValue) + 1;
   const ruleIds = [...text.matchAll(/- \(([a-f0-9]{16})\)/g)].map((m) => m[1]);
   const wantsFix = /\[발견된 문제\]/.test(text);
+  // The original's STEP titles as the prompt lists them (the teacher may have edited them).
+  const titles = [...text.matchAll(/^STEP (\d+)\. (.+)$/gm)].map((m) => m[2]);
+  const k = stageSteps(stageMatch?.[1], titles.length || SAMPLE.steps.length);
   return {
     problem: {
       text: `[모의 생성 · ${stageMatch ? stageMatch[1] : '문제'}] 반응 후 남은 A의 질량이 $a=${a}w$, B의 질량이 $b=${b}w$일 때 $a+b$의 값은? (단위 $w$)`,
@@ -43,8 +54,15 @@ function generated(text) {
       answer: counter === 2 && !wantsFix ? (answer % 5) + 1 : answer, // second problem starts wrong to exercise repair
       figure: '',
     },
-    solution: { steps: [{ step: 1, title: '두 값을 더한다', work: `$a+b=${a}+${b}=${answerValue}$` }], summary: `정답 ${answerValue}` },
-    usesSteps: [1],
+    // Keeps the teacher's STEP titles and method, as a good answer does (assume → contradiction, then n and m).
+    solution: {
+      steps: Array.from({ length: k }, (_, i) => ({
+        step: i + 1, title: titles[i] || SAMPLE.steps[i]?.title || `STEP ${i + 1}`,
+        work: i === 0 ? `만약 A가 모두 반응했다면 주어진 자료와 맞지 않다. 따라서 B가 모두 반응한다. $a+b=${a}+${b}=${answerValue}$` : 'A $w$ g의 양을 $n$, B $w$ g의 양을 $m$이라 한다.',
+      })),
+      summary: `정답 ${answerValue}`,
+    },
+    usesSteps: Array.from({ length: k }, (_, i) => i + 1),
     designNote: '모의 모드: 실제 모델을 호출하지 않았습니다.',
     appliedRules: ruleIds.map((id) => ({ id, how: '모의 모드에서 지침을 확인했다고 표시' })),
     verification: { program: [`a = ${a}`, `b = ${b}`, 'ans = a + b'], answer: 'ans', choices: rotated.map(String), free: [], checks: [{ expr: 'a > 0 and b > 0', desc: '질량은 양수' }] },
@@ -56,8 +74,9 @@ function solved(text) {
   const lines = text.split('\n');
   const choices = lines.filter((l) => /^\d\) /.test(l)).map((l) => l.slice(3).trim());
   const index = choices.indexOf(String(a + b)) + 1;
-  // Report every STEP listed in the reference list as used (a real solver of the final problem would).
-  const stepsUsed = [...text.matchAll(/^STEP (\d+)\./gm)].map((m) => Number(m[1]));
+  // The STEPs the problem's stage needs (its mock tag names the stage).
+  const listed = [...text.matchAll(/^STEP (\d+)\./gm)].length;
+  const stepsUsed = Array.from({ length: stageSteps(/\[모의 생성 · ([^\]]+)\]/.exec(text)?.[1], listed) }, (_, i) => i + 1);
   return { solution: `$${a}+${b}=${a + b}$`, answer: index, answerValue: String(a + b), confident: true, stepsUsed, issues: [], rules: [] };
 }
 

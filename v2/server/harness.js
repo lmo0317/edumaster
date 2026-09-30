@@ -155,13 +155,55 @@ function checkFormat(item) {
 }
 
 /** All code checks for one generated problem. */
+/** The solution keeps the teacher's STEP titles; only the experiment numbers (Ⅰ, Ⅱ, Ⅲ) may change. */
+const titleKey = (t) => plain(t).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
+function checkStepTitles(material, item) {
+  const out = [];
+  for (const s of item.solution?.steps || []) {
+    const original = material.steps[s.step - 1]?.title;
+    if (!original || !s.title) continue;
+    if (titleKey(s.title) !== titleKey(original)) out.push(`STEP ${s.step} "${plain(s.title)}" → 원본 "${plain(original)}"`);
+  }
+  if (!(item.solution?.steps || []).length) return [];
+  return [result('source-step-titles', '해설 STEP 제목이 선생님 해설과 같음', !out.length,
+    out.length ? `해설 STEP 제목을 선생님 해설의 제목대로 써야 합니다: ${out.join('; ')}` : '')];
+}
+
+/** Data rows of the first table: experiment rows (Ⅰ, Ⅱ, …) and the cells that hold a hidden letter (x, y). */
+function tableShape(text) {
+  const rows = String(text || '').split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('|'))
+    .map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim()))
+    .filter((cells) => /^(Ⅰ|Ⅱ|Ⅲ|Ⅳ|I|II|III|IV)$/.test(cells[0]));
+  if (!rows.length) return null;
+  // A letter used as the unit elsewhere ("5w") is a quantity when it stands alone ("w" = 1w), not a hidden value.
+  const units = new Set(rows.flat().flatMap((c) => [...c.matchAll(/\d\s*([a-z])\b/g)].map((m) => m[1])));
+  const hidden = rows.flatMap((cells, r) => cells.map((c, i) => (/^[a-z]$/.test(c) && !units.has(c) ? `${r}:${i}` : null)).filter(Boolean));
+  return { rows: rows.length, cols: Math.max(...rows.map((c) => c.length)), hidden };
+}
+
+/** An integrated final with the original's table shape and the hidden value in the same cell only changed numbers
+ * (DeepSeek's final kept Ⅰ~Ⅲ, the same columns and x in row Ⅰ and just recombined b, x and the molar-mass ratio). */
+function checkSameShape(material, item, mode) {
+  if (item.stage.kind !== 'twin' || mode !== 'integrated') return [];
+  const a = tableShape(material.problem.text);
+  const b = tableShape(item.problem.text);
+  if (!a || !b || !a.hidden.length) return [];
+  const same = a.rows === b.rows && a.cols === b.cols && a.hidden.join() === b.hidden.join();
+  return [result('variant-shape', '통합 변형: 표 구조와 숨긴 값 위치를 바꿨는지', !same,
+    same ? `실험 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다.` : '')];
+}
+
 function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
     ...checkOxConsistency(item),
     ...checkHelpers(material, item),
     ...checkAssumption(material, item),
+    ...checkStepTitles(material, item),
     ...checkNumbersOnly(material, item, mode),
+    ...checkSameShape(material, item, mode),
     ...checkClueLeak(material, item),
     ...checkFormat(item),
   ];

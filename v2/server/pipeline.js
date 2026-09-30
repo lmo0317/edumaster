@@ -433,7 +433,7 @@ async function sourceChecks(material) {
 
 // ---------------------------------------------------------------- generation
 
-function coverage(stage, stepCount, used) {
+function coverage(stage, stepCount, used, shortcuts = []) {
   const expected = stage.kind === 'upto' ? Array.from({ length: stage.upto }, (_, i) => i + 1)
     : stage.kind === 'focus' ? [stage.step]
     : Array.from({ length: stepCount }, (_, i) => i + 1);
@@ -443,6 +443,8 @@ function coverage(stage, stepCount, used) {
   const notes = [];
   if (missing.length) notes.push(`독립 풀이에서 STEP ${missing.join(', ')} 로직 없이 풀렸습니다.`);
   if (extra.length) notes.push(`독립 풀이에 목표 범위 밖 STEP ${extra.join(', ')} 로직이 필요했습니다.`);
+  // A target STEP whose technique can be skipped (e.g. the leftover is obvious from the masses) is not practised.
+  for (const c of shortcuts.filter((x) => expected.includes(x.step))) notes.push(`STEP ${c.step}의 핵심 기법 없이 결론이 나옵니다: ${c.how}`);
   return { status: notes.length ? 'warn' : 'pass', expected, used, notes };
 }
 
@@ -467,6 +469,7 @@ async function blindSolve(ctx, item, material, rules, compareOriginal) {
     confident: data?.confident !== false,
     solution: str(data?.solution, 6000),
     stepsUsed: arr(data?.stepsUsed).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0),
+    shortcuts: arr(data?.shortcuts).map((c) => ({ step: Number.parseInt(c?.step, 10) || 0, how: str(c?.how, 400) })).filter((c) => c.step > 0 && c.how).slice(0, 6),
     issues: arr(data?.issues).map((i) => ({ type: str(i?.type, 30) || 'other', detail: str(i?.detail, 600) })).filter((i) => i.detail).slice(0, 10),
     rules: arr(data?.rules).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id),
     conditions: arr(data?.conditions).map((c) => ({ text: str(c?.text, 300), used: c?.used !== false })).filter((c) => c.text).slice(0, 30),
@@ -554,7 +557,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
     else if (blind.answer !== item.problem.answer) hard.push(`독립 풀이의 정답은 ${blind.answer}번(${blind.answerValue})인데 표시된 정답은 ${item.problem.answer}번입니다. 독립 풀이 요약: ${blind.solution.slice(0, 600)}`);
   }
   for (const issue of blind.issues) (BLOCKING_ISSUES.has(issue.type) ? hard : soft).push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
-  const cov = coverage(item.stage, material.steps.length, blind.stepsUsed);
+  const cov = coverage(item.stage, material.steps.length, blind.stepsUsed, blind.shortcuts);
   // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
   if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
   soft.push(...cov.notes);
@@ -573,7 +576,8 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
     const judged = blind.rules.find((b) => b.id === r.id);
-    if (judged && !judged.ok) soft.push(`교사 지침 미준수 가능: ${r.text.slice(0, 80)} — ${judged.note}`);
+    // A rule the independent reviewer finds broken is sent back for repair like any other design fault.
+    if (judged && !judged.ok) designNotes.push(`교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`);
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
@@ -636,9 +640,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
     check = await verifyItem(ctx, item, material, rules, mode, prior);
   }
   item.verification = check.verification;
-  item.problems = check.hard;
-  item.warnings = check.soft;
-  item.status = check.hard.length ? 'needs_review' : check.soft.length ? 'warning' : 'passed';
+  // What the repairs could not fix goes to the teacher: a wrong answer, a problem that skips or overshoots its
+  // STEPs, an unused condition, a numbers-only final, a broken rule. Only light notes leave it usable.
+  const unresolved = [...check.hard, ...check.coverageNotes.map((n) => 'STEP 범위: ' + n), ...check.designNotes.map((n) => '문제 설계: ' + n)];
+  item.problems = unresolved;
+  item.warnings = check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w));
+  item.status = unresolved.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
   ctx.log(`${item.label}: ${{ passed: '검증 통과', warning: '통과 (확인할 점 있음)', needs_review: '교사 검토 필요' }[item.status]}`);
   ctx.save();
 }
