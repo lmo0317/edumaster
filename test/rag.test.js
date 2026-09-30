@@ -87,3 +87,12 @@ test('a two-letter teacher correction is learned; a rewritten sentence is not', 
   const after = { problem: { text: 'A와 B의 부피비는?', choices: [] }, steps: [{ title: 't', work: '처음 넣은 기체 전체를 비교한다', result: '' }] };
   assert.deepEqual(readingCorrections(before, after), [['질량비', '부피비']]);
 });
+
+test('a problem\'s own feedback goes to that problem only, before the rules for every problem', () => {
+  const base = { status: 'approved', kind: 'feedback', target: 'problem', createdAt: '2026-09-30T01:00:00Z', updatedAt: '2026-09-30T01:00:00Z', text: 'x' };
+  const mine = { ...base, id: 'm1m1m1m1m1m1m1m1', scope: 'material', source: { materialId: 'aaaa' }, text: '이 문제: 남는 물질을 표에 적지 말 것' };
+  const other = { ...base, id: 'm2m2m2m2m2m2m2m2', scope: 'material', source: { materialId: 'bbbb' } };
+  const global = { ...base, id: 'g1g1g1g1g1g1g1g1', scope: 'global', updatedAt: '2026-09-30T05:00:00Z' };
+  const ids = selectRules([global, other, mine], { id: 'aaaa', subject: '화학' }).map((r) => r.id);
+  assert.deepEqual(ids, ['m1m1m1m1m1m1m1m1', 'g1g1g1g1g1g1g1g1']);
+});

@@ -73,7 +73,8 @@ function createApp(options = {}) {
     });
     req.on('error', reject);
   });
-  const materialSummary = (m) => ({ id: m.id, title: m.title, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error });
+  const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
+    feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
     parentJobId: j.parentJobId, itemIndex: j.itemIndex,
@@ -156,7 +157,7 @@ function createApp(options = {}) {
   });
 
   // materials
-  route('GET', /^\/api\/materials$/, () => store.materials.all().map(materialSummary));
+  route('GET', /^\/api\/materials$/, () => { const rules = store.rules.all(); return store.materials.all().map((m) => materialSummary(m, rules)); });
   route('POST', /^\/api\/materials$/, async (req) => {
     const body = await readBody(req, Math.ceil(cfg.maxUploadBytes * 1.4));
     if (!body.problemImage) throw fail(400, '문제 이미지를 넣어 주세요.');
@@ -280,8 +281,15 @@ function createApp(options = {}) {
       const item = job?.items?.[source.itemIndex];
       if (job) source = { ...source, materialId: job.materialId, label: `${job.title} · ${item?.label || ''}`, excerpt: (item?.problem?.text || job.material?.problem?.text || '').slice(0, 600) };
       if (job && !body.subject) { body.subject = job.material?.subject; body.topic = job.material?.topic; }
+    } else if (source?.materialId && isId(source.materialId)) {
+      // Feedback written on the problem page itself (on the original, its reading or the variants in general).
+      const material = getMaterial(source.materialId);
+      source = { materialId: material.id, label: material.title };
+      if (!body.subject) { body.subject = material.subject; body.topic = material.topic; }
     }
-    return store.rules.put(makeRule({ ...body, source }));
+    // Feedback on a problem belongs to that problem unless the teacher widens it.
+    const scope = body.scope || (source?.materialId ? 'material' : 'global');
+    return store.rules.put(makeRule({ ...body, scope, source }));
   });
   route('PUT', /^\/api\/rules\/([a-f0-9]+)$/, async (req, res, [id]) => {
     const rule = store.rules.get(id) || (() => { throw fail(404, '지침을 찾지 못했습니다.'); })();

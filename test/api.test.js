@@ -279,3 +279,30 @@ test('lean mixed run end to end (mock): the designer writes and adjudicates, the
     await new Promise((r) => app.server.close(r));
   }
 });
+
+test('problem feedback: written on the problem page or on a variant it belongs to that problem and reaches only its sets', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    const b = (await s.call('POST', '/api/materials', { title: 'B', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId); await s.waitJob(b.jobId);
+    const onPage = (await s.call('POST', '/api/rules', { text: 'A 문제 전용: 표에 남는 물질을 적지 말 것', target: 'problem', source: { materialId: a.material.id } })).data;
+    assert.equal(onPage.scope, 'material');
+    assert.equal(onPage.status, 'approved');
+    const genA = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    assert.ok(genA.rules.some((r) => r.id === onPage.id), 'A\'s set carries A\'s feedback');
+    const onVariant = (await s.call('POST', '/api/rules', { text: '이 변형처럼 조건을 늘리지 말 것', source: { jobId: genA.id, itemIndex: 0 } })).data;
+    assert.equal(onVariant.scope, 'material', 'feedback on a variant goes to its original problem');
+    assert.equal(onVariant.source.materialId, a.material.id);
+    const genB = await s.waitJob((await s.call('POST', '/api/generations', { materialId: b.material.id, mode: 'integrated' })).data.jobId);
+    assert.ok(!genB.rules.some((r) => [onPage.id, onVariant.id].includes(r.id)), 'B never gets A\'s feedback');
+    const list = (await s.call('GET', '/api/materials')).data;
+    assert.equal(list.find((x) => x.id === a.material.id).feedbackCount, 2);
+    assert.equal(list.find((x) => x.id === b.material.id).feedbackCount, 0);
+    // Widened to every problem, it reaches B too.
+    await s.call('PUT', '/api/rules/' + onPage.id, { scope: 'global' });
+    const genB2 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: b.material.id, mode: 'integrated' })).data.jobId);
+    assert.ok(genB2.rules.some((r) => r.id === onPage.id));
+  } finally { await s.close(); }
+});

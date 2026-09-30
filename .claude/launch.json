@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "edumaster-v2-mock", "runtimeExecutable": "node", "runtimeArgs": ["v2/scripts/dev-mock.js"], "port": 18390 }
+    { "name": "edumaster-mock", "runtimeExecutable": "node", "runtimeArgs": ["scripts/dev-mock.js"], "port": 18390 }
   ]
 }

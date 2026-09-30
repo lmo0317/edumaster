@@ -178,14 +178,16 @@
     const alive = () => token === routeToken;
     let m;
     try {
-      if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('materials'); await materialView(m[1], alive); }
-      else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('materials'); await jobView(m[1], alive); }
-      else if (hash.startsWith('#/materials')) { setNav('materials'); await materialsView(); }
+      // Each original problem is a workspace (reading, its own feedback, variant sets); the home page lists them.
+      if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await materialView(m[1], alive); }
+      else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await jobView(m[1], alive); }
+      else if (hash.startsWith('#/new')) { setNav('home'); await homeView(); }
+      else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
       else if (hash.startsWith('#/rules') || hash.startsWith('#/learn')) { setNav('rules'); await rulesView(); }
       else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
-      else { setNav('home'); await homeView(); }
+      else { setNav('home'); await materialsView(); }
     } catch (e) {
       if (alive() && e.message !== '로그인이 필요합니다.') {
         view.innerHTML = `<div class="panel"><div class="note bad">${esc(e.message)}</div><div class="row"><button class="primary" id="retry">다시 시도</button><a href="#/">처음으로</a></div></div>`;
@@ -214,9 +216,10 @@
     const state = { problem: null, solution: null };
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
     view.innerHTML = `
-      <h1>새 문제로 단계별 변형 문제 만들기</h1>
+      <div class="row"><h1 style="margin-right:auto">문제 추가</h1><a href="#/">← 문제 목록</a></div>
       <div class="panel">
-        <h2>1. 원본 문제와 해설 넣기</h2>
+        <h2>원본 문제와 해설 넣기</h2>
+        <p class="muted small">넣은 문제마다 작업 공간이 생깁니다. 읽은 내용을 확인하고, 그 문제에 피드백을 쌓아 가며 변형 문제를 만듭니다.</p>
         <p class="muted small">문제 이미지는 필수, 해설 이미지는 선택입니다. 해설을 넣으면 그 풀이 방법(보조 문자, 가정·모순, 비교 순서)을 그대로 STEP으로 정리하고, 없으면 AI가 먼저 풀이를 만듭니다. 이미지를 끌어 놓거나 클릭하거나 Ctrl+V로 붙여 넣으세요.</p>
         <div class="cols cols-2">
           <div><label>문제 이미지 (필수)</label><div class="drop" id="drop-problem"><span class="muted">문제 이미지를 넣어 주세요</span></div></div>
@@ -227,8 +230,7 @@
         <label>분석 모델</label>${providerPicker('provider', 'deepseek')}
         <label for="note">AI에게 알려 줄 점 (선택)</label><textarea id="note" placeholder="예: 표 III의 'B'는 학생 필기입니다. 해설은 STEP 3개입니다."></textarea>
         <div class="row" style="margin-top:12px"><span class="muted small" id="submit-hint">문제 이미지를 넣으면 분석을 시작할 수 있습니다.</span><span class="spacer"></span><button class="primary" id="start" disabled>분석 시작</button></div>
-      </div>
-      <div class="panel"><div class="row"><h2 style="margin:0">최근 자료</h2><span class="spacer"></span><a href="#/materials">전체 보기</a></div><div class="list" id="recent" style="margin-top:10px"><span class="muted small">불러오는 중…</span></div></div>`;
+      </div>`;
     const paint = (key) => {
       const el = $('#drop-' + key);
       $$('img, .clear', el).forEach((x) => x.remove());
@@ -262,12 +264,7 @@
         location.hash = '#/m/' + r.material.id;
       } finally { if ($('#start')) $('#start').disabled = false; }
     }));
-    const list = await api('GET', '/api/materials');
-    $('#recent').innerHTML = list.length ? list.slice(0, 6).map(materialEntry).join('') : '<span class="muted small">아직 자료가 없습니다.</span>';
   }
-
-  const materialEntry = (m) => `<a class="entry" href="#/m/${m.id}"><div style="flex:1"><div class="title">${esc(m.title)}</div>
-    <div class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} ${m.stepCount ? `· STEP ${m.stepCount}개` : ''} · ${fmtTime(m.createdAt)}</div></div>${chip(MAT_STATUS, m.status)}</a>`;
 
   // A problem set in plain words: still being made, finished (and how many can be used as is), or stopped.
   function setStatus(j) {
@@ -316,16 +313,15 @@
         <div class="mat-info">
           <div class="mat-title">${esc(m.title)}</div>
           <div class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}${m.stepCount ? ` · 풀이 STEP ${m.stepCount}개` : ''} · ${fmtTime(m.createdAt)}</div>
-          <div class="mat-state"><span class="chip ${st.tone}">${st.label}</span>${st.next ? `<span class="muted small">${st.next}</span>` : ''}</div>
+          <div class="mat-state"><span class="chip ${st.tone}">${st.label}</span><span class="chip">피드백 ${m.feedbackCount || 0}</span><span class="chip">변형 세트 ${sets.length}</span>${st.next ? `<span class="muted small">${st.next}</span>` : ''}</div>
         </div>
-        <span class="mat-open">원본 보기 ›</span>
+        <span class="mat-open">열기 ›</span>
       </a>
-      ${sets.length ? `<div class="set-list">${sets.map((j, i) => jobEntry(j, sets.length - i)).join('')}</div>` : ''}
     </div>`;
-    view.innerHTML = `<h1>자료·결과</h1>
-      <p class="muted">넣으신 원본 문제마다, 그 문제로 만든 연습 문제 세트가 아래에 모여 있습니다. 같은 원본으로 세트를 여러 번 만들 수 있습니다.</p>
+    view.innerHTML = `<div class="row"><h1 style="margin-right:auto">문제</h1><a class="button primary" href="#/new">문제 추가</a></div>
+      <p class="muted">문제마다 읽은 내용, 그 문제에 쌓인 피드백, 만든 변형 세트가 한곳에 있습니다. 문제를 열어 피드백을 쌓고 변형 문제를 만드세요.</p>
       <div class="tabs" role="tablist">${TABS.map(([k, t], i) => `<button type="button" class="tab${i ? '' : ' on'}" data-tab="${k}">${t} <span class="count">${count(k)}</span></button>`).join('')}</div>
-      <div class="mat-list">${rows.map(card).join('') || '<div class="panel muted">아직 넣은 문제가 없습니다. <a href="#/">새 문제</a>에서 시작하세요.</div>'}</div>
+      <div class="mat-list">${rows.map(card).join('') || '<div class="panel muted">아직 넣은 문제가 없습니다. <a href="#/new">문제 추가</a>에서 시작하세요.</div>'}</div>
       <p class="muted small empty-note" hidden>이 분류에 해당하는 문제가 없습니다.</p>`;
     $$('.tab').forEach((b) => b.addEventListener('click', () => {
       $$('.tab').forEach((x) => x.classList.toggle('on', x === b));
@@ -393,10 +389,73 @@
         <div class="panel">${originals(m.images)}</div>
         <div class="panel" id="analysis"></div>
       </div>
+      <div class="panel" id="feedback"></div>
       <div class="panel" id="generate"></div>
-      <div class="panel"><h2>이 문제로 만든 연습 문제 세트</h2><div class="set-list">${gens.map((j, i) => jobEntry(j, gens.length - i)).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>`;
+      <div class="panel"><h2>이 문제로 만든 변형 세트</h2><div class="set-list" id="sets">${gens.map((j, i) => jobEntry(j, gens.length - i)).join('') || '<span class="muted small">아직 없습니다.</span>'}</div></div>`;
     if (editing) editAnalysis(m); else showAnalysis(m);
+    feedbackPanel(m, gens);
     generatePanel(m, n);
+  }
+
+  // This problem's own feedback: what the teacher taught about it (on its variants or in general). Every variant
+  // made from it gets all of it; "모든 문제에 적용" widens one to every problem.
+  const KIND_TXT = { feedback: '피드백', do: '꼭 할 것', dont: '하지 말 것' };
+  const TARGET_TXT = { problem: '문제', solution: '해설', design: '설계', all: '전체' };
+  async function feedbackPanel(m, gens) {
+    const el = $('#feedback');
+    if (!el) return;
+    const rules = await api('GET', '/api/rules');
+    const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const widened = rules.filter((r) => r.scope !== 'material' && r.source?.materialId === m.id);
+    const on = own.filter((r) => r.status === 'approved');
+    const entry = (r) => `<div class="learn-item" data-rule="${r.id}">
+      <div class="learn-item-main"><div class="learn-text">${esc(r.text)}</div>
+        <div class="learn-meta"><span class="chip">${TARGET_TXT[r.target] || r.target}</span><span class="chip">${KIND_TXT[r.kind] || r.kind}</span>
+          ${r.status === 'approved' ? '' : '<span class="chip warn">꺼짐</span>'}
+          <span class="muted small">${fmtTime(r.createdAt)}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">${esc(r.source.label || '변형 문제')}에 대한 피드백</a>` : ''}</span></div></div>
+      <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small" data-act="widen">모든 문제에 적용</button><button class="small danger" data-act="del">삭제</button></div></div>`;
+    el.innerHTML = `
+      <div class="row"><h2 style="margin:0">이 문제의 피드백</h2><span class="spacer"></span><span class="muted small">켜진 것 ${on.length}개 · 이 문제로 만드는 모든 변형에 붙음</span></div>
+      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 아래에서 추가하거나, 만든 변형 문제 카드의 "피드백 남기기"에서 남기면 여기에 모입니다.</p>'}</div>
+      ${widened.length ? `<p class="muted small">이 문제에서 나와 모든 문제에 적용 중인 피드백 ${widened.length}개는 <a href="#/learn">전체 피드백</a>에 있습니다.</p>` : ''}
+      <div class="cols cols-3" style="margin-top:10px">
+        <div><label>대상</label><select id="fb-target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
+        <div><label>종류</label><select id="fb-kind"><option value="feedback">피드백</option><option value="do">꼭 할 것</option><option value="dont">하지 말 것</option></select></div>
+        <div><label>적용 범위</label><select id="fb-scope"><option value="material">이 문제만</option><option value="global">모든 문제</option></select></div>
+      </div>
+      <label>내용</label><textarea id="fb-text" placeholder="예: STEP 1 연습에서는 남는 물질이 무엇인지 표에 적지 말 것. 최종 문제는 Ⅱ에서 가정→모순을 판정하게 만들 것."></textarea>
+      <div class="row" style="margin-top:8px"><span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>`;
+    $('#fb-add', el).addEventListener('click', guard(async () => {
+      const text = $('#fb-text', el).value.trim();
+      if (!text) throw new Error('피드백 내용을 입력해 주세요.');
+      await api('POST', '/api/rules', { text, target: $('#fb-target', el).value, kind: $('#fb-kind', el).value, scope: $('#fb-scope', el).value, source: { materialId: m.id } });
+      toast('저장했습니다. 다음 변형 생성부터 적용됩니다.');
+      feedbackPanel(m, gens);
+      rulesPreview(m);
+    }));
+    $$('[data-rule] [data-act]', el).forEach((b) => b.addEventListener('click', guard(async () => {
+      const id = b.closest('[data-rule]').dataset.rule;
+      const act = b.dataset.act;
+      if (act === 'del') { if (!confirm('이 피드백을 삭제할까요?')) return; await api('DELETE', '/api/rules/' + id); }
+      else if (act === 'edit') {
+        const text = prompt('피드백 수정', own.find((r) => r.id === id)?.text || '');
+        if (text === null) return;
+        await api('PUT', '/api/rules/' + id, { text });
+      } else if (act === 'widen') {
+        if (!confirm('이 피드백을 모든 문제에 적용할까요? (전체 피드백으로 옮겨집니다)')) return;
+        await api('PUT', '/api/rules/' + id, { scope: 'global' });
+      } else await api('PUT', '/api/rules/' + id, { status: act === 'on' ? 'approved' : 'pending' });
+      feedbackPanel(m, gens);
+      rulesPreview(m);
+    })));
+    // A set made before some of this problem's feedback was written does not reflect it yet.
+    const sets = $('#sets');
+    if (sets && gens.length) {
+      sets.innerHTML = gens.map((j, i) => {
+        const later = on.filter((r) => r.createdAt > j.createdAt).length;
+        return jobEntry(j, gens.length - i).replace('</a>', `${later ? `<span class="chip warn small">이후 피드백 ${later}개 미반영</span>` : ''}</a>`);
+      }).join('');
+    }
   }
 
   function showAnalysis(m) {
@@ -511,7 +570,7 @@
     const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
     el.innerHTML = `
-      <h2>2. 단계별 변형 문제 만들기</h2>
+      <h2>변형 문제 만들기</h2>
       <p class="muted small">원본 풀이 STEP ${n}개를 기준으로 합니다. 각 문제는 서버가 검산 프로그램을 정확한 분수로 실행해 정답을 확인하고, 별도의 독립 풀이가 정답을 모른 채 다시 풀어 대조합니다. 어긋나면 한 번만 수정하고, 그래도 어긋나면 '교사 검토 필요'로 그대로 보여 줍니다.</p>
       <label>만들 문제</label>
       <div>${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 누적 연습`}</label>`).join('')}
@@ -547,11 +606,19 @@
       });
       location.hash = '#/j/' + r.jobId;
     }));
+    await rulesPreview(m);
+  }
+
+  // What the next set of this problem will carry: its own feedback and the rules for every problem.
+  async function rulesPreview(m) {
+    if (!$('#rules-preview')) return;
     const rules = await api('GET', '/api/rules');
+    const own = rules.filter((r) => r.status === 'approved' && r.scope === 'material' && r.source?.materialId === m.id);
     const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
     const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
-    $('#rules-preview').innerHTML = `<b>항상 적용되는 교사 지침 ${global.length}개</b>${global.length ? '<ul>' + global.slice(0, 8).map((r) => `<li>[${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : ''}
-      <div>유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것은 생성할 때 자동으로 골라 붙입니다. <a href="#/learn">학습 관리</a></div>`;
+    if (!$('#rules-preview')) return;
+    $('#rules-preview').innerHTML =`<b>붙일 피드백: 이 문제 ${own.length}개 + 모든 문제용 ${global.length}개</b>${global.length ? '<ul>' + global.slice(0, 8).map((r) => `<li>[모든 문제·${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : ''}
+      ${topic.length ? `<div>예전에 남긴 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 골라 붙입니다. <a href="#/learn">전체 피드백</a></div>` : ''}`;
   }
 
   // ------------------------------------------------------------------ job
@@ -616,7 +683,7 @@
         ${['queued', 'running'].includes(job.status) ? '' : '<button id="delete" class="danger small">세트 삭제</button>'}
       </div>
       <details data-k="log"><summary>진행 기록 (${(job.log || []).length})</summary><div class="inner"><div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div></div></details>
-      <details data-k="rules"><summary>이 세트에 붙인 교사 지침 (${job.rules.length})</summary><div class="inner">${job.rules.length ? '<ul>' + job.rules.map((r) => `<li>[${KIND[r.kind]}·${TARGET[r.target]}${r.scope === 'topic' ? '·유형' : ''}] ${esc(r.text)}</li>`).join('') + '</ul>' : '<span class="muted small">없음</span>'}</div></details>
+      <details data-k="rules"><summary>이 세트에 붙인 교사 지침 (${job.rules.length})</summary><div class="inner">${job.rules.length ? '<ul>' + job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : '<span class="muted small">없음</span>'}</div></details>
     </div>`;
   }
   function bindHead(job) {
@@ -673,16 +740,16 @@
       <details data-k="rules"><summary>교사 지침 적용 (${v?.rules?.length || 0})</summary><div class="inner">${v?.rules?.length ? `<table class="rules"><tr><th>지침</th><th>생성 모델이 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${esc(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table>` : '<span class="muted small">붙인 지침이 없습니다.</span>'}</div></details>` : ''}
       ${item.history?.length ? `<details data-k="hist"><summary>이전 버전 (${item.history.length})</summary><div class="inner">${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 피드백: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}</div></details>` : ''}
       ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
-      <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 (학습에 저장) / 다시 만들기</summary><div class="inner">
-        <p class="muted small">남긴 피드백은 학습에 저장되어, 이 문제 내용과 함께 다음 문제를 만들 때 AI에게 전달됩니다.</p>
+      <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 / 다시 만들기</summary><div class="inner">
+        <p class="muted small">남긴 피드백은 <a href="#/m/${job.materialId}">원본 문제</a>의 피드백으로 모여, 이 문제로 만드는 모든 변형에 이 변형 문제 내용과 함께 전달됩니다.</p>
         <div class="cols cols-3">
           <div><label>대상</label><select name="target"><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option><option value="all">전체</option></select></div>
           <div><label>종류</label><select name="kind"><option value="feedback">피드백</option><option value="do">앞으로 꼭 할 것</option><option value="dont">앞으로 하지 말 것</option></select></div>
-          <div><label>언제 쓸까요</label><select name="scope"><option value="topic">같은 과목의 비슷한 문제를 만들 때</option><option value="global">모든 문제를 만들 때</option></select></div>
+          <div><label>적용 범위</label><select name="scope"><option value="material">이 원본 문제만</option><option value="global">모든 문제</option></select></div>
         </div>
         <label>내용</label><textarea name="fb" placeholder="예: STEP 1 연습인데 남는 물질이 B라고 문제에서 알려줘서 STEP 1을 안 거쳐도 풀립니다. 추론할 결론은 주지 마세요."></textarea>
         <label class="inline"><input type="checkbox" name="approve" checked> 바로 켜기 — 다음 생성부터 적용</label>
-        <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">학습에 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
+        <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">피드백 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
       </div></details>` : ''}
     </div>`;
   }
@@ -699,7 +766,7 @@
       }
       if (andRegen) { await api('POST', `/api/jobs/${job.id}/items/${item.index}/regenerate`, { feedback: text }); wake(); }
       $('textarea[name=fb]', card).value = '';
-      toast(andRegen ? '피드백을 저장하고 이 문제를 다시 만드는 중입니다.' : '학습에 저장했습니다. ' + ($('[name=approve]', card).checked ? '다음 생성부터 적용됩니다.' : '학습 화면에서 켜면 적용됩니다.'));
+      toast(andRegen ? '피드백을 저장하고 이 문제를 다시 만드는 중입니다.' : '피드백을 저장했습니다. ' + ($('[name=approve]', card).checked ? '다음 생성부터 적용됩니다.' : '원본 문제 화면에서 켜면 적용됩니다.'));
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
     $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
@@ -717,7 +784,8 @@
 
   // ------------------------------------------------------------------ rules
   async function rulesView() {
-    const [rules, promptsText, corrections, preview] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections'), api('GET', '/api/learning/preview')]);
+    const [rules, promptsText, corrections, preview, materials] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections'), api('GET', '/api/learning/preview'), api('GET', '/api/materials')]);
+    const titleOf = new Map(materials.map((x) => [x.id, x.title]));
     const on = rules.filter((r) => r.status === 'approved');
     const off = rules.filter((r) => r.status !== 'approved');
     const KIND_L = { do: '꼭 할 것', dont: '하지 말 것', feedback: '피드백' };
@@ -733,34 +801,41 @@
     const section = (title, when, list, empty) => `<div class="learn-sec"><div class="learn-sec-head"><h3>${title}</h3><span class="learn-when">${when}</span></div>
       <div class="learn-list">${list.map(item).join('') || `<p class="muted small">${empty}</p>`}</div></div>`;
     const EXAMPLES = ['풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.', '최종 문제는 숫자만 바꾸지 말고 앞 연습 문제의 아이디어를 엮어 새 구조로 만든다.', '해설은 원본 해설의 보조 문자와 풀이 순서를 그대로 따른다.'];
-    view.innerHTML = `<h1>학습</h1>
+    // Problem feedback grouped by its problem, each group linking to the problem's workspace.
+    const byMaterial = new Map();
+    for (const r of on.filter((x) => x.scope === 'material')) byMaterial.set(r.source?.materialId, [...(byMaterial.get(r.source?.materialId) || []), r]);
+    const perProblem = [...byMaterial].map(([id, list]) => `<div class="learn-sub"><div class="row"><b>${esc(titleOf.get(id) || '삭제된 문제')}</b><span class="spacer"></span>${titleOf.has(id) ? `<a href="#/m/${id}">문제 열기 ›</a>` : ''}</div><div class="learn-list">${list.map(item).join('')}</div></div>`).join('');
+    view.innerHTML = `<h1>전체 피드백</h1>
       <div class="panel learn-intro">
-        <p>선생님이 가르친 내용을 저장해 두었다가, AI가 <b>다음에 문제를 만들거나 사진을 읽을 때</b> 그 상황에 맞는 것을 찾아 함께 전달합니다(RAG). AI 모델 자체를 다시 훈련시키지 않으므로, 저장하면 <b>바로 다음 생성부터</b> 반영되고 끄거나 지우면 바로 빠집니다.</p>
+        <p>피드백은 <b>문제마다</b> 쌓는 것이 기본입니다. 문제 화면에서 남긴 피드백은 그 문제로 만드는 변형에만 붙고, <b>모든 문제에 적용</b>으로 표시한 것은 모든 문제에 붙습니다. AI 모델을 다시 훈련시키지 않으므로 저장하면 <b>바로 다음 생성부터</b> 반영되고, 끄거나 지우면 바로 빠집니다.</p>
         <div class="learn-flow">
-          <div><span class="num">1</span><b>가르치기</b><span>문제 카드의 피드백, 아래 입력, 분석 결과 수정</span></div>
-          <div><span class="num">2</span><b>저장</b><span>내용과 함께 언제 쓸지(모든 문제 / 비슷한 문제 / 사진 읽기)를 기억</span></div>
+          <div><span class="num">1</span><b>가르치기</b><span>문제 화면의 피드백, 변형 문제 카드의 피드백, 아래 입력, 분석 결과 수정</span></div>
+          <div><span class="num">2</span><b>저장</b><span>이 문제만 / 모든 문제 / 사진 읽기 중 어디에 쓸지 기억</span></div>
           <div><span class="num">3</span><b>다음에 전달</b><span>새 문제를 만들 때 맞는 내용을 골라 AI 지시문에 붙임</span></div>
           <div><span class="num">4</span><b>지켰는지 확인</b><span>문제 카드의 '교사 지침 적용'에서 어떻게 지켰는지와 독립 검토 판정을 보여 줌</span></div>
         </div>
       </div>
 
       <div class="panel">
-        <h2>AI에게 가르치기</h2>
+        <h2>모든 문제에 적용할 피드백 추가</h2>
+        <p class="muted small">한 문제에 대한 피드백은 그 문제 화면에서 남기세요.</p>
         <label>가르칠 내용</label>
         <textarea id="ntext" placeholder="예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다."></textarea>
         <div class="learn-examples">${EXAMPLES.map((t) => `<button type="button" class="small ex">${esc(t)}</button>`).join('')}</div>
         <div class="cols cols-3" style="margin-top:10px">
-          <div><label>언제 쓸까요</label><select id="ns"><option value="global">모든 문제를 만들 때</option><option value="topic">같은 과목의 비슷한 문제를 만들 때</option></select></div>
+          <div><label>적용 범위</label><select id="ns"><option value="global">모든 문제</option></select></div>
           <div><label>종류</label><select id="nk"><option value="do">꼭 할 것</option><option value="dont">하지 말 것</option></select></div>
           <div><label>어디에</label><select id="nt"><option value="all">문제·해설 전체</option><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option></select></div>
         </div>
-        <div class="row" style="margin-top:10px"><span class="muted small">문제를 보다가 떠오른 피드백은 그 문제 카드에서 남기시면, 어떤 문제에 대한 내용인지도 함께 저장됩니다.</span><span class="spacer"></span><button class="primary" id="add">학습에 추가</button></div>
+        <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="primary" id="add">추가</button></div>
       </div>
 
       <div class="panel">
         <h2>가르친 내용 (켜져 있는 것 ${on.length + corrections.length}개)</h2>
-        ${section('문제 만들기 규칙', '모든 문제를 만들 때', on.filter((r) => r.scope === 'global'), '아직 없습니다. 위에서 추가하세요.')}
-        ${section('문제별 피드백', '같은 과목의 비슷한 문제를 만들 때 · 피드백을 받은 문제도 함께 보여 줌', on.filter((r) => r.scope !== 'global'), '아직 없습니다. 만든 문제 카드의 "피드백 남기기"에서 추가됩니다.')}
+        ${section('모든 문제에 적용', '모든 문제를 만들 때', on.filter((r) => r.scope === 'global'), '아직 없습니다. 위에서 추가하거나, 문제 화면의 피드백에서 "모든 문제에 적용"을 누르세요.')}
+        <div class="learn-sec"><div class="learn-sec-head"><h3>문제별 피드백</h3><span class="learn-when">그 문제로 변형을 만들 때 · 문제 화면에서 관리</span></div>
+          ${perProblem || '<p class="muted small">아직 없습니다. 문제 화면에서 남기면 여기에 문제별로 모입니다.</p>'}</div>
+        ${on.some((r) => r.scope === 'topic') ? section('예전 유형별 피드백', '같은 과목의 비슷한 문제를 만들 때 (이전 방식)', on.filter((r) => r.scope === 'topic'), '') : ''}
         <div class="learn-sec"><div class="learn-sec-head"><h3>사진 읽기 교정</h3><span class="learn-when">원본 사진을 읽을 때 · 분석 결과에서 단어를 고치면 자동으로 쌓임</span></div>
           <div class="learn-list">${corrections.map((c) => `<div class="learn-item" data-corr="${c.id}"><div class="learn-item-main"><div class="learn-text">"${esc(c.wrong)}"로 잘못 읽음 → 원본은 "${esc(c.right)}"</div>
             <div class="learn-meta"><span class="muted small">${c.count}번 고침 · ${esc(c.subject || '')} · 다음 판독 때 이 단어를 주의해서 읽게 하고 확인 항목에 올림</span></div></div>

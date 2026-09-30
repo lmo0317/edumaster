@@ -7,13 +7,16 @@ const harness = require('./harness');
 
 const KINDS = new Set(['do', 'dont', 'feedback']);
 const TARGETS = new Set(['problem', 'solution', 'design', 'all']);
-const SCOPES = new Set(['global', 'topic']);
+// material: feedback on one original problem, attached to every generation from that problem (the main way to teach);
+// global: every problem; topic: similar problems of the same subject (older feedback, still honoured).
+const SCOPES = new Set(['material', 'global', 'topic']);
 
 function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
 
 function makeRule(input, now = new Date()) {
   const text = clean(input.text, 1500);
   if (text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
+  if (input.scope === 'material' && !clean(input.source?.materialId, 40)) throw Object.assign(new Error('어느 문제에 대한 피드백인지 알 수 없습니다.'), { status: 400 });
   return {
     id: newId().slice(0, 16),
     createdAt: now.toISOString(),
@@ -37,7 +40,8 @@ function updateRule(rule, patch, now = new Date()) {
   const next = { ...rule, updatedAt: now.toISOString() };
   if (patch.text !== undefined) { next.text = clean(patch.text, 1500); if (next.text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 }); }
   if (['approved', 'pending', 'rejected'].includes(patch.status)) next.status = patch.status;
-  if (SCOPES.has(patch.scope)) next.scope = patch.scope;
+  // "다른 문제에도 적용": a problem's feedback can be widened to every problem, and narrowed back if it has a problem.
+  if (SCOPES.has(patch.scope) && (patch.scope !== 'material' || next.source?.materialId)) next.scope = patch.scope;
   if (KINDS.has(patch.kind)) next.kind = patch.kind;
   if (TARGETS.has(patch.target)) next.target = patch.target;
   return next;
@@ -60,11 +64,13 @@ function overlap(a, b) {
 }
 
 /**
- * Picks the rules for one material: every approved global rule, plus approved topic rules whose source
- * problem looks like this one. Returns at most `limit` rules and ~3500 characters in total.
+ * Picks the rules for one material: first every approved feedback on this very problem, then every approved global
+ * rule, then approved topic rules whose source problem looks like this one. At most `limit` rules and ~`maxChars`
+ * characters in total; this problem's own feedback always comes first.
  */
-function selectRules(allRules, material, { limit = 14, maxChars = 3500 } = {}) {
+function selectRules(allRules, material, { limit = 24, maxChars = 6000 } = {}) {
   const approved = allRules.filter((r) => r.status === 'approved');
+  const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const global = approved.filter((r) => r.scope === 'global').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const target = grams([material.subject, material.topic, material.problem?.text, ...(material.techniques || [])].join(' '));
   // A topic feedback belongs to its subject: shared exam wording ("조건", "자료") must not carry a 화학 note to 생명과학.
@@ -76,7 +82,7 @@ function selectRules(allRules, material, { limit = 14, maxChars = 3500 } = {}) {
   }).filter((x) => x.score >= 0.3).sort((a, b) => b.score - a.score).map((x) => x.r);
   const picked = [];
   let chars = 0;
-  for (const r of [...global, ...topical]) {
+  for (const r of [...own, ...global, ...topical]) {
     if (picked.length >= limit || chars + r.text.length > maxChars) continue;
     picked.push(r); chars += r.text.length;
   }
