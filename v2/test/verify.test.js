@@ -119,3 +119,12 @@ test('C-style && and || in checks are read as and / or', async () => {
   const r = await codeCheck({ program: ['a = 4', 'b = 12', 'ans = 3'], answer: 'ans', choices: ['1', '2', '3', '4', '5'], checks: [{ expr: 'a == 4 && b == 12', desc: 'both' }, { expr: 'a == 5 || b == 12', desc: 'either' }] }, { answer: 3, choiceCount: 5 });
   assert.equal(r.status, 'pass', r.reasons.join());
 });
+
+test('the problem\'s own unknown used without being listed as free is treated as free; a misspelt helper still fails', async () => {
+  const r = await codeCheck({ program: ['A_after = 2*w', 'A_before = 6*w', 'ans = A_after / A_before'], answer: 'ans', choices: ['1/5', '1/4', '1/3', '1/2', '2/3'] }, { answer: 3, choiceCount: 5 });
+  assert.equal(r.status, 'pass', r.reasons.join());
+  assert.match(r.warnings.join(), /문자 w를 자유 문자로/);
+  const typo = await codeCheck({ program: ['rA = 2', 'ans = rA1_if_A_rem'], answer: 'ans', choices: ['1', '2', '3', '4', '5'] }, { answer: 2, choiceCount: 5 });
+  assert.equal(typo.status, 'fail');
+  assert.equal(typo.runError, true);
+});

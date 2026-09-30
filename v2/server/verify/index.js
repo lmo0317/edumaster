@@ -90,6 +90,7 @@ async function codeCheck(verification, { answer, choiceCount }) {
   if (!result.ok) return { status: 'fail', reasons: [result.error], spec, runError: true };
   const reasons = [];
   const warnings = [];
+  if (result.inferred) warnings.push(`검산 프로그램이 정의하지 않은 문자 ${result.inferred.join(', ')}를 자유 문자로 보고 여러 값을 넣어 검사했습니다.`);
   const claimed = Number(answer);
   result.trials.forEach((t, i) => {
     const label = t.free ? `(자유 문자 ${Object.entries(t.free).map(([k, v]) => `${k}=${v}`).join(', ')}) ` : '';

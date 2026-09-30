@@ -256,3 +256,11 @@ test('repeating() flags a looping tail but not ordinary varied text', () => {
   assert.equal(repeating(varied), false);
   assert.equal(repeating('{"a":1}'), false);
 });
+
+test('the PC provider is named after the local model it serves', () => {
+  const { pcModelLabel } = require('../server/llm');
+  assert.equal(pcModelLabel('edumaster-qwen3.8-27b-q4'), 'Qwen 3.8-27B (PC)');
+  assert.equal(pcModelLabel('edumaster-ornith-1.5-35b-a3b'), 'Ornith 1.5-35B (PC)');
+  assert.equal(pcModelLabel('edumaster-qwen3.6-35b-a3b'), 'Qwen 3.6-35B (PC)');
+  assert.equal(pcModelLabel(''), 'PC 모델');
+});

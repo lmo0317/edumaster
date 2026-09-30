@@ -83,7 +83,22 @@ function runTrial(numberMode, spec, trial) {
   };
 }
 
-function run(spec) {
+// The problem's own unknown (w in "2w g") used but not listed in free: treated as free rather than failing the
+// whole check. Only short names that the program never assigns, so a misspelt helper variable still fails.
+function run(original) {
+  let spec = original;
+  const inferred = [];
+  for (;;) {
+    const result = runOnce(spec);
+    const name = !result.ok && /Undefined symbol ([A-Za-z][A-Za-z0-9]?)\b/.exec(result.error)?.[1];
+    const assigned = name && spec.program.some((s) => new RegExp(`^\\s*${name}\\s*=(?!=)`).test(s));
+    if (!name || assigned || inferred.length >= 3 || spec.free.length >= 6) return inferred.length ? { ...result, inferred } : result;
+    inferred.push(name);
+    spec = { ...spec, free: [...spec.free, name] };
+  }
+}
+
+function runOnce(spec) {
   const trials = spec.free.length ? 3 : 1;
   let mode = 'Fraction';
   let results;
