@@ -1,0 +1,327 @@
+{
+ "stamp": "20260930T084619",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "228ac4bf19",
+ "reviewVersion": "review-2026-09-30b",
+ "learning": {
+  "used": "data-compare/learn6",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "gemma",
+   "model": "edumaster-qwen3.6-35b-a3b",
+   "stage": "full",
+   "mode": "integrated",
+   "analyzeWith": "relay",
+   "designWith": "relay",
+   "analysisUsage": {
+    "calls": 6,
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "total": 0,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "timing": {
+    "analysis": 4.9,
+    "generation": 39.7,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 3.8,
+      "repairs": 0,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 16,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 19.9,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   },
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 몰질량} + \\text{D의 몰질량}}{\\text{B의 몰질량}}$은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"Ⅰ에서 한계 반응물을 구한다.\" → \"Ⅰ에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다.\" → \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량을 구한다.\" → \"A~D의 몰질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 23,
+    "input": 53060,
+    "output": 65025,
+    "reasoning": 0,
+    "total": 118085,
+    "maxCalls": 33,
+    "maxTokens": 800000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 4 / 표시 4"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": false,
+     "detail": "표는 $\\ce{A(g)}$와 $\\ce{B(g)}$의 반응을 완결시킨 실험 Ⅰ~Ⅲ에서 반응 전 A와 B의 질량과 반응 후 남은 A 또는 B의 질량을 나타낸 것이다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에 목표 범위 밖 STEP 3 로직이 필요했습니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "STEP 범위: 독립 풀이에 목표 범위 밖 STEP 3 로직이 필요했습니다.; 문제 설계: 풀이에 쓰이지 않는 조건: 표는 $\\ce{A(g)}$와 $\\ce{B(g)}$의 반응을 완결시킨 실험 Ⅰ~Ⅲ에서 반응 전 A와 B의 질량과 반응 후 남은 A 또는 B의 질량을 나타낸 것이다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": false,
+     "detail": "독립 3 / 표시 4"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": false,
+     "detail": "(단, 실린더 속 기체의 온도와 압력은 일정하다.)"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "STEP 1의 핵심 기법 없이 결론이 나옵니다: 실험 Ⅰ, Ⅱ의 반응 전 질량 합이 동일(9w)하고 반응 후 남은 질량도 동일(2w)하여 반응한 질량 합이 7w로 일정함을 바로 확인. A:B 질량비가 4:3임을 가정→모순 없이 바로 도출.; STEP 2의 핵심 기법 없이 결론이 나옵니다: 상댓값의 비를 실젯값(몰분율)의 비로 즉시 대응시켜 $b$와 $y$를 한 번의 비례식으로 동시 계산."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "독립 풀이의 정답은 3번(1/2)인데 표시된 정답은 4번입니다. 독립 풀이 요약: [STEP 1] 한계 반응물 및 질량비 구하기\n실험 Ⅰ: A 4w, B 5w. 남은 질량 2w.\n실험 Ⅱ: A 6w, B 3w. 남은 질량 2w (총 반응 전 9w → 반응한 질량 합 7w).\nⅠ에서 A가 남았다고 가정하면 반응한 A=2w, B=5w (비 2:5). Ⅱ에 적용 시 B 3w와 반응하려면 A 1.2w 필요 → 남은 A 4.8w (2w와 불일치). 따라서 Ⅰ에서 B가 남았음이 확정.\nⅠ: 반응한 A=4w, B=3w (A:B 질량비 4:3). 남은 B=2w.\nⅡ: A 6w, B 3w에 질량비 4:3 적용 시 B 3w가 모두 반응하고 A 4w가 반응 → 남은 A 2w (일치).\nⅢ: A 2w, B 3w. 질량비 4:3에 따라 A 2w가 모두 반응하며 B 1.5w가 반응. (한계 반응물 A)\n\n[STEP 2] 몰수 관계 및 y 구하기\n반응식: $\\ce{A + bB -> 2C + 2D}$. 반응한 A의 몰수를 $n$이라 하면, 반응한 B는 $bn$, 생성된 C와 D는 각각 $2n$.\nⅠ에서 남은 B의 몰수: $M_B = \\frac{3w}{bn} \\Rightarrow \\text{남은 B} = \\frac{2w}{M_B} = \\frac{2bn}{3}$.\nⅠ 전; STEP 범위: STEP 1의 핵심 기법 없이 결론이 나옵니다: 실험 Ⅰ, Ⅱ의 반응 전 질량 합이 동일(9w)하고 반응 후 남은 질량도 동일(2w)하여 반응한 질량 합이 7w로 일정함을 바로 확인. A:B 질량비가 4:3임을 가정→모순 없이 바로 도출.; STEP 범위: STEP 2의 핵심 기법 없이 결론이 나옵니다: 상댓값의 비를 실젯값(몰분율)의 비로 즉시 대응시켜 $b$와 $y$를 한 번의 비례식으로 동시 계산.; 문제 설계: 풀이에 쓰이지 않는 조건: (단, 실린더 속 기체의 온도와 압력은 일정하다.)"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이 지적(ugly): 상댓값과 몰분율의 비례상수를 명확히 알 수 없어 $b$와 $y$의 정수 해를 구하는 과정에서 계산이 복잡하고 선택지와 매칭이 명확하지 않음.; 독립 풀이 지적(other): '상댓값'의 정의(몰분율의 몇 배인지)가 문제에서 명시되지 않아 정확한 수치 도출이 어려움."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "39c3b2873de3e323fbbb1ae7",
+   "cost": {
+    "usd": 0,
+    "byProvider": {
+     "gemma": {
+      "calls": 16,
+      "input": 53060,
+      "cached": 0,
+      "output": 65025,
+      "peakCalls": 0,
+      "usd": 0
+     },
+     "relay": {
+      "calls": 13,
+      "input": 0,
+      "cached": 0,
+      "output": 0,
+      "peakCalls": 0,
+      "usd": 0
+     }
+    }
+   },
+   "minutes": 44.6
+  }
+ ]
+}
