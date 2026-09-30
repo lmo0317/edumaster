@@ -113,3 +113,13 @@ test('an integrated final keeping the original table shape and hidden-value cell
   assert.equal(shape(twin(table('| Ⅰ | $4w$ | $3w$ | $2w$ | $x$ |\n| Ⅱ | $2w$ | $6w$ | $3w$ | 10 |\n| Ⅲ | $2w$ | $9w$ | $6w$ | 7 |'))).state, 'fail');
   assert.equal(shape(twin(table('| Ⅰ | $4w$ | $4w$ | $2w$ | 16 |\n| Ⅱ | $3w$ | $8w$ | $2w$ | 15 |') + '\n실험 Ⅲ은 A $2w$ g, B $6w$ g')).state, 'pass');
 });
+
+test('a table row whose leftover outweighs the A or B put in (so no assume → contradiction is needed) is caught', () => {
+  const harness = require('../server/harness');
+  const material = { problem: { text: '' }, steps: [{ title: 'Ⅰ에서 한계 반응물을 구한다', technique: '', work: '만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다.' }] };
+  const item = (rows) => ({ stage: { kind: 'upto', upto: 1 }, problem: { text: `| 실험 | A | B | 남은 |\n|---|---|---|---|\n${rows}`, choices: [] }, solution: { steps: [] } });
+  const check = (rows) => harness.inspectItem(material, item(rows), 'integrated').find((c) => c.id === 'source-assumption-needed');
+  assert.equal(check('| Ⅰ | $6w$ | $6w$ | $3w$ |\n| Ⅲ | $2w$ | $8w$ | $4w$ |').state, 'fail');
+  assert.equal(check('| Ⅰ | $3w$ | $4w$ | $w$ |\n| Ⅱ | $5w$ | $6w$ | $2w$ |').state, 'pass');
+  assert.equal(check('| Ⅰ | $5w$ | $5w$ | $\frac{10}{3}w$ |').state, 'pass');
+});

@@ -195,6 +195,31 @@ function checkSameShape(material, item, mode) {
     same ? `실험 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다.` : '')];
 }
 
+/** In the leftover-reactant table, a row whose leftover is heavier than the A or B put in names the leftover by size
+ * alone, and with it the mass ratio: the teacher's assume → contradiction is no longer needed (DeepSeek's finals
+ * twice had such a row, and the independent solver did not notice). */
+const wMultiple = (cell) => {
+  const t = plain(cell).replace(/\s+/g, '').replace(/^[AB]/, '');
+  const m = /^(\d+(?:\/\d+)?)?w$/.exec(t);
+  if (!m) return null;
+  if (!m[1]) return 1;
+  const [a, b] = m[1].split('/').map(Number);
+  return b ? a / b : a;
+};
+function checkObviousLeftover(material, item) {
+  const first = material.steps[0];
+  if (!first || !assumes(first.work + first.technique) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
+  const obvious = [];
+  for (const line of String(item.problem.text || '').split('\n')) {
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+    if (cells.length < 4 || !/^(Ⅰ|Ⅱ|Ⅲ|Ⅳ|I|II|III|IV)$/.test(plain(cells[0]).trim())) continue;
+    const [a, b, left] = [wMultiple(cells[1]), wMultiple(cells[2]), wMultiple(cells[3])];
+    if (a != null && b != null && left != null && (left > a || left > b)) obvious.push(`${plain(cells[0]).trim()} (남은 ${plain(cells[3]).trim()} > 넣은 ${left > a ? 'A ' + plain(cells[1]).trim() : 'B ' + plain(cells[2]).trim()})`);
+  }
+  return [result('source-assumption-needed', '가정→모순 없이 남은 물질이 정해지는 실험이 없음', !obvious.length,
+    obvious.length ? `실험 ${obvious.join(', ')}에서 남은 물질이 질량 크기만으로 정해져 질량비가 바로 나오므로 가정→모순 판정이 필요 없어집니다. 모든 실험의 남은 질량이 넣은 A, B의 질량보다 작도록 바꿔야 합니다.` : '')];
+}
+
 /** A reaction equation printed in the problem keeps the original's coefficients (DeepSeek set b to 1 so the
  * molar relation came for free and a STEP was skipped). Leaving the equation out is fine. */
 const equationKey = (text) => {
@@ -217,6 +242,7 @@ function inspectItem(material, item, mode) {
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
     ...checkEquation(material, item),
+    ...checkObviousLeftover(material, item),
     ...checkNumbersOnly(material, item, mode),
     ...checkSameShape(material, item, mode),
     ...checkClueLeak(material, item),
