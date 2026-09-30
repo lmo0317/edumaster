@@ -416,9 +416,9 @@
       <div class="row"><h2 style="margin:0">피드백</h2><span class="spacer"></span><span class="muted small">켜진 ${on.length}개가 이 문제의 모든 변형에 반영됩니다</span></div>
       <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 이 문제로 변형 문제를 만들 때 지켜야 할 점을 적어 주세요.</p>'}</div>
       <div class="fb-add">
-        <div><label>대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계 (단계·최종 문제 구성)</option></select></div>
-        <div style="flex:1"><label>내용</label><textarea id="fb-text" rows="2" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea></div>
-        <div><button class="primary" id="fb-add">추가</button></div>
+        <textarea id="fb-text" rows="3" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
+        <div class="fb-add-bar"><label for="fb-target">대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계</option></select>
+          <span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>
       </div>`;
     $('#fb-add', el).addEventListener('click', guard(async () => {
       const text = $('#fb-text', el).value.trim();
@@ -570,22 +570,25 @@
     const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
     el.innerHTML = `
-      <h2>피드백·지침으로 변형 문제 만들기</h2>
-      <p class="muted small">위 풀이 STEP ${n}개와 이 문제의 피드백, 공통 지침을 함께 AI에게 줍니다. 만든 문제는 서버가 정답을 계산으로 확인하고, 다른 풀이가 정답을 모른 채 다시 풀어 대조합니다. 고쳐지지 않는 문제는 '교사 검토 필요'로 표시됩니다.</p>
+      <h2>변형 문제 만들기</h2>
+      <p class="muted small">위 풀이 STEP ${n}개와 이 문제의 피드백, 공통 지침으로 만듭니다. 정답은 서버가 계산으로 확인하고 다른 풀이로 다시 대조합니다.</p>
       <div class="note info small" id="rules-preview">반영할 피드백과 지침을 확인하는 중…</div>
       <label>만들 문제</label>
-      <div>${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 누적 연습`}</label>`).join('')}
-        <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 쌍둥이 문제 (STEP 1~${n} 전체)</label></div>
-      ${focus.length ? `<div>${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k} 집중 연습 (${k === 2 ? 'STEP 1' : `STEP 1~${k - 1}`} 결과를 조건으로 제공)</label>`).join('')}</div>` : ''}
-      <label>생성 모델</label>${providerPicker('genProvider', m.analyzedWith || 'deepseek')}
-      <label>최종 문제 방식</label>
-      <div><label class="inline"><input type="radio" name="mode" value="integrated" checked> 통합 변형 (권장) — 앞 연습 문제의 아이디어를 엮은 새 구조</label>
-        <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
-      <div class="cols cols-2">
-        <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
-        <div><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
-      </div>
-      <div class="row"><span class="muted small" id="estimate"></span><span class="spacer"></span><button class="primary" id="go">생성 시작</button></div>`;
+      <div class="stage-picks">${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`}</label>`).join('')}
+        <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 문제 (STEP 1~${n})</label>
+        ${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k}만 연습</label>`).join('')}</div>
+      <details class="gen-more" data-k="gen-more"><summary>세부 설정 <span class="muted small" id="gen-summary"></span></summary><div class="inner">
+        <label>생성 모델</label>${providerPicker('genProvider', m.analyzedWith || 'deepseek')}
+        <label>최종 문제 방식</label>
+        <div><label class="inline"><input type="radio" name="mode" value="integrated" checked> 통합 변형 (권장) — 앞 연습 문제의 아이디어를 엮은 새 구조</label>
+          <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
+        <div class="cols cols-2">
+          <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
+          <div><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
+        </div>
+        <p class="muted small">STEP k만 연습: 앞 STEP의 결과를 조건으로 주고 STEP k만 쓰게 하는 문제입니다.</p>
+      </div></details>
+      <div class="gen-go"><span class="muted small" id="estimate"></span><button class="primary" id="go">생성 시작</button></div>`;
     const estimate = () => {
       const gemma = $('[name=genProvider]:checked', el)?.value === 'gemma';
       $('#effort').disabled = gemma;
@@ -593,6 +596,8 @@
       $('#estimate').textContent = !count ? '만들 문제를 하나 이상 고르세요.'
         : `${count}문제 · 모델 호출 약 ${count * 2}~${count * 4}회 예상 (설계 + 독립 풀이, 필요할 때만 수정 1회)` + (gemma ? ' · Gemma는 무료지만 PC에서 돌아가 문제당 몇 분씩 걸릴 수 있습니다' : '');
       $('#go').disabled = !count;
+      const picked = $('[name=genProvider]:checked', el);
+      $('#gen-summary').textContent = `— ${picked?.closest('label')?.querySelector('b, strong')?.textContent || PROVIDER_LABEL[picked?.value] || 'DeepSeek'} · ${$('[name=mode]:checked', el).value === 'integrated' ? '통합 변형' : '수치 변형'} · 단계마다 ${$('#per').value}문제`;
     };
     $$('input, select', el).forEach((x) => x.addEventListener('change', estimate));
     estimate();
@@ -617,10 +622,10 @@
     const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
     const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
     if (!$('#rules-preview')) return;
-    $('#rules-preview').innerHTML = `<b>반영할 내용: 이 문제의 피드백 ${own.length}개 · 공통 지침 ${global.length}개</b>
+    $('#rules-preview').innerHTML = `<details><summary><b>반영: 이 문제의 피드백 ${own.length}개 · 공통 지침 ${global.length + topic.length}개</b></summary>
       ${own.length ? '<div>피드백: 위 목록의 켜진 항목 전부</div>' : '<div>피드백: 아직 없음</div>'}
       ${global.length ? '<div>공통 지침:</div><ul>' + global.slice(0, 8).map((r) => `<li>${esc(r.text)}</li>`).join('') + '</ul>' : ''}
-      ${topic.length ? `<div class="muted">예전 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 함께 반영됩니다. <a href="#/learn">전체 피드백</a></div>` : ''}`;
+      ${topic.length ? `<div class="muted">예전 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 함께 반영됩니다. <a href="#/learn">전체 피드백</a></div>` : ''}</details>`;
   }
 
   // ------------------------------------------------------------------ job
