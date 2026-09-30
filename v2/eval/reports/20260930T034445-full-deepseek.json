@@ -1,0 +1,307 @@
+{
+ "stamp": "20260930T034445",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "8901f6faa7",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "deepseek",
+   "model": "deepseek",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 7,
+    "input": 20173,
+    "output": 11610,
+    "reasoning": 7734,
+    "total": 31783,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "timing": {
+    "analysis": 0.8,
+    "generation": 28.9,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 6.5,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 9.1,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 13.4,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   },
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 몰질량 + \\ce{D}의 몰질량}{\\ce{B}의 몰질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
+     "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
+     "같은 오독을 해설 STEP 전체에도 적용: \"물질량\" → \"몰질량\"",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4+5 → STEP 3",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 Ⅰ에서 한계 반응물 구하기\" → \"Ⅰ에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"반응 후 기체의 질량과 양(mol) 구하기\" → \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량과 반응 계수 b를 구하고 정답 도출하기\" → \"A~D의 몰질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 18,
+    "input": 91271,
+    "output": 421232,
+    "reasoning": 383545,
+    "total": 512503,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 4 / 표시 4"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": false,
+     "detail": "원본 풀이의 보조 문자 유지: 원본 해설이 정의한 m가 변형 해설에서 사라졌습니다. 같은 문자 정의와 계산 방법을 새 수치로 적용해야 합니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "문제 설계: 원본 풀이의 보조 문자 유지: 원본 해설이 정의한 m가 변형 해설에서 사라졌습니다. 같은 문자 정의와 계산 방법을 새 수치로 적용해야 합니다."
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 1 로직 없이 풀렸습니다.; STEP 1의 핵심 기법 없이 결론이 나옵니다: 표의 반응 후 남은 물질이 $\\ce{A}$ 또는 $\\ce{B}$로 직접 주어져 있어, 가정→모순 없이 한계 반응물을 바로 알 수 있다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "독립 풀이에서 STEP 1 로직 없이 풀렸습니다.; STEP 1의 핵심 기법 없이 결론이 나옵니다: 표의 반응 후 남은 물질이 $\\ce{A}$ 또는 $\\ce{B}$로 직접 주어져 있어, 가정→모순 없이 한계 반응물을 바로 알 수 있다.; STEP 범위: 독립 풀이에서 STEP 1 로직 없이 풀렸습니다.; STEP 범위: STEP 1의 핵심 기법 없이 결론이 나옵니다: 표의 반응 후 남은 물질이 $\\ce{A}$ 또는 $\\ce{B}$로 직접 주어져 있어, 가정→모순 없이 한계 반응물을 바로 알 수 있다.; 문제 설계: 앞 문제(STEP 1 연습)의 실험 수치(6w,6w)를 그대로 썼습니다 (Ⅲ 행)."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "6d73253992f6db42d96b51a5",
+   "minutes": 29.8
+  }
+ ]
+}

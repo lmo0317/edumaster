@@ -1,0 +1,299 @@
+{
+ "stamp": "20260930T025244",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "5751e23451",
+ "learning": {
+  "used": "data-compare/learn4",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "relay",
+   "model": "relay",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 6,
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "total": 0,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "timing": {
+    "analysis": 4.4,
+    "generation": 25.4,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 2.3,
+      "repairs": 0,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 7.4,
+      "repairs": 1,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 15.7,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   },
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 몰질량}+\\text{D의 몰질량}}{\\text{B의 몰질량}}$은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": []
+   },
+   "generationUsage": {
+    "calls": 12,
+    "input": 0,
+    "output": 0,
+    "reasoning": 0,
+    "total": 0,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "511c9f32bf1b3de372c58277",
+   "minutes": 29.8
+  }
+ ]
+}

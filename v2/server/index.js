@@ -370,7 +370,12 @@ function createApp(options = {}) {
     }
     const tally = (pred, list) => { const hit = list.filter((c) => pred(c.name)); return { pass: hit.filter((c) => c.pass).length, total: hit.length }; };
     const out = {};
-    for (const [key, rows] of Object.entries(runs)) {
+    for (const [key, all] of Object.entries(runs)) {
+      // The review got stricter on 2026-09-30 (skippable STEPs, numbers-only finals, teacher's STEP titles, leftovers
+      // printed or obvious): a model evaluated since then is scored on those runs only, so an earlier pass under the
+      // looser review does not count; a model with no such run keeps its older runs and is marked as such.
+      const strict = all.filter((r) => r.when >= REVIEW_SINCE);
+      const rows = strict.length ? strict : all;
       const problems = rows.flatMap(problemResults);
       const verdict = rows.length === 1 ? verdicts[key] : null;
       if (verdict) for (const p of problems) if (p.final && p.dims.made) p.dims.structural = verdict === 'ok';
@@ -381,7 +386,7 @@ function createApp(options = {}) {
       const [low, high] = wilson(mean, scores.length);
       const rate = (dim) => { const hit = problems.filter((p) => p.dims[dim] !== undefined); return { pass: hit.filter((p) => p.dims[dim]).length, total: hit.length }; };
       out[key] = {
-        when: rows[rows.length - 1].when, runs: rows.length, pc,
+        when: rows[rows.length - 1].when, runs: rows.length, pc, olderReview: !strict.length,
         label: pc ? pcModelLabel(rows[rows.length - 1].model || 'gemma-4-12b').replace(' (PC)', '') : undefined,
         read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
         problems: problems.length,
@@ -395,6 +400,7 @@ function createApp(options = {}) {
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
   const COMPARED = ['relay', 'deepseek', 'qwen36', 'gemma12'];
+  const REVIEW_SINCE = '20260930T0416'; // first run with every current check (report stamps are UTC)
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {

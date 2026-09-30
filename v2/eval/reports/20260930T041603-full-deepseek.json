@@ -1,0 +1,308 @@
+{
+ "stamp": "20260930T041603",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "8901f6faa7",
+ "learning": {
+  "used": "/home/lmo0317/apps/edumasterv2/data",
+  "rules": 3,
+  "corrections": 0
+ },
+ "results": [
+  {
+   "case": "chem-molar-mass",
+   "title": "화학 · 반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+   "provider": "deepseek",
+   "model": "deepseek",
+   "stage": "full",
+   "mode": "integrated",
+   "analysisUsage": {
+    "calls": 7,
+    "input": 20269,
+    "output": 12104,
+    "reasoning": 8056,
+    "total": 32373,
+    "maxCalls": 11,
+    "maxTokens": 160000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"상댓값\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"물질량\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x=15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"x = 15\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b=3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"b = 3\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"몰질량\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"모순|맞지 않\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "timing": {
+    "analysis": 0.9,
+    "generation": 21,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 3.5,
+      "repairs": 1,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 2,
+      "repairs": 0,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 15.4,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   },
+   "read": {
+    "steps": [
+     "Ⅰ에서 한계 반응물을 구한다",
+     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+     "A~D의 몰질량을 구한다"
+    ],
+    "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 몰질량 + \\ce{D}의 몰질량}{\\ce{B}의 몰질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "steps[2].work: \"Ⅲ에서 $\\frac{\\ce{D}의 양(\\text{mol})}{전체 기체의 양(\\text{mol})}$의 실측값이 $\\frac{2}{5}$인데\" → \"Ⅱ에서 $\\frac{\\ce{D}의 양(\\text{mol})}{전체 기체의 양(\\text{mol})}$의 실측값이 $\\frac{2}{5}$인데\" (실측값 $\\frac{2}{5}$와 상댓값 $18$은 실험 Ⅱ의 값이므로, 해설 원본의 'Ⅱ에서'를 'Ⅲ에서'로 잘못 옮겼다.)",
+     "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
+     "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
+     "같은 오독을 해설 STEP 전체에도 적용: \"물질량\" → \"몰질량\"",
+     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4+5 → STEP 3",
+     "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 Ⅰ에서 한계 반응물 구하기\" → \"Ⅰ에서 한계 반응물을 구한다\"",
+     "STEP 2 제목을 해설에 인쇄된 제목으로: \"반응 후 기체의 질량과 양 구하기\" → \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+     "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량과 반응 계수 및 몰질량 비를 구하고 정답 확인하기\" → \"A~D의 몰질량을 구한다\""
+    ]
+   },
+   "generationUsage": {
+    "calls": 14,
+    "input": 80322,
+    "output": 315529,
+    "reasoning": 282644,
+    "total": 395851,
+    "maxCalls": 24,
+    "maxTokens": 600000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 4 / 표시 4"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 누적 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 4 / 표시 4"
+    },
+    {
+     "name": "최종 쌍둥이 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 교사 검토 필요 없음",
+     "pass": false,
+     "detail": "문제 설계: 통합 변형: 표 구조와 숨긴 값 위치를 바꿨는지: 실험 3개, 열 5개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다."
+    },
+    {
+     "name": "최종 쌍둥이 문제: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 쌍둥이 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 3,
+   "jobId": "beb9ef5bd6e33d16ea099b5e",
+   "minutes": 21.9
+  }
+ ]
+}
