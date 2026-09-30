@@ -52,10 +52,12 @@ try {
             $ready=$false
             try{$ready=[bool](Invoke-RestMethod -Uri 'http://127.0.0.1:8092/v1/models' -TimeoutSec 3).data}catch{}
             if($ready){
-                try{
-                    $status=Invoke-RestMethod -Uri 'https://minohlee.mooo.com/edumaster/api/status' -TimeoutSec 5
-                    if($status.providers.gemma.available){$healthFailures=0}else{$healthFailures++}
-                }catch{$healthFailures++}
+                # /edumasterv2/ is the address nginx serves until deploy/nginx-edumaster.sh runs (afterwards it redirects).
+                $seen=$false
+                foreach($url in 'https://minohlee.mooo.com/edumaster/api/status','https://minohlee.mooo.com/edumasterv2/api/status'){
+                    try{ if((Invoke-RestMethod -Uri $url -TimeoutSec 5).providers.gemma.available){$seen=$true;break} }catch{}
+                }
+                if($seen){$healthFailures=0}else{$healthFailures++}
             }
             if($healthFailures -ge 2 -and $null -ne $tunnelProcess -and -not $tunnelProcess.HasExited){
                 Add-Content (Join-Path $logs 'connection-health.log') ('{0:o} server could not reach the PC model twice; reconnecting owned SSH tunnel' -f [DateTime]::UtcNow)
