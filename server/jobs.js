@@ -32,7 +32,9 @@ function createJobs({ store, llm, config }) {
     const ctx = {
       store, job, budget, signal: controller.signal, provider,
       // Every model call in this job goes to the provider the teacher picked.
-      llm: { ...llm, json: (args) => llm.json({ ...args, provider }) },
+      // Except the calls a mixed run gives to another model: the problems (designWith) or only the repairs (repairWith).
+      routes: { ...(job.options?.designWith ? { generate: job.options.designWith } : {}), ...(job.options?.repairWith ? { repair: job.options.repairWith } : {}) },
+      llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       maxRepairs: 2,
       save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); store.jobs.put(job); extraSave?.(); },

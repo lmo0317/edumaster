@@ -215,3 +215,34 @@ test('the public comparison page needs no login and exposes only the comparison'
     assert.equal((await fetch(s.base + '/api/materials')).status, 401);
   } finally { await s.close(); }
 });
+
+test('mixed run: designWith sends problem design and repairs to that model; solving and review stay with the provider', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
+  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  const app = createApp({ dataDir, llmMode: 'mock', relay: { dir: path.join(dataDir, 'relay'), label: 'relay', timeoutMs: 1000 } });
+  await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  let cookie = '';
+  const call = async (method, url, body) => {
+    const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined });
+    const set = res.headers.get('set-cookie'); if (set) cookie = set.split(';')[0];
+    return res.json();
+  };
+  const wait = async (id) => { for (;;) { const j = await call('GET', `/api/jobs/${id}`); if (['done', 'failed'].includes(j.status)) return j; await new Promise((r) => setTimeout(r, 25)); } };
+  try {
+    await call('POST', '/api/login', { code: 'test-code' });
+    const created = await call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
+    await wait(created.jobId);
+    const gen = await call('POST', '/api/generations', { materialId: created.material.id, mode: 'integrated', designWith: 'relay' });
+    const job = await wait(gen.jobId);
+    assert.equal(job.status, 'done', job.error);
+    assert.equal(job.options.designWith, 'relay');
+    const calls = fs.readdirSync(path.join(dataDir, 'usage')).map((f) => JSON.parse(fs.readFileSync(path.join(dataDir, 'usage', f), 'utf8'))).filter((r) => r.jobId === job.id);
+    const by = (purpose) => [...new Set(calls.filter((r) => r.purpose === purpose).map((r) => r.provider))];
+    assert.deepEqual(by('generate'), ['relay']);
+    assert.deepEqual(by('repair'), ['relay'], 'the mock\'s deliberately wrong answer was repaired by the design model');
+    assert.deepEqual(by('solve'), ['deepseek']);
+  } finally {
+    await new Promise((r) => app.server.close(r));
+  }
+});

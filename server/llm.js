@@ -321,7 +321,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
         return {
           choices: [{ finish_reason: data.stop_reason === 'max_tokens' ? 'length' : 'stop', message: { content: text } }],
-          usage: { prompt_tokens: input, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
+          usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
         };
       }
       if ((response.status === 429 || response.status === 529) && attempt < 4) {
@@ -405,6 +405,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         input: u.prompt_tokens || 0,
         output: u.completion_tokens || 0,
         reasoning: u.completion_tokens_details?.reasoning_tokens || 0,
+        // Input served from the provider's prompt cache (billed far lower); kept per call for cost reports.
+        cached: u.prompt_cache_hit_tokens || 0,
         total: u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0),
       };
       budget.add(usage);

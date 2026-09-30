@@ -188,3 +188,20 @@ test('a letter coefficient no question or solution uses is an unused condition',
   assert.equal(check(item('따라서 $b=3$이다.')), 'pass');
   assert.equal(check(item('…', '$\\frac{b}{x}$는?')), 'pass');
 });
+
+test('run cost: list prices per provider, DeepSeek peak hours double, cached input at the cache price', () => {
+  const { runCost } = require('../eval/cost');
+  const records = [
+    // Sunday: off-peak. 1M input of which 0.5M cached, 1M output.
+    { jobId: 'a', provider: 'deepseek', createdAt: '2026-09-27T02:00:00Z', input: 1e6, cached: 5e5, output: 1e6, outcome: 'stop' },
+    // Wednesday 02:00 UTC: peak, twice the price.
+    { jobId: 'a', provider: 'deepseek', createdAt: '2026-09-30T02:00:00Z', input: 0, cached: 0, output: 1e6, outcome: 'stop' },
+    { jobId: 'b', provider: 'claude', createdAt: '2026-09-30T02:00:00Z', input: 1e5, cached: 0, output: 5e4, outcome: 'stop' },
+    { jobId: 'other', provider: 'claude', createdAt: '2026-09-30T02:00:00Z', input: 1e6, cached: 0, output: 1e6, outcome: 'stop' },
+  ];
+  const c = runCost(records, ['a', 'b']);
+  assert.equal(c.byProvider.deepseek.usd, +(0.5 * 0.15 + 0.5 * 0.003 + 0.6 + 1.2).toFixed(3));
+  assert.equal(c.byProvider.deepseek.peakCalls, 1);
+  assert.equal(c.byProvider.claude.usd, +(0.1 * 4 + 0.05 * 20).toFixed(3));
+  assert.equal(c.byProvider.claude.calls, 1);
+});

@@ -236,9 +236,14 @@ function createApp(options = {}) {
     const mode = body.mode === 'integrated' ? 'integrated' : 'numeric';
     const effort = ['low', 'high'].includes(body.effort) ? body.effort : 'low';
     const provider = await chooseProvider(body.provider);
+    // Mixed run: another model writes the problems (designWith: design + repairs) or only the repairs (repairWith);
+    // the chosen provider does the rest (independent solve, solution review, checks).
+    const other = async (name) => (name && name !== provider ? chooseProvider(name) : undefined);
+    const designWith = await other(body.designWith);
+    const repairWith = designWith || (await other(body.repairWith));
     const rules = pipeline.pickRules(store, material);
     const { images, ...snapshot } = material;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, perStage: items.length / stages.length } });
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {

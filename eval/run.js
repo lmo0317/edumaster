@@ -22,6 +22,12 @@ const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir)
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
 const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
+const { runCost } = require('./cost');
+// Mixed runs: --analyze-with <p> reads the scans with another model, --design-with <p> writes the problems and their
+// repairs, --repair-with <p> only the repairs; the --providers model does the rest (independent solve, review, checks).
+const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'] };
+for (const k of Object.keys(mixed)) if (!mixed[k]) delete mixed[k];
+const mixedName = Object.entries(mixed).map(([k, v]) => `-${k.replace('With', '')}-${v}`).join('');
 const learning = {};
 
 function dataUrl(file) {
@@ -83,11 +89,11 @@ async function main() {
     const solution = spec.solution ? path.join(casesDir, name, spec.solution) : null;
     for (const provider of providers) {
       const started = Date.now();
-      const row = { case: name, title: spec.title, provider, model: modelOf(provider), stage, mode };
+      const row = { case: name, title: spec.title, provider, model: modelOf(provider), stage, mode, ...mixed };
       process.stdout.write(`\n[${name} · ${provider}] 분석 중…`);
       try {
         const created = await call('POST', '/api/materials', {
-          title: `[평가] ${name} · ${provider}`, provider, sameImage: Boolean(spec.sameImage),
+          title: `[평가] ${name} · ${provider}`, provider: mixed.analyzeWith || provider, sameImage: Boolean(spec.sameImage),
           problemImage: dataUrl(problem), solutionImage: solution && !spec.sameImage ? dataUrl(solution) : null,
           problemViews: views(problem), solutionViews: solution && !spec.sameImage ? views(solution) : [],
         });
@@ -99,7 +105,7 @@ async function main() {
         row.read = { steps: (material.steps || []).map((s) => s.title), question: (material.problem?.text || '').split('\n').filter((l) => l.trim()).pop(), proofread: material.proofread || [] };
         if (stage === 'full' && material.status === 'ready') {
           process.stdout.write(' 생성 중…');
-          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider });
+          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider, designWith: mixed.designWith, repairWith: mixed.repairWith });
           const job = await wait(gen.jobId);
           row.generationUsage = job.usage;
           row.generation = scoreGeneration(job);
@@ -107,6 +113,10 @@ async function main() {
           row.jobId = job.id;
           row.timing = jobTiming(analysisJob, job);
         }
+        // List-price cost of every call this case made (analysis + generation), per provider.
+        const usageDir = path.join(dataDir, 'usage');
+        const records = fs.existsSync(usageDir) ? fs.readdirSync(usageDir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(usageDir, f), 'utf8'))) : [];
+        row.cost = runCost(records, [analysisJob.id, row.jobId].filter(Boolean));
       } catch (e) {
         row.error = e.message;
       }
@@ -119,7 +129,7 @@ async function main() {
   await new Promise((r) => app.server.close(r));
 
   fs.mkdirSync(path.join(__dirname, 'reports'), { recursive: true });
-  const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}`);
+  const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}${mixedName}`);
   fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, reviewVersion: REVIEW_VERSION, learning, results }, null, 1));
   fs.writeFileSync(base_ + '.md', report(results));
   console.log(`\n\n${report(results)}\n보고서: ${base_}.md`);
@@ -148,7 +158,9 @@ function report(results) {
     lines.push(`## ${r.case} · ${r.provider}`);
     if (r.error) lines.push(`- 오류: ${r.error}`);
     if (r.read) lines.push(`- 읽은 STEP: ${r.read.steps.map((s, i) => `${i + 1}) ${s}`).join(' / ')}`, `- 읽은 발문: ${r.read.question}`);
-    if (r.jobId) lines.push(`- 생성 작업: ${r.jobId} (붙인 교사 지침 ${r.rulesAttached}개)`);
+    if (r.jobId) lines.push(`- 생성 작업: ${r.jobId} (붙인 교사 지침 ${r.rulesAttached}개)${[r.analyzeWith && `분석 ${r.analyzeWith}`, r.designWith && `설계·수정 ${r.designWith}`, r.repairWith && !r.designWith && `수정 ${r.repairWith}`].filter(Boolean).map((x) => ' · ' + x).join('')}`);
+    if (r.cost) lines.push(`- 비용(정가): $${r.cost.usd} — ${Object.entries(r.cost.byProvider).map(([p, t]) => `${p} ${t.calls}회 $${t.usd} (입력 ${t.input.toLocaleString()} 중 캐시 ${t.cached.toLocaleString()}, 출력 ${t.output.toLocaleString()}${t.peakCalls ? `, 피크 ${t.peakCalls}회` : ''})`).join(' · ')}`);
+    if (r.timing) lines.push(`- 시간: 분석 ${r.timing.analysis}분 · 생성 ${r.timing.generation}분 (${(r.timing.items || []).map((i) => `${i.label} ${i.minutes}분/수정 ${i.repairs}`).join(', ')})`);
     lines.push(failed.length ? '- 실패한 항목:' : '- 모든 항목 통과');
     for (const c of failed) lines.push(`  - ✗ ${c.name}${c.detail ? ' — ' + c.detail : ''}`);
     lines.push('');
