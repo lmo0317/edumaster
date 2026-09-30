@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
 const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey } = require('./llm');
-const { DIMENSIONS, problemResults, problemScore, wilson } = require('./scoring');
+const { DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
@@ -389,6 +389,7 @@ function createApp(options = {}) {
         score: Math.round(mean * 100), low: Math.round(low * 100), high: Math.round(high * 100),
         metrics: Object.fromEntries(DIMENSIONS.map(([id]) => [id, { ...rate(id), ...(id === 'structural' && verdict ? { reviewed: true } : {}) }])),
         minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
+        time: timeSummary(rows.map((r) => r.timing).filter(Boolean)),
       };
     }
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };

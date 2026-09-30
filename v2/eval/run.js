@@ -21,6 +21,7 @@ const mode = args.mode || 'integrated';
 const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir).filter((d) => fs.existsSync(path.join(casesDir, d, 'case.json'))) : args.cases.split(',');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
+const { jobTiming } = require('../server/scoring');
 const learning = {};
 
 function dataUrl(file) {
@@ -94,6 +95,7 @@ async function main() {
         const material = await call('GET', `/api/materials/${created.material.id}`);
         row.analysisUsage = analysisJob.usage;
         row.analysis = material.status === 'ready' ? scoreAnalysis(material, spec.expect) : [{ name: '분석 완료', pass: false, detail: material.error || analysisJob.error }];
+        row.timing = jobTiming(analysisJob, null);
         row.read = { steps: (material.steps || []).map((s) => s.title), question: (material.problem?.text || '').split('\n').filter((l) => l.trim()).pop(), proofread: material.proofread || [] };
         if (stage === 'full' && material.status === 'ready') {
           process.stdout.write(' 생성 중…');
@@ -103,6 +105,7 @@ async function main() {
           row.generation = scoreGeneration(job);
           row.rulesAttached = (job.rules || []).length;
           row.jobId = job.id;
+          row.timing = jobTiming(analysisJob, job);
         }
       } catch (e) {
         row.error = e.message;

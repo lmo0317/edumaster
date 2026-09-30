@@ -117,7 +117,12 @@
      "STEP 3 제목을 해설에 인쇄된 제목으로: \"최종 식의 값을 계산한다.\" → \"A~D의 물질량을 구한다\""
     ]
    },
-   "minutes": 2.3
+   "minutes": 2.3,
+   "timing": {
+    "analysis": 2.3,
+    "generation": null,
+    "items": []
+   }
   }
  ]
 }

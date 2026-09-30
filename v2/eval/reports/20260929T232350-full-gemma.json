@@ -36,7 +36,12 @@
     "steps": [],
     "proofread": []
    },
-   "minutes": 0.6
+   "minutes": 0.6,
+   "timing": {
+    "analysis": 0.6,
+    "generation": null,
+    "items": []
+   }
   }
  ]
 }

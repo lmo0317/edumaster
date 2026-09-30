@@ -7,10 +7,10 @@
   "mode": "integrated",
   "analysisUsage": {
    "calls": 7,
-   "input": 19613,
-   "output": 30862,
-   "reasoning": 26412,
-   "total": 50475,
+   "input": 24689,
+   "output": 64645,
+   "reasoning": 60782,
+   "total": 89334,
    "maxCalls": 11,
    "maxTokens": 160000
   },
@@ -109,13 +109,12 @@
    ],
    "question": "ㄷ. $t_1$일 때, A의 Ⅱ에서 탈분극이 일어나고 있다.",
    "proofread": [
-    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
-    "STEP 3 제목을 해설에 인쇄된 제목으로: \"t1과 시냅스 위치 추론 및 보기 분석\" → \"t₁과 시냅스가 있는 부분 추론하기\""
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$t_1$과 시냅스가 있는 부분 추론하기\" → \"t₁과 시냅스가 있는 부분 추론하기\""
    ]
   },
-  "minutes": 2,
+  "minutes": 4.5,
   "timing": {
-   "analysis": 1.9,
+   "analysis": 4.4,
    "generation": null,
    "items": []
   }
@@ -127,11 +126,11 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 8,
-   "input": 27579,
-   "output": 5718,
+   "calls": 9,
+   "input": 33749,
+   "output": 17102,
    "reasoning": 0,
-   "total": 33297,
+   "total": 50851,
    "maxCalls": 11,
    "maxTokens": 160000
   },
@@ -154,7 +153,7 @@
    {
     "name": "STEP 제목이 해설과 일치",
     "pass": true,
-    "detail": "1.00, 1.00, 0.86"
+    "detail": "1.00, 1.00, 1.00"
    },
    {
     "name": "문제에 \"휴지 전위는 -70mV\" 포함",
@@ -218,29 +217,30 @@
    },
    {
     "name": "원본 정답 검산 통과",
-    "pass": true,
-    "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    "pass": false,
+    "detail": "옮겨 적은 수치로 해설대로 계산하면 정답과 맞지 않습니다: 2번 선택지 식 \"synapse_at_C == True\" 계산 실패: Undefined symbol synapse_at_C"
    }
   ],
   "read": {
    "steps": [
     "막전위를 이용해 지점 매칭하기",
     "신경 A의 흥분 전도 속도 구하기",
-    "$t_1$과 시냅스가 있는 부문 추론하기"
+    "$t_1$과 시냅스가 있는 부분 추론하기"
    ],
    "question": "ㄷ. $t_1$일 때, A의 II에서 탈분극이 일어나고 있다.",
    "proofread": [
-    "problem.text: \"$\\text{\\textcircled{ㄱ}} \\thicksim \\text{\\textcircled{ㄷ}}$ 중 한 곳에만 시냅스가 있다.\" → \"$\\text{\\textcircled{ㄱ}} \\sim \\text{\\textcircled{ㄷ}}$ 중 한 곳에만 시냅스가 있다.\" (원본 이미지의 물결표($\\sim$)를 LaTeX의 $\\thicksim$으로 잘못 표기함.)",
-    "problem.text: \"$d_1 \\thicksim d_4$에서의 막전위를 나타낸 것이다. I $\\thicksim$ IV는 $d_1 \\thicksim d_4$를 순서 없이 나타낸 것이다.\" → \"$d_1 \\sim d_4$에서의 막전위를 나타낸 것이다. I $\\sim$ IV는 $d_1 \\sim d_4$를 순서 없이 나타낸 것이다.\" (원본 이미지의 물결표($\\sim$)를 LaTeX의 $\\thicksim$으로 잘못 표기함.)",
-    "문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 2cm/ms이(가) 빠진 본문으로 교체",
+    "problem.text: \"$\\odot \\sim \\odot$\" → \"$\\textcircled{ㄱ}\\sim\\textcircled{ㄷ}$\" (원본 이미지에서 시냅스 위치를 나타내는 기호는 $\\odot$가 아니라 $\\textcircled{ㄱ}\\sim\\textcircled{ㄷ}$이다.)",
+    "problem.text: \"$\\odot$ (지점 $d_1$과 $d_2$ 사이), $\\odot$ (지점 $d_2$와 $d_3$ 사이), $\\odot$ (지점 $d_3$과 $d_4$ 사이)\" → \"$\\textcircled{ㄱ}$ (지점 $d_1$과 $d_2$ 사이), $\\textcircled{ㄹ}$ (지점 $d_2$와 $d_3$ 사이), $\\textcircled{ㄷ}$ (지점 $d_3$과 $d_4$ 사이)\" (원본 이미지의 시냅스 위치 기호는 $\\odot$가 아니라 $\\textcircled{ㄱ}$, $\\textcircled{ㄹ}$, $\\textcircled{ㄷ}$이다.)",
+    "problem.text: \"ㄴ. 시냅스는 $\\odot$에 있다.\" → \"ㄴ. 시냅스는 $\\textcircled{ㄷ}$에 있다.\" (원본 이미지의 보기 ㄴ에서 시냅스 위치를 나타내는 기호는 $\\odot$가 아니라 $\\textcircled{ㄷ}$이다.)",
+    "문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 2cm/ms, 4ms이(가) 빠진 본문으로 교체",
     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
     "STEP 1 제목을 해설에 인쇄된 제목으로: \"막전위를 이용한 지점 매칭\" → \"막전위를 이용해 지점 매칭하기\"",
-    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$t_1$과 시냅스가 있는 부분 추론 및 보기 분석\" → \"$t_1$과 시냅스가 있는 부문 추론하기\""
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$t_1$과 시냅스가 있는 부분 추론 및 보기 분석\" → \"$t_1$과 시냅스가 있는 부분 추론하기\""
    ]
   },
-  "minutes": 1.3,
+  "minutes": 3.4,
   "timing": {
-   "analysis": 1.2,
+   "analysis": 3.3,
    "generation": null,
    "items": []
   }
@@ -253,10 +253,10 @@
   "mode": "integrated",
   "analysisUsage": {
    "calls": 7,
-   "input": 19644,
-   "output": 23871,
-   "reasoning": 20377,
-   "total": 43515,
+   "input": 19843,
+   "output": 30211,
+   "reasoning": 25745,
+   "total": 50054,
    "maxCalls": 11,
    "maxTokens": 160000
   },
@@ -343,21 +343,23 @@
     "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
     "A~D의 몰질량을 구한다"
    ],
-   "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 몰질량} + \\text{D의 몰질량}}{\\text{B의 몰질량}}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+   "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 몰질량 + \\ce{D}의 몰질량}{\\ce{B}의 몰질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
    "proofread": [
-    "steps[2].work: \"Ⅲ에서 $\\frac{\\text{D의 양(mol)}}{\\text{전체 기체의 양(mol)}}$ 의 실측값이 $\\frac{2}{5}$ 인데\" → \"Ⅱ에서 $\\frac{\\text{D의 양(mol)}}{\\text{전체 기체의 양(mol)}}$ 의 실측값이 $\\frac{2}{5}$ 인데\" (실측값 2/5와 상댓값 18은 실험 Ⅱ의 자료인데 Ⅲ으로 잘못 옮겼다.)",
-    "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
-    "발문 재판독(2회 일치): \"물질량\" → \"몰질량\"",
+    "steps[3].title: \"\\frac{\\ce{C}의 질량 + \\ce{D}의 질량}{\\ce{B}의 질량}$을 구한다\" → \"\\frac{\\ce{C}의 물질량 + \\ce{D}의 물질량}{\\ce{B}의 물질량}$을 구한다\" (해설의 소제목도 '물질량'으로 인쇄되어 있다.)",
+    "steps[3].work: \"(\\ce{C}의 질량 + \\ce{D}의 질량) \\times 2$이다\" → \"(\\ce{C}의 물질량 + \\ce{D}의 물질량) \\times 2$이다\" (B의 물질량과 대응하는 C, D의 값은 질량이 아니라 물질량(몰질량)이다.)",
+    "steps[3].work: \"따라서 $\\frac{\\ce{C}의 질량 + \\ce{D}의 질량}{\\ce{B}의 질량} = 2$이다\" → \"따라서 $\\frac{\\ce{C}의 물질량 + \\ce{D}의 물질량}{\\ce{B}의 물질량} = 2$이다\" (비의 값 2는 물질량의 비에서 나오므로 '물질량'으로 고쳐야 한다.)",
+    "steps[3].work: \"\\frac{b}{x} \\times \\frac{\\ce{C}의 질량 + \\ce{D}의 질량}{\\ce{B}의 질량} = \\frac{3}{15} \\times 2\" → \"\\frac{b}{x} \\times \\frac{\\ce{C}의 물질량 + \\ce{D}의 물질량}{\\ce{B}의 물질량} = \\frac{3}{15} \\times 2\" (선택지 분석의 식에서도 분자·분모는 물질량이며, 질량의 비라면 값이 2가 될 수 없다.)",
+    "steps[3].result: \"\\frac{\\ce{C}의 질량 + \\ce{D}의 질량}{\\ce{B}의 질량} = 2$\" → \"\\frac{\\ce{C}의 물질량 + \\ce{D}의 물질량}{\\ce{B}의 물질량} = 2$\" (결과 요약에서도 같은 비를 '물질량'으로 표기해야 한다.)",
+    "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
+    "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
     "같은 오독을 해설 STEP 전체에도 적용: \"물질량\" → \"몰질량\"",
     "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
-    "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 Ⅰ에서 한계 반응물 구하기\" → \"Ⅰ에서 한계 반응물을 구한다\"",
-    "STEP 2 제목을 해설에 인쇄된 제목으로: \"반응 후 기체의 질량과 양(mol) 구하기\" → \"Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
-    "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량과 반응 계수 b 및 몰질량 비율 계산\" → \"A~D의 몰질량을 구한다\""
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$\\ce{A}$~$\\ce{D}$의 몰질량과 반응 계수를 구해 최종 답을 구한다\" → \"A~D의 몰질량을 구한다\""
    ]
   },
-  "minutes": 1.7,
+  "minutes": 2,
   "timing": {
-   "analysis": 1.6,
+   "analysis": 2,
    "generation": null,
    "items": []
   }
@@ -369,11 +371,11 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 6,
-   "input": 28686,
-   "output": 3815,
+   "calls": 8,
+   "input": 36806,
+   "output": 15900,
    "reasoning": 0,
-   "total": 32501,
+   "total": 52706,
    "maxCalls": 11,
    "maxTokens": 160000
   },
@@ -458,18 +460,19 @@
    "steps": [
     "I에서 한계 반응물을 구한다",
     "I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
-    "A ~ D의 물질량을 구한다"
+    "A~D의 물질량을 구한다"
    ],
-   "question": "⑤ $1$",
+   "question": "⑤ 1",
    "proofread": [
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3",
     "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 I에서 한계 반응물 구하기\" → \"I에서 한계 반응물을 구한다\"",
-    "STEP 2 제목을 해설에 인쇄된 제목으로: \"A~D의 물질량 구하기\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
-    "STEP 3 제목을 해설에 인쇄된 제목으로: \"비율 계산 및 최종 답 도출\" → \"A ~ D의 물질량을 구한다\""
+    "STEP 2 제목을 해설에 인쇄된 제목으로: \"실험 I ~ III에서 반응 후 기체의 질량(g)과 양(mol) 구하기\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"비례식을 이용한 x와 b를 구하여 최종 결과 도출하기\" → \"A~D의 물질량을 구한다\""
    ]
   },
-  "minutes": 0.9,
+  "minutes": 3.2,
   "timing": {
-   "analysis": 0.8,
+   "analysis": 3.2,
    "generation": null,
    "items": []
   }

@@ -237,7 +237,31 @@
    ],
    "rulesAttached": 3,
    "jobId": "f82e16098f9ebd9bcd039278",
-   "minutes": 41.8
+   "minutes": 41.8,
+   "timing": {
+    "analysis": 5.3,
+    "generation": 36.4,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 19.3,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 13.2,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 4,
+      "repairs": 0,
+      "made": false
+     }
+    ]
+   }
   },
   {
    "case": "bio-nerve-conduction",
@@ -516,7 +540,31 @@
    ],
    "rulesAttached": 3,
    "jobId": "08bd7f2f159efebd4c35358d",
-   "minutes": 21.9
+   "minutes": 21.9,
+   "timing": {
+    "analysis": 1.1,
+    "generation": 20.7,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 4.7,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 6,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 10.1,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   }
   },
   {
    "case": "chem-molar-mass",
@@ -783,7 +831,31 @@
    ],
    "rulesAttached": 3,
    "jobId": "23b9d0eccc303be9f0e93cee",
-   "minutes": 23.2
+   "minutes": 23.2,
+   "timing": {
+    "analysis": 0.7,
+    "generation": 22.4,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 3.7,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 4.4,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 14.3,
+      "repairs": 2,
+      "made": true
+     }
+    ]
+   }
   },
   {
    "case": "chem-molar-mass",
@@ -964,7 +1036,31 @@
    ],
    "rulesAttached": 3,
    "jobId": "a4122958d2d134bc4c52a9fb",
-   "minutes": 12.2
+   "minutes": 12.2,
+   "timing": {
+    "analysis": 0.9,
+    "generation": 11.3,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 1.9,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 4.7,
+      "repairs": 0,
+      "made": false
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 4.7,
+      "repairs": 0,
+      "made": false
+     }
+    ]
+   }
   }
  ]
 }

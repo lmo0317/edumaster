@@ -6,12 +6,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 17314,
-   "output": 55153,
-   "reasoning": 51689,
-   "total": 72467,
-   "maxCalls": 4,
+   "calls": 5,
+   "input": 19400,
+   "output": 27724,
+   "reasoning": 23191,
+   "total": 47124,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -32,8 +32,8 @@
    },
    {
     "name": "STEP 제목이 해설과 일치",
-    "pass": true,
-    "detail": "1.00, 1.00, 1.00"
+    "pass": false,
+    "detail": "STEP 3 \"t1과 시냅스 위치 추론 및 보기 분석\" (유사도 0.43)"
    },
    {
     "name": "문제에 \"휴지 전위\" 있음",
@@ -100,14 +100,17 @@
    "steps": [
     "막전위를 이용해 지점 매칭하기",
     "신경 A의 흥분 전도 속도 구하기",
-    "$t_1$과 시냅스가 있는 부분 추론하기"
+    "t1과 시냅스 위치 추론 및 보기 분석"
    ],
    "question": "ㄷ. $t_1$일 때, A의 Ⅱ에서 탈분극이 일어나고 있다.",
-   "proofread": []
+   "proofread": [
+    "problem.text: \"Ⅰ $d_4$ | Ⅱ $d_2$ | Ⅲ $d_3$ | Ⅳ $d_1$\" → \"Ⅰ | Ⅱ | Ⅲ | Ⅳ\" (인쇄된 표의 머리글에는 Ⅰ~Ⅳ만 있고, 각 열이 어느 지점인지는 'Ⅰ~Ⅳ는 $d_1 \\sim d_4$를 순서 없이 나타낸 것'이라 주어지지 않았다. 옮겨 적은 표에는 해설에서 밝혀지는 결과($d_4, d_2, d_3, d_1$)가 머리글에 잘못 들어가 있다.)",
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3"
+   ]
   },
-  "minutes": 3.5,
+  "minutes": 1.9,
   "timing": {
-   "analysis": 3.5,
+   "analysis": 1.9,
    "generation": null,
    "items": []
   }
@@ -119,24 +122,24 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 14470,
-   "output": 4065,
+   "calls": 4,
+   "input": 24161,
+   "output": 4396,
    "reasoning": 0,
-   "total": 18535,
-   "maxCalls": 4,
+   "total": 28557,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
    {
     "name": "정답 번호",
-    "pass": false,
-    "detail": "읽음 0 / 기대 2"
+    "pass": true,
+    "detail": "읽음 2 / 기대 2"
    },
    {
     "name": "선택지 수",
-    "pass": false,
-    "detail": "읽음 0 / 기대 5"
+    "pass": true,
+    "detail": "읽음 5 / 기대 5"
    },
    {
     "name": "해설 STEP 수",
@@ -145,8 +148,8 @@
    },
    {
     "name": "STEP 제목이 해설과 일치",
-    "pass": false,
-    "detail": "STEP 3 \"보기 분석\" (유사도 0.00)"
+    "pass": true,
+    "detail": "1.00, 1.00, 1.00"
    },
    {
     "name": "문제에 \"휴지 전위\" 있음",
@@ -175,17 +178,17 @@
    },
    {
     "name": "문제에 \"4ms\" 없음 (필기·오독)",
-    "pass": true,
+    "pass": false,
     "detail": ""
    },
    {
     "name": "문제에 \"4 ms\" 없음 (필기·오독)",
-    "pass": true,
+    "pass": false,
     "detail": ""
    },
    {
     "name": "문제에 \"시냅스 존재\" 없음 (필기·오독)",
-    "pass": false,
+    "pass": true,
     "detail": ""
    },
    {
@@ -211,18 +214,21 @@
   ],
   "read": {
    "steps": [
-    "막전위를 이용한 지점 매칭",
-    "신경 A의 전도 속도 및 시냅스 위치 추론",
-    "보기 분석"
+    "step1 막전위를 이용해 지점 매칭하기",
+    "step2 신경 A의 흥분 전도 속도 구하기",
+    "step3 $t_1$과 시냅스가 있는 부분 추론하기"
    ],
-   "question": "choices: [\"ㄱ\", \"ㄴ\", \"ㄷ\", \"ㄱ, ㄴ\", \"ㄴ, ㄷ\", \"ㄱ, ㄴ, ㄷ\"],",
+   "question": "(단, 표의 $A$의 $\\text{III}$은 $? -70$, $B$의 $\\text{III}$은 $? -70$으로 표기되어 있으며, $A$의 $\\{IV$은 $0$탈, $B$의 $\\text{IV}$은 $-70$으로 표기됨)",
    "proofread": [
-    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2"
+    "problem.text: \"휴지 전위는 $-70\\text{mV}$이다.\" → \"휴지 전위는 $-80\\text{mV}$이다.\" (문제 본문 하단의 조건에서 휴지 전위는 -80mV로 명시되어 있으며, 그래프 상의 휴지 전위도 -80mV임. 옮겨 적은 내용(-70mV)은 오류임.)",
+    "STEP 1 제목을 해설에 인쇄된 제목으로: \"막전위를 이용한 지점 매칭\" → \"step1 막전위를 이용해 지점 매칭하기\"",
+    "STEP 2 제목을 해설에 인쇄된 제목으로: \"신경 $A, B$의 흥분 전도 속도 구하기\" → \"step2 신경 A의 흥분 전도 속도 구하기\"",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$t_1$과 시냅스가 있는 부분 추론하기\" → \"step3 $t_1$과 시냅스가 있는 부분 추론하기\""
    ]
   },
-  "minutes": 0.9,
+  "minutes": 1,
   "timing": {
-   "analysis": 0.9,
+   "analysis": 1,
    "generation": null,
    "items": []
   }
@@ -234,12 +240,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 2,
-   "input": 11035,
-   "output": 11947,
-   "reasoning": 9232,
-   "total": 22982,
-   "maxCalls": 4,
+   "calls": 5,
+   "input": 19472,
+   "output": 16170,
+   "reasoning": 12852,
+   "total": 35642,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -255,13 +261,13 @@
    },
    {
     "name": "해설 STEP 수",
-    "pass": false,
-    "detail": "정리 4 / 해설 3"
+    "pass": true,
+    "detail": "정리 3 / 해설 3"
    },
    {
     "name": "STEP 제목이 해설과 일치",
     "pass": true,
-    "detail": "0.64, 0.69, 0.50"
+    "detail": "1.00, 1.00, 0.63"
    },
    {
     "name": "문제에 \"몰질량\" 있음",
@@ -310,23 +316,24 @@
    },
    {
     "name": "해설 STEP에 \"모순\" 있음",
-    "pass": true,
+    "pass": false,
     "detail": ""
    }
   ],
   "read": {
    "steps": [
-    "실험 Ⅰ에서 한계 반응물 구하기",
-    "반응 후 기체의 질량 및 양(mol) 구하기",
-    "A~D의 물질량을 구하고 $x$, $y$ 값 계산하기",
-    "반응 계수 $b$와 최종 계산값 구하기"
+    "Ⅰ에서 한계 반응물을 구한다",
+    "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+    "A~D의 물질량을 구하고 선택지를 분석한다"
    ],
-   "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 물질량} + \\text{D의 물질량}}{\\text{B의 물질량}}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
-   "proofread": []
+   "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 물질량 + \\ce{D}의 물질량}{\\ce{B}의 물질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+   "proofread": [
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4 → STEP 3"
+   ]
   },
-  "minutes": 0.9,
+  "minutes": 1.1,
   "timing": {
-   "analysis": 0.8,
+   "analysis": 1,
    "generation": null,
    "items": []
   }
@@ -338,12 +345,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 16426,
-   "output": 3104,
+   "calls": 5,
+   "input": 28816,
+   "output": 3503,
    "reasoning": 0,
-   "total": 19530,
-   "maxCalls": 4,
+   "total": 32319,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -365,7 +372,7 @@
    {
     "name": "STEP 제목이 해설과 일치",
     "pass": false,
-    "detail": "STEP 2 \"최종 답 구하기\" (유사도 0.00); STEP 3 \"\" (유사도 0.00)"
+    "detail": "STEP 3 \"\" (유사도 0.00)"
    },
    {
     "name": "문제에 \"몰질량\" 있음",
@@ -414,23 +421,25 @@
    },
    {
     "name": "해설 STEP에 \"모순\" 있음",
-    "pass": true,
+    "pass": false,
     "detail": ""
    }
   ],
   "read": {
    "steps": [
-    "실험 I에서 한계 반응물을 구하고 A~D의 물질량 및 관련 변수들을 산출한다.",
-    "최종 답 구하기"
+    "I에서 한계 반응물을 구한다.",
+    "A~D의 물질량을 구한다."
    ],
-   "question": "ㅁ. 1",
+   "question": "⑤ 1",
    "proofread": [
-    "해설의 단계 표시(2개)에 맞춰 STEP을 합쳤습니다: STEP 1+2 → STEP 1"
+    "해설의 단계 표시(2개)에 맞춰 STEP을 합쳤습니다: STEP 1+2 → STEP 1",
+    "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 I에서 한계 반응물을 구하고 A~D의 물질량을 구한다.\" → \"I에서 한계 반응물을 구한다.\"",
+    "STEP 2 제목을 해설에 인쇄된 제목으로: \"상댓값 및 최종 식 계산\" → \"A~D의 물질량을 구한다.\""
    ]
   },
-  "minutes": 0.7,
+  "minutes": 0.9,
   "timing": {
-   "analysis": 0.7,
+   "analysis": 0.8,
    "generation": null,
    "items": []
   }

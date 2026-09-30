@@ -51,4 +51,32 @@ function problemScore({ dims }) {
   return dims.made && total ? weighed.reduce((a, [id, , w]) => a + (dims[id] ? w : 0), 0) / total : 0;
 }
 
-module.exports = { DIMENSIONS, problemResults, problemScore, wilson };
+// Minutes spent reading the original and making the set, and per problem: from its "문제 설계 중" log line to its
+// verdict (design, independent review and every repair included).
+function jobTiming(analysisJob, generationJob) {
+  const mins = (a, b) => (a && b ? +((Date.parse(b) - Date.parse(a)) / 60000).toFixed(1) : null);
+  const items = [];
+  for (const it of generationJob?.items || []) {
+    const lines = (generationJob.log || []).filter((l) => l.message.startsWith(`${it.label}:`));
+    if (!lines.length) continue;
+    items.push({ label: it.label, minutes: mins(lines[0].t, lines[lines.length - 1].t), repairs: (it.attempts || []).filter((a) => a.kind === 'repair').length, made: Boolean(it.problem) });
+  }
+  return { analysis: mins(analysisJob?.startedAt, analysisJob?.finishedAt), generation: mins(generationJob?.startedAt, generationJob?.finishedAt), items };
+}
+
+// Average minutes over runs: reading the original, the whole set, one problem, each stage, repairs per problem.
+function timeSummary(timings) {
+  const avg = (xs) => { const v = xs.filter((x) => x != null); return v.length ? +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null; };
+  const items = timings.flatMap((t) => t.items || []);
+  const stage = (re) => avg(items.filter((i) => re.test(i.label)).map((i) => i.minutes));
+  return {
+    runs: timings.length,
+    analysis: avg(timings.map((t) => t.analysis)),
+    generation: avg(timings.map((t) => t.generation)),
+    perProblem: avg(items.map((i) => i.minutes)),
+    stages: { s1: stage(/^STEP 1 연습/), s12: stage(/누적/), final: stage(/최종/) },
+    repairs: avg(items.map((i) => i.repairs)),
+  };
+}
+
+module.exports = { DIMENSIONS, problemResults, problemScore, wilson, jobTiming, timeSummary };

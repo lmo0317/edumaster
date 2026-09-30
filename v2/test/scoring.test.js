@@ -36,3 +36,27 @@ test('the range is wide for few problems and never collapses to a point', () => 
   const [a, b] = wilson(0.44, 12);
   assert.ok(a < 0.44 && b > 0.44);
 });
+
+test('time per problem runs from its design line to its verdict; the summary averages runs and stages', () => {
+  const { jobTiming, timeSummary } = require('../server/scoring');
+  const at = (m) => new Date(Date.UTC(2026, 8, 30, 1, m)).toISOString();
+  const analysis = { startedAt: at(0), finishedAt: at(3) };
+  const generation = {
+    startedAt: at(3), finishedAt: at(20),
+    items: [{ label: 'STEP 1 연습', problem: {}, attempts: [{ kind: 'repair' }] }, { label: '최종 쌍둥이 문제', problem: null, attempts: [] }],
+    log: [
+      { t: at(3), message: 'STEP 1 연습: 문제 설계 중' }, { t: at(6), message: 'STEP 1 연습: 검토에서 발견된 2건 수정 중' }, { t: at(9), message: 'STEP 1 연습: 검증 통과' },
+      { t: at(9), message: '최종 쌍둥이 문제: 문제 설계 중' }, { t: at(20), message: '최종 쌍둥이 문제: 실패 — 잘림' },
+    ],
+  };
+  const t = jobTiming(analysis, generation);
+  assert.deepEqual(t, { analysis: 3, generation: 17, items: [
+    { label: 'STEP 1 연습', minutes: 6, repairs: 1, made: true },
+    { label: '최종 쌍둥이 문제', minutes: 11, repairs: 0, made: false },
+  ] });
+  const sum = timeSummary([t, { analysis: 5, generation: 10, items: [{ label: 'STEP 1 연습', minutes: 4, repairs: 0 }] }]);
+  assert.equal(sum.analysis, 4);
+  assert.equal(sum.stages.s1, 5);
+  assert.equal(sum.stages.final, 11);
+  assert.equal(sum.perProblem, 7);
+});

@@ -6,12 +6,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 17314,
-   "output": 55153,
-   "reasoning": 51689,
-   "total": 72467,
-   "maxCalls": 4,
+   "calls": 7,
+   "input": 24657,
+   "output": 53592,
+   "reasoning": 49715,
+   "total": 78249,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -33,10 +33,10 @@
    {
     "name": "STEP 제목이 해설과 일치",
     "pass": true,
-    "detail": "1.00, 1.00, 1.00"
+    "detail": "1.00, 1.00, 0.86"
    },
    {
-    "name": "문제에 \"휴지 전위\" 있음",
+    "name": "문제에 \"휴지 전위는 -70mV\" 있음",
     "pass": true,
     "detail": ""
    },
@@ -100,10 +100,13 @@
    "steps": [
     "막전위를 이용해 지점 매칭하기",
     "신경 A의 흥분 전도 속도 구하기",
-    "$t_1$과 시냅스가 있는 부분 추론하기"
+    "t₁과 시냅스가 있는 부분 추론하기"
    ],
    "question": "ㄷ. $t_1$일 때, A의 Ⅱ에서 탈분극이 일어나고 있다.",
-   "proofread": []
+   "proofread": [
+    "problem.text: \"| A | $-80$ | $0$ | $?$ | $-70$ |\" → \"| A | $-80$ | $0$ | $?$ | $0$ |\" (인쇄된 표에서 A의 Ⅳ(=$d_1$) 값은 $0$이다. 해설에서도 'A에서 Ⅱ와 Ⅳ의 막전위는 모두 $0\\text{mV}$이고'라고 하여 A의 Ⅳ가 $0\\text{mV}$임을 확인할 수 있는데, $-70$으로 잘못 옮겼다.)",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"$t_1$과 시냅스가 있는 부분 추론하기\" → \"t₁과 시냅스가 있는 부분 추론하기\""
+   ]
   },
   "minutes": 3.5,
   "timing": {
@@ -119,24 +122,24 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 14470,
-   "output": 4065,
+   "calls": 7,
+   "input": 25079,
+   "output": 4845,
    "reasoning": 0,
-   "total": 18535,
-   "maxCalls": 4,
+   "total": 29924,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
    {
     "name": "정답 번호",
-    "pass": false,
-    "detail": "읽음 0 / 기대 2"
+    "pass": true,
+    "detail": "읽음 2 / 기대 2"
    },
    {
     "name": "선택지 수",
-    "pass": false,
-    "detail": "읽음 0 / 기대 5"
+    "pass": true,
+    "detail": "읽음 5 / 기대 5"
    },
    {
     "name": "해설 STEP 수",
@@ -145,11 +148,11 @@
    },
    {
     "name": "STEP 제목이 해설과 일치",
-    "pass": false,
-    "detail": "STEP 3 \"보기 분석\" (유사도 0.00)"
+    "pass": true,
+    "detail": "1.00, 1.00, 1.00"
    },
    {
-    "name": "문제에 \"휴지 전위\" 있음",
+    "name": "문제에 \"휴지 전위는 -70mV\" 있음",
     "pass": true,
     "detail": ""
    },
@@ -175,12 +178,12 @@
    },
    {
     "name": "문제에 \"4ms\" 없음 (필기·오독)",
-    "pass": true,
+    "pass": false,
     "detail": ""
    },
    {
     "name": "문제에 \"4 ms\" 없음 (필기·오독)",
-    "pass": true,
+    "pass": false,
     "detail": ""
    },
    {
@@ -211,18 +214,21 @@
   ],
   "read": {
    "steps": [
-    "막전위를 이용한 지점 매칭",
-    "신경 A의 전도 속도 및 시냅스 위치 추론",
-    "보기 분석"
+    "막전위를 이용해 지점 매칭하기",
+    "신경 A의 흥분 전도 속도 구하기",
+    "$t_1$과 시냅스가 있는 부분 추론하기"
    ],
-   "question": "choices: [\"ㄱ\", \"ㄴ\", \"ㄷ\", \"ㄱ, ㄴ\", \"ㄴ, ㄷ\", \"ㄱ, ㄴ, ㄷ\"],",
+   "question": "ㄷ. $t_1$일 때, $A$의 $\\text{II}$에서 탈분극이 일어나고 있다.",
    "proofread": [
-    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2"
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2",
+    "STEP 1 제목을 해설에 인쇄된 제목으로: \"막전위를 이용한 지점 매칭\" → \"막전위를 이용해 지점 매칭하기\"",
+    "STEP 2 제목을 해설에 인쇄된 제목으로: \"신경 A의 전도 속도 및 시냅스 위치 추론\" → \"신경 A의 흥분 전도 속도 구하기\"",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"보기 분석\" → \"$t_1$과 시냅스가 있는 부분 추론하기\""
    ]
   },
-  "minutes": 0.9,
+  "minutes": 1.1,
   "timing": {
-   "analysis": 0.9,
+   "analysis": 1,
    "generation": null,
    "items": []
   }
@@ -234,12 +240,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 2,
-   "input": 11035,
-   "output": 11947,
-   "reasoning": 9232,
-   "total": 22982,
-   "maxCalls": 4,
+   "calls": 7,
+   "input": 19781,
+   "output": 14421,
+   "reasoning": 10999,
+   "total": 34202,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -255,17 +261,17 @@
    },
    {
     "name": "해설 STEP 수",
-    "pass": false,
-    "detail": "정리 4 / 해설 3"
+    "pass": true,
+    "detail": "정리 3 / 해설 3"
    },
    {
     "name": "STEP 제목이 해설과 일치",
     "pass": true,
-    "detail": "0.64, 0.69, 0.50"
+    "detail": "1.00, 1.00, 1.00"
    },
    {
     "name": "문제에 \"몰질량\" 있음",
-    "pass": false,
+    "pass": true,
     "detail": ""
    },
    {
@@ -280,7 +286,7 @@
    },
    {
     "name": "문제에 \"물질량\" 없음 (필기·오독)",
-    "pass": false,
+    "pass": true,
     "detail": ""
    },
    {
@@ -305,7 +311,7 @@
    },
    {
     "name": "해설 STEP에 \"몰질량\" 있음",
-    "pass": false,
+    "pass": true,
     "detail": ""
    },
    {
@@ -316,17 +322,22 @@
   ],
   "read": {
    "steps": [
-    "실험 Ⅰ에서 한계 반응물 구하기",
-    "반응 후 기체의 질량 및 양(mol) 구하기",
-    "A~D의 물질량을 구하고 $x$, $y$ 값 계산하기",
-    "반응 계수 $b$와 최종 계산값 구하기"
+    "Ⅰ에서 한계 반응물을 구한다",
+    "Ⅰ~Ⅲ에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+    "A~D의 몰질량을 구한다"
    ],
-   "question": "$\\frac{b}{x} \\times \\frac{\\text{C의 물질량} + \\text{D의 물질량}}{\\text{B의 물질량}}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
-   "proofread": []
+   "question": "$\\frac{b}{x} \\times \\frac{\\ce{C}의 몰질량 + \\ce{D}의 몰질량}{\\ce{B}의 몰질량}$ 은? (단, 실린더 속 기체의 온도와 압력은 일정하다.) (3점)",
+   "proofread": [
+    "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
+    "발문 재판독(2회 일치): \"질량\" → \"몰질량\"",
+    "같은 오독을 해설 STEP 전체에도 적용: \"물질량\" → \"몰질량\"",
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 3+4+5 → STEP 3",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"A~D의 몰질량과 반응 계수 b 및 질량비를 구하고 선택지를 분석한다\" → \"A~D의 몰질량을 구한다\""
+   ]
   },
-  "minutes": 0.9,
+  "minutes": 1.1,
   "timing": {
-   "analysis": 0.8,
+   "analysis": 1,
    "generation": null,
    "items": []
   }
@@ -338,12 +349,12 @@
   "stage": "analyze",
   "mode": "integrated",
   "analysisUsage": {
-   "calls": 3,
-   "input": 16426,
-   "output": 3104,
+   "calls": 7,
+   "input": 29273,
+   "output": 3632,
    "reasoning": 0,
-   "total": 19530,
-   "maxCalls": 4,
+   "total": 32905,
+   "maxCalls": 8,
    "maxTokens": 120000
   },
   "analysis": [
@@ -359,13 +370,13 @@
    },
    {
     "name": "해설 STEP 수",
-    "pass": false,
-    "detail": "정리 2 / 해설 3"
+    "pass": true,
+    "detail": "정리 3 / 해설 3"
    },
    {
     "name": "STEP 제목이 해설과 일치",
-    "pass": false,
-    "detail": "STEP 2 \"최종 답 구하기\" (유사도 0.00); STEP 3 \"\" (유사도 0.00)"
+    "pass": true,
+    "detail": "0.91, 0.94, 0.75"
    },
    {
     "name": "문제에 \"몰질량\" 있음",
@@ -420,17 +431,21 @@
   ],
   "read": {
    "steps": [
-    "실험 I에서 한계 반응물을 구하고 A~D의 물질량 및 관련 변수들을 산출한다.",
-    "최종 답 구하기"
+    "I에서 한계 반응물을 구한다",
+    "I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다",
+    "A~D의 물질량을 구한다"
    ],
-   "question": "ㅁ. 1",
+   "question": "⑤ 1",
    "proofread": [
-    "해설의 단계 표시(2개)에 맞춰 STEP을 합쳤습니다: STEP 1+2 → STEP 1"
+    "해설의 단계 표시(3개)에 맞춰 STEP을 합쳤습니다: STEP 2+3 → STEP 2",
+    "STEP 1 제목을 해설에 인쇄된 제목으로: \"실험 I에서 한계 반응물 구하기\" → \"I에서 한계 반응물을 구한다\"",
+    "STEP 2 제목을 해설에 인쇄된 제목으로: \"A~D의 물질량 및 상댓값과 x, b 구하기\" → \"I ~ III에서 반응 후 기체의 질량(g)과 양(mol)을 구한다\"",
+    "STEP 3 제목을 해설에 인쇄된 제목으로: \"최종 값 계산\" → \"A~D의 물질량을 구한다\""
    ]
   },
-  "minutes": 0.7,
+  "minutes": 0.8,
   "timing": {
-   "analysis": 0.7,
+   "analysis": 0.8,
    "generation": null,
    "items": []
   }

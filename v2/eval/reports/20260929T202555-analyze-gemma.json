@@ -116,7 +116,12 @@
      "과거 교사 교정 1건을 판독에 참고했습니다."
     ]
    },
-   "minutes": 2
+   "minutes": 2,
+   "timing": {
+    "analysis": 2,
+    "generation": null,
+    "items": []
+   }
   }
  ]
 }

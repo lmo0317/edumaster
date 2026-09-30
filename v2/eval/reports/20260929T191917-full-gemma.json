@@ -276,7 +276,31 @@
    ],
    "rulesAttached": 3,
    "jobId": "4245f0d972da2f69c3f82bab",
-   "minutes": 26
+   "minutes": 26,
+   "timing": {
+    "analysis": 2.4,
+    "generation": 23.5,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 6.8,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 누적 연습",
+      "minutes": 7.1,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "최종 쌍둥이 문제",
+      "minutes": 9.7,
+      "repairs": 1,
+      "made": true
+     }
+    ]
+   }
   }
  ]
 }
