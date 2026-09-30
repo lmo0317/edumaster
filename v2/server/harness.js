@@ -112,9 +112,10 @@ function checkNumbersOnly(material, item, mode) {
     same ? '원본과 문장·표 구조가 같고 숫자만 다릅니다. 조건 제시 방식, 자료 관계 또는 질문을 다시 설계해야 합니다.' : '')];
 }
 
-/** A practice stage that must infer the leftover reactant must not print A/B in the leftover column (v1 stage-clue-leak). */
+/** A problem whose STEP 1 infers the leftover reactant must not print A/B in the leftover column (v1 stage-clue-leak).
+ * The final problem needs STEP 1 too (DeepSeek's final printed "A 8w", "B 2w" and so skipped it). */
 function checkClueLeak(material, item) {
-  if (item.stage.kind === 'twin') return [];
+  if (!stageSteps(item.stage, material.steps.length).includes(1)) return [];
   const firstStep = material.steps[0] ? material.steps[0].title + material.steps[0].work : '';
   if (!/한계\s*반응물|남는|잔류|모두\s*반응/.test(firstStep)) return [];
   const leak = item.problem.text.split('\n').some((line) => {
