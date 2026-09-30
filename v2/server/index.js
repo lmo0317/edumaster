@@ -442,13 +442,19 @@ function createApp(options = {}) {
   }
   route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
-  // The public copy of this page (compare.html): no login and nothing else of the system. The colleague's message
-  // the checklist was built from stays private; the checklist itself is shown.
+  // The public page (compare.html): no login, nothing else of the system — each model's results and its PDF only.
   const PUBLIC_COMPARE = 'chem-molar-mass';
   route('GET', /^\/api\/public\/compare$/, () => {
-    const bundle = compareBundle(PUBLIC_COMPARE);
-    if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
-    return bundle;
+    const file = path.join(compareDir, `${PUBLIC_COMPARE}.json`);
+    if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');
+    const b = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return {
+      id: b.id, title: b.title,
+      models: b.models.map((m) => ({
+        key: m.key, label: m.label, pdf: m.pdf,
+        items: m.items.map((it) => ({ label: it.label, stage: it.stage, status: it.status, error: it.error || '', problems: (it.problems || []).slice(0, 1), warnings: (it.warnings || []).slice(0, 1) })),
+      })),
+    };
   }, { open: true });
   route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');

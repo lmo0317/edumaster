@@ -78,9 +78,8 @@
       비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. ${c.opusRange ? 'Opus는 토큰 수가 기록되지 않는 방식으로 돌렸기 때문에, 실제로 주고받은 글자 수로 추정한 범위입니다 (생각 토큰은 측정하지 못해 답변의 0~2배로 잡음).' : 'Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다.'}${balance ? ' DeepSeek 충전 잔액: <span id="balance">확인 중…</span>' : ''}</p>`;
   }
 
-  // The same molar-mass original made into a problem set by each model: what worked, what did not, the PDF.
-  // pdfBase: where the PDFs are served (the app's API or the public one); balance: show DeepSeek's balance slot.
-  function pageHtml(b, { pdfBase = 'api/compare', selectable = false, balance = false } = {}) {
+  // One row per model: each problem's result and the PDF. The public page shows only this.
+  function resultsHtml(b, { pdfBase = 'api/compare', fidelity = null } = {}) {
     const RESULT = {
       passed: ['ok', '✓ 됨', ''], warning: ['ok', '✓ 됨 (확인할 점)', ''],
       needs_review: ['warn', '△ 검토 필요', ''], failed: ['bad', '✕ 안 됨', ''],
@@ -91,6 +90,26 @@
       return first.length > 70 ? first.slice(0, 70) + '…' : first;
     };
     const stageName = (it) => (it.stage?.kind === 'twin' ? '최종 문제' : it.label.replace(' 누적', ''));
+    const row = (m) => {
+      const done = m.items.filter((it) => ['passed', 'warning'].includes(it.status)).length;
+      const f = fidelity?.(m);
+      return `<div class="cv2-row">
+        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span>${f ? `<span class="small">요구사항 충실도 <b class="cv2-pct ${f.pct >= 90 ? 'ok' : f.pct >= 60 ? 'warn' : 'bad'}">${f.pct}%</b></span>` : ''}</div>
+        ${m.items.map((it) => {
+          const [tone, label, extra] = RESULT[it.status] || ['', it.status, ''];
+          const reason = it.status === 'passed' ? '' : why(it) || extra;
+          return `<div class="cv2-cell ${tone}"><span class="cv2-stage">${esc(stageName(it))}</span><b>${label}</b>${reason ? `<span class="cv2-why">${esc(reason)}</span>` : ''}</div>`;
+        }).join('')}
+        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="${pdfBase}/${b.id}/pdf/${m.key}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
+      </div>`;
+    };
+    return `<div class="cv2">${b.models.map(row).join('')}</div>
+      <p class="muted small">✓ 됨: 자동 검토를 통과해 바로 쓸 수 있음 (확인할 점은 가볍게 한 번 보시면 되는 내용) · △ 검토 필요: 만들었지만 선생님 확인이 필요함 · ✕ 안 됨: 문제를 만들지 못함</p>`;
+  }
+
+  // The same molar-mass original made into a problem set by each model: what worked, what did not, the PDF.
+  // pdfBase: where the PDFs are served (the app's API or the public one); balance: show DeepSeek's balance slot.
+  function pageHtml(b, { pdfBase = 'api/compare', selectable = false, balance = false } = {}) {
     const fb = b.feedback;
     const MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'] };
     const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
@@ -102,19 +121,6 @@
       return { pct: Math.round(((n('ok') + n('partial') / 2) / allItems.length) * 100), ok: n('ok'), partial: n('partial'), no: n('no') };
     };
     const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
-    const row = (m) => {
-      const done = m.items.filter((it) => ['passed', 'warning'].includes(it.status)).length;
-      const f = fidelity(m);
-      return `<div class="cv2-row">
-        <div class="cv2-model"><b>${esc(m.label)}</b><span class="muted small">${m.items.length}문제 중 <b>${done}</b>개 바로 사용 가능</span>${f ? `<span class="small">요구사항 충실도 <b class="cv2-pct ${tone(f.pct)}">${f.pct}%</b></span>` : ''}</div>
-        ${m.items.map((it) => {
-          const [tone, label, extra] = RESULT[it.status] || ['', it.status, ''];
-          const reason = it.status === 'passed' ? '' : why(it) || extra;
-          return `<div class="cv2-cell ${tone}"><span class="cv2-stage">${esc(stageName(it))}</span><b>${label}</b>${reason ? `<span class="cv2-why">${esc(reason)}</span>` : ''}</div>`;
-        }).join('')}
-        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="${pdfBase}/${b.id}/pdf/${m.key}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
-      </div>`;
-    };
     return `
       <div class="panel">
         <h2>품질과 비용 한눈에</h2>
@@ -139,9 +145,8 @@
         ${fb.quote ? `<details class="cv2-quote" data-k="fb-quote"><summary>받은 피드백 원문 보기</summary><blockquote>${esc(fb.quote)}</blockquote></details>` : ''}
       </div>` : ''}
       <h2 class="cv2-h">모델별 결과와 PDF</h2>
-      <div class="cv2">${b.models.map(row).join('')}</div>
-      <p class="muted small">✓ 됨: 자동 검토를 통과해 바로 쓸 수 있음 (확인할 점은 가볍게 한 번 보시면 되는 내용) · △ 검토 필요: 만들었지만 선생님 확인이 필요함 · ✕ 안 됨: 문제를 만들지 못함</p>`;
+      ${resultsHtml(b, { pdfBase, fidelity })}`;
   }
 
-  window.EMCompare = { pageHtml };
+  window.EMCompare = { pageHtml, resultsHtml };
 })();
