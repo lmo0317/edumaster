@@ -1,0 +1,18 @@
+[Unit]
+Description=EduMaster (Node) - teacher-logic step-by-step variant generator
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/lmo0317/apps/edumaster
+ExecStart=/usr/bin/node server/index.js
+Environment=EDUMASTER_HOST=127.0.0.1
+Environment=EDUMASTER_PORT=18290
+Environment=EDUMASTER_COOKIE_PATH=/edumaster/
+Environment=EDUMASTER_DATA_DIR=/home/lmo0317/apps/edumaster/data
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

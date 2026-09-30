@@ -1,22 +1,17 @@
-**/bin/
-**/obj/
-artifacts/
-**/tools/cache/
-**/tools/models/
-TestResults/
-*.user
+node_modules/
+data/
+data-mock/
+data-compare/
+eval/.work/
+# PC 로컬 모델 파일과 watcher 로그 (scripts/start-web.ps1, scripts/start-local-model.ps1)
+tools/models/
+logs/
 tmp/
-.codex-remote-attachments/
-scratch_dom.html
 __pycache__/
 *.py[cod]
-*$py.class
 *.log
 .vs/
 .idea/
 .vscode/
 Thumbs.db
-
-
-# v1 build outputs, deploy binaries and browser profiles (never committed before the v1/ move)
-v1/output/
+.codex-remote-attachments/
