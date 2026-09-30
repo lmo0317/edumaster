@@ -378,6 +378,8 @@ function createApp(options = {}) {
         if (!results.length || (raw.stage || results[0]?.stage) !== 'full') continue;
         for (const r of results) {
           if (!(r.generation || []).length) continue; // stopped before making anything
+          // A mixed run (another model designed, analyzed or repaired) is not this model's own result.
+          if (r.designWith || r.analyzeWith || r.repairWith) continue;
           const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
           if (only && !only.includes(key)) continue;
           (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
