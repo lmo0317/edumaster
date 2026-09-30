@@ -195,6 +195,20 @@ function checkSameShape(material, item, mode) {
     same ? `실험 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다.` : '')];
 }
 
+/** A reaction equation printed in the problem keeps the original's coefficients (DeepSeek set b to 1 so the
+ * molar relation came for free and a STEP was skipped). Leaving the equation out is fine. */
+const equationKey = (text) => {
+  const m = /\\ce\{([^{}]*->[^{}]*)\}/.exec(String(text || ''));
+  return m ? m[1].replace(/\s+/g, '').replace(/\(g\)|\(l\)|\(s\)|\(aq\)/g, '') : null;
+};
+function checkEquation(material, item) {
+  const a = equationKey(material.problem.text);
+  const b = equationKey(item.problem.text);
+  if (!a || !b || a === b) return [];
+  return [result('source-equation', '반응식 계수를 원본대로 둠', false,
+    `문제의 반응식 ${b}가 원본 ${a}와 다릅니다. 계수를 바꾸면 원본 STEP의 추론을 건너뛰게 되므로 원본 반응식을 그대로 쓰거나 반응식을 빼야 합니다.`)];
+}
+
 function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
@@ -202,6 +216,7 @@ function inspectItem(material, item, mode) {
     ...checkHelpers(material, item),
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
+    ...checkEquation(material, item),
     ...checkNumbersOnly(material, item, mode),
     ...checkSameShape(material, item, mode),
     ...checkClueLeak(material, item),
