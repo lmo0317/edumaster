@@ -478,6 +478,26 @@ async function blindSolve(ctx, item, material, rules, compareOriginal) {
   };
 }
 
+/** Teacher feedback ①: compares the written solution with the teacher's, STEP by STEP (the solver never sees it). */
+async function reviewSolution(ctx, item, material, rules) {
+  if (!(item.solution?.steps || []).length) return { steps: [], rules: [] };
+  ctx.log(`${item.label}: 해설을 선생님 해설과 대조 중`);
+  let data;
+  try {
+    ({ data } = await ctx.llm.json({
+      purpose: 'review-solution', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 12000,
+      system: prompts.SOLUTION_REVIEW_SYSTEM, text: prompts.solutionReviewText({ item, material, rules }),
+    }));
+  } catch (e) {
+    if (e.name !== 'LlmFormatError') throw e;
+    return { steps: [], rules: [], error: e.message };
+  }
+  return {
+    steps: arr(data?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, ok: s?.ok !== false, issues: arr(s?.issues).map((x) => str(x, 400)).filter(Boolean).slice(0, 6) })),
+    rules: arr(data?.rules).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id),
+  };
+}
+
 const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revealed']);
 
 // Table rows as number signatures: "| Ⅰ | $8w$ | $6w$ | ..." -> "8w,6w". Only the first two data cells
@@ -548,6 +568,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
   // For an integrated final problem the solver also sees the original, to tell a real redesign from new numbers.
   const integratedFinal = item.stage.kind === 'twin' && mode === 'integrated';
   const blind = await blindSolve(ctx, item, material, rules, integratedFinal);
+  const solutionReview = await reviewSolution(ctx, item, material, rules);
   const hard = [];
   const soft = [];
   if (code.status === 'fail') hard.push(...code.reasons.map((r) => '코드 검산: ' + r));
@@ -571,11 +592,13 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
     ...codeChecks.filter((c) => c.state === 'fail' && c.severity === 'design').map((c) => `${c.label}: ${c.evidence}`),
+    ...solutionReview.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`)),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
-    const judged = blind.rules.find((b) => b.id === r.id);
+    // Problem rules are judged by the independent solver, solution rules by the solution reviewer.
+    const judged = blind.rules.find((b) => b.id === r.id) || solutionReview.rules.find((b) => b.id === r.id);
     // A rule the independent reviewer finds broken is sent back for repair like any other design fault.
     if (judged && !judged.ok) designNotes.push(`교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`);
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
@@ -585,6 +608,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = []) {
     verification: {
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
       blind,
+      solutionReview,
       coverage: cov,
       harness: codeChecks,
       rules: ruleResults,
@@ -617,7 +641,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   for (let round = 0; repairReasons(check).length && round < ctx.maxRepairs; round++) {
     if (round > 0 && same(repairReasons(check), item.attempts[item.attempts.length - 1].failures)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
-    if (ctx.budget.affords && !ctx.budget.affords(2 + (ctx.reserveCalls || 0))) {
+    if (ctx.budget.affords && !ctx.budget.affords(3 + (ctx.reserveCalls || 0))) {
       ctx.log(`${item.label}: 남은 문제를 만들 토큰을 남기려고 수정을 건너뜁니다`);
       check.soft.push('토큰 상한 때문에 자동 수정을 건너뛰었습니다. 교사 검토가 필요합니다.');
       break;
@@ -661,7 +685,7 @@ async function runGeneration(ctx) {
     try {
       // Budget kept for the problems still to come (generate + solve each), so repairs of an early practice
       // problem never starve the final problem.
-      ctx.reserveCalls = job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status)).length * 2;
+      ctx.reserveCalls = job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status)).length * 3;
       await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
@@ -709,4 +733,4 @@ const SYSTEM_CHECKS = {
   repair: '발견된 문제를 모델에 보여 주고 최대 2번 수정한다. 같은 지적이 반복되면 멈추고, 뒤에 만들 문제의 토큰이 부족해질 것 같으면 수정을 건너뛴다. 남은 문제는 교사 검토 필요 또는 확인할 점으로 표시한다.',
 };
 
-module.exports = { SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { reviewSolution, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

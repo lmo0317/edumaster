@@ -74,6 +74,7 @@ const REQUIRED = {
   generate: ['problem', 'solution', 'verification'],
   repair: ['problem', 'solution', 'verification'],
   solve: ['answer'],
+  'review-solution': ['steps'],
   regroup: ['groups'],
   'reread-question': ['question'],
   'reread-problem': ['text'],

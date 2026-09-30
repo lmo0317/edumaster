@@ -81,6 +81,6 @@ function timeSummary(timings) {
 
 // Runs reviewed by the current checks carry this stamp (eval/run.js writes it; eval/recheck.js adds it to stored
 // runs whose independent review already used the current prompts). Bump it when the review changes.
-const REVIEW_VERSION = 'review-2026-09-30';
+const REVIEW_VERSION = 'review-2026-09-30b'; // b: solution reviewed against the teacher's (feedback ①)
 
 module.exports = { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, jobTiming, timeSummary };

@@ -57,11 +57,12 @@ function scoreGeneration(job) {
     // Teacher feedback, measured one by one: unused conditions, STEP range, the teacher's method, the rules.
     // Code checks count toward the item they are about (see server/harness.js ids).
     const failed = (ids) => (v.harness || []).filter((c) => c.state === 'fail' && ids.includes(c.id));
-    const unused = [...(v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text), ...failed(['source-equation']).map((c) => c.evidence)];
+    const unused = [...(v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text), ...failed(['source-equation', 'unused-coefficient']).map((c) => c.evidence)];
     out.push(check(`${label}: 모든 조건이 풀이에 쓰임`, !unused.length, unused.join('; ')));
     const skipped = failed(['source-assumption-needed', 'stage-clue-leak']).map((c) => c.evidence);
     out.push(check(`${label}: 목표 STEP 범위로 풀림`, v.coverage?.status === 'pass' && !skipped.length, [...(v.coverage?.notes || []), ...skipped].join('; ')));
-    const method = failed(['source-method', 'source-method-order', 'source-assumption', 'source-step-titles']);
+    const method = [...failed(['source-method', 'source-method-order', 'source-assumption', 'source-step-titles']),
+      ...(v.solutionReview?.steps || []).flatMap((s) => (s.issues || []).map((x) => ({ label: `해설 STEP ${s.step}`, evidence: x })))];
     out.push(check(`${label}: 교사 풀이 방법 보존`, !method.length, method.map((c) => `${c.label}: ${c.evidence}`).join('; ')));
     const broken = (v.rules || []).filter((r) => r.judged && !r.judged.ok);
     const silent = (v.rules || []).filter((r) => !r.how);

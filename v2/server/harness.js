@@ -235,6 +235,21 @@ function checkEquation(material, item) {
     `문제의 반응식 ${b}가 원본 ${a}와 다릅니다. 계수를 바꾸면 원본 STEP의 추론을 건너뛰게 되므로 원본 반응식을 그대로 쓰거나 반응식을 빼야 합니다.`)];
 }
 
+/** A letter coefficient printed in the equation ("bB", "(b는 반응 계수)") that neither the question nor the solution
+ * uses is an unused condition (DeepSeek's STEP 1~2 practice kept it; the reviewer caught it in one set, not another). */
+function checkUnusedCoefficient(item) {
+  const text = String(item.problem.text || '');
+  const eq = /\\ce\{([^{}]*->[^{}]*)\}/.exec(text);
+  if (!eq) return [];
+  const letters = [...new Set([...eq[1].matchAll(/(?:^|[\s+])([a-z])\s*[A-Z]/g)].map((m) => m[1]))];
+  if (!letters.length) return [];
+  const solution = plain((item.solution?.steps || []).map((s) => s.work).join('\n') + '\n' + (item.solution?.summary || ''));
+  const rest = plain(text.replace(eq[0], '').replace(/\(\s*\$?[a-z]\$?\s*는\s*반응\s*계수\s*\)/g, ''));
+  const unused = letters.filter((l) => !new RegExp(`(^|[^A-Za-z])${l}\\s*=`).test(solution) && !new RegExp(`(^|[^A-Za-z\\\\])${l}([^A-Za-z]|$)`).test(rest));
+  return [result('unused-coefficient', '반응식의 문자 계수가 풀이에 쓰임', !unused.length,
+    unused.length ? `반응식의 계수 ${unused.join(', ')}가 발문에도 해설에도 쓰이지 않습니다. 풀이에 쓰이지 않는 조건이므로 계수 관계를 필요한 만큼만 문장으로 주거나 묻는 값에 쓰이게 해야 합니다.` : '')];
+}
+
 function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
@@ -243,6 +258,7 @@ function inspectItem(material, item, mode) {
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
     ...checkEquation(material, item),
+    ...checkUnusedCoefficient(item),
     ...checkObviousLeftover(material, item),
     ...checkNumbersOnly(material, item, mode),
     ...checkSameShape(material, item, mode),

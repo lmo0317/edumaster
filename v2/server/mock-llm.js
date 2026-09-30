@@ -99,6 +99,7 @@ function mock(messages) {
     data = { steps: SAMPLE.steps.map((s, i) => ({ marker: `step${i + 1}`, title: s.title })) };
   } else if (system === prompts.PROOFREAD_SYSTEM) data = { fixes: [{ field: 'problem.text', wrong: '실험 I~III에 대한', right: '실험 Ⅰ~Ⅲ에 대한', reason: '로마 숫자' }], solutionStepCount: 3 };
   else if (system === prompts.SOLVE_SYSTEM) data = solved(text);
+  else if (system === prompts.SOLUTION_REVIEW_SYSTEM) data = { steps: [{ step: 1, ok: true, issues: [] }], rules: [] };
   else data = generated(text);
   const content = JSON.stringify(data);
   return new Promise((resolve) => setTimeout(() => resolve({

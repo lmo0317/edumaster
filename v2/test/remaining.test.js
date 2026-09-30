@@ -81,17 +81,18 @@ test('values of the original figure/table vocabulary (membrane potentials) are n
 // DeepSeek bio run (2026-09-29): repairs of the practice problems used up the 600k-token cap and the final
 // problem was never made. A repair now runs only if the later problems still fit.
 test('a repair is skipped when it would leave too little budget for the problems still to come', async () => {
-  const budget = new Budget({ maxCalls: 20, maxTokens: 45000 });
+  // generate + solve + solution review use 30k; a repair round (3 calls) plus the next problem's 3 would not fit.
+  const budget = new Budget({ maxCalls: 20, maxTokens: 65000 });
   const solves = [{ answer: 3, stepsUsed: [1, 2] }];
   let made = 0;
   const llm = { json: async ({ system }) => {
     budget.reserve(); budget.add({ input: 0, output: 0, reasoning: 0, total: 10000 });
     return { data: system === prompts.SOLVE_SYSTEM ? solves.shift() : generated(++made) };
   } };
-  const ctx = { llm, job: { id: 'j' }, budget, effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, save() {}, log() {}, reserveCalls: 2 };
+  const ctx = { llm, job: { id: 'j' }, budget, effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, save() {}, log() {}, reserveCalls: 3 };
   const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
   await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
   assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 0);
   assert.ok(item.warnings.some((w) => w.includes('토큰 상한')), item.warnings.join(' | '));
-  assert.ok(budget.affords(2), 'the next problem still fits');
+  assert.ok(budget.affords(3), 'the next problem still fits');
 });

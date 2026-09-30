@@ -154,3 +154,37 @@ test('a target STEP the solver could skip, and a STEP title that is not the teac
   assert.match(repairs[0], /해설 STEP 제목을 선생님 해설의 제목대로/);
   assert.equal(item.status, 'passed');
 });
+
+test('a solution that leaves the teacher\'s flow is sent back, and the reviewer judges the solution rules', async () => {
+  // Teacher feedback ①: DeepSeek added a case split the teacher never makes and wrote the mass ratio as B : A.
+  const rules = [{ id: 'r2', kind: 'do', target: 'solution', text: '해설은 교사 해설의 풀이 흐름과 표현을 그대로 따른다.' }];
+  const reviews = [
+    { steps: [{ step: 1, ok: false, issues: ['교사는 한 방향만 가정하는데 경우를 나누어 모두 검토함'] }], rules: [{ id: 'r2', ok: false, note: '경우 나누기 추가' }] },
+    { steps: [{ step: 1, ok: true, issues: [] }], rules: [{ id: 'r2', ok: true, note: '' }] },
+  ];
+  const repairs = [];
+  const llm = {
+    json: async ({ system, text }) => {
+      if (system === prompts.SOLVE_SYSTEM) return { data: { answer: 3, stepsUsed: [1, 2], conditions: [] } };
+      if (system === prompts.SOLUTION_REVIEW_SYSTEM) return { data: reviews.shift() };
+      if (system === prompts.REPAIR_SYSTEM) { repairs.push(text); return { data: { ...generated('고친 문제'), appliedRules: [{ id: 'r2', how: '교사 흐름대로' }] } }; }
+      return { data: { ...generated('처음 문제'), appliedRules: [{ id: 'r2', how: '교사 흐름대로' }] } };
+    },
+  };
+  const item = { index: 1, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules, mode: 'integrated' });
+  assert.equal(repairs.length, 1);
+  assert.match(repairs[0], /해설이 선생님 해설과 다름 \(STEP 1\): 교사는 한 방향만 가정/);
+  assert.match(repairs[0], /교사 지침 미준수: 해설은 교사 해설의/);
+  assert.equal(item.status, 'passed');
+  assert.equal(item.verification.rules[0].judged.ok, true);
+});
+
+test('a letter coefficient no question or solution uses is an unused condition', () => {
+  const harness = require('../server/harness');
+  const item = (solution, question = '실험 Ⅰ에서 생성된 D의 양은?') => ({ stage: { kind: 'upto', upto: 2 }, problem: { text: `$\\ce{A(g) + bB(g) -> 2C(g) + 2D(g)}$ ($b$는 반응 계수)\n${question}`, choices: [] }, solution: { steps: [{ step: 1, work: solution }] } });
+  const check = (it) => harness.inspectItem({ problem: { text: '' }, steps: [] }, it, 'integrated').find((c) => c.id === 'unused-coefficient').state;
+  assert.equal(check(item('D는 $8n$ mol이다.')), 'fail');
+  assert.equal(check(item('따라서 $b=3$이다.')), 'pass');
+  assert.equal(check(item('…', '$\\frac{b}{x}$는?')), 'pass');
+});
