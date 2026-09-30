@@ -297,7 +297,7 @@ function createApp(options = {}) {
     'reread-question': '발문만 다시 읽기 (2회)', 'reread-problem': '필기 유입이 의심될 때 인쇄 글자만 다시 읽기',
     'reread-headings': '해설의 단계 제목만 다시 읽기 (2회)', regroup: 'STEP을 해설 단계 수에 맞게 묶기',
     'fix-verification': '실행되지 않는 원본 검산 프로그램 고치기', generate: '단계별 변형 문제 설계',
-    solve: '정답을 모르는 독립 풀이 검토', repair: '검토에서 나온 문제를 고쳐 다시 설계',
+    solve: '정답을 모르는 독립 풀이 검토', 'review-solution': '만든 해설을 선생님 해설과 STEP별로 대조', repair: '검토에서 나온 문제를 고쳐 다시 설계',
   };
   function evalReports(limit = 4) {
     const dir = path.join(cfg.root, 'eval', 'reports');
@@ -407,15 +407,15 @@ function createApp(options = {}) {
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
   const PDF_NAME = { relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+  function comparePdf(res, id, key) {
     const file = path.join(compareDir, id, `${key}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
     const name = `${id}_${PDF_NAME[key]}.pdf`;
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${name}"`, 'Content-Length': fs.statSync(file).size, ...security });
     fs.createReadStream(file).pipe(res);
     return undefined;
-  });
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => {
+  }
+  function compareBundle(id) {
     const file = path.join(compareDir, `${id}.json`);
     if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');
     const bundle = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -439,7 +439,21 @@ function createApp(options = {}) {
       if (cost.perProblem) cost.perProblem.opus = (problem[0] + problem[1]) / 2;
     }
     return bundle;
-  });
+  }
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
+  // The public copy of this page (compare.html): no login and nothing else of the system. The colleague's message
+  // the checklist was built from stays private; the checklist itself is shown.
+  const PUBLIC_COMPARE = 'chem-molar-mass';
+  route('GET', /^\/api\/public\/compare$/, () => {
+    const bundle = compareBundle(PUBLIC_COMPARE);
+    if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
+    return bundle;
+  }, { open: true });
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+    if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
+    return comparePdf(res, id, key);
+  }, { open: true });
   route('GET', /^\/api\/system$/, () => {
     const rules = store.rules.all();
     const corrections = store.corrections.all().sort((a, b) => b.count - a.count);

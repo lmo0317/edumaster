@@ -30,7 +30,7 @@ async function start() {
     }
     throw new Error('job timeout');
   };
-  return { app, call, waitJob, close: () => new Promise((r) => app.server.close(r)), dataDir };
+  return { app, base, call, waitJob, close: () => new Promise((r) => app.server.close(r)), dataDir };
 }
 
 test('full flow with mock model: analyze → edit → generate → verify/repair → feedback → regenerate', async () => {
@@ -183,7 +183,7 @@ test('system page data: prompts with version, the check catalog, RAG state, usag
     const { status, data } = await s.call('GET', '/api/system');
     assert.equal(status, 200);
     assert.match(data.prompts.version, /^[0-9a-f]{10}$/);
-    assert.equal(data.prompts.list.length, 10);
+    assert.equal(data.prompts.list.length, 11);
     assert.ok(data.prompts.list.every((p) => p.purpose), 'every prompt says what it does');
     assert.ok(data.checks.analysis.length >= 5 && data.checks.generation.length >= 8);
     assert.ok([...data.checks.analysis, ...data.checks.generation].every((c) => ['fix', 'repair', 'review', 'note'].includes(c.onFail)));
@@ -197,5 +197,21 @@ test('system page data: prompts with version, the check catalog, RAG state, usag
     assert.deepEqual(data.cost.pricing.opus, { input: 4, output: 20 }, 'Opus 5.5 list price');
     if (data.cost.perProblem) assert.ok(data.cost.perProblem.opus > data.cost.perProblem.deepseek && data.cost.perProblemRange.deepseek[0] <= data.cost.perProblem.deepseek);
     assert.equal((await s.call('GET', '/api/system').then(() => fetch(s.app.server.address ? `http://127.0.0.1:${s.app.server.address().port}/api/system` : ''))).status, 401, 'login required');
+  } finally { await s.close(); }
+});
+
+test('the public comparison page needs no login and exposes only the comparison', async () => {
+  const s = await start();
+  try {
+    const page = await fetch(s.base + '/compare.html');
+    assert.equal(page.status, 200);
+    const pub = await fetch(s.base + '/api/public/compare');
+    assert.equal(pub.status, 200, 'no session needed');
+    const b = await pub.json();
+    assert.ok(b.overview && b.models.length);
+    assert.equal(b.feedback?.quote || '', '', 'the colleague\'s message stays private');
+    assert.equal((await fetch(s.base + '/api/public/compare/other/pdf/relay')).status, 404);
+    assert.equal((await fetch(s.base + '/api/compare/chem-molar-mass')).status, 401, 'the app route still needs login');
+    assert.equal((await fetch(s.base + '/api/materials')).status, 401);
   } finally { await s.close(); }
 });
