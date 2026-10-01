@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -172,12 +172,18 @@ function createApp(options = {}) {
       return { ...t, usd: Math.round(t.usd * 1000) / 1000 };
     };
     const usage = {};
+    const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
+    const sets = store.jobs.all().filter((j) => j.type === 'generate' && new Date(j.createdAt) >= month);
     for (const p of ['deepseek', 'gemma', 'claude-cli', 'claude']) {
       const mine = rows.filter((r) => r.provider === p);
       const at = (r) => new Date(r.createdAt).getTime();
-      usage[p] = { today: sum(mine.filter((r) => at(r) >= start.getTime())), days30: sum(mine.filter((r) => at(r) >= since30)), lastAt: mine.map((r) => r.createdAt).sort().pop() || '' };
+      usage[p] = {
+        today: sum(mine.filter((r) => at(r) >= start.getTime())), days30: sum(mine.filter((r) => at(r) >= since30)),
+        month: { ...sum(mine.filter((r) => at(r) >= month.getTime())), sets: sets.filter((j) => (j.options?.provider || 'deepseek') === p).length },
+        lastAt: mine.map((r) => r.createdAt).sort().pop() || '',
+      };
     }
-    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model } };
+    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model, limits: claudeLimits(cfg) } };
   });
 
   // materials
@@ -396,7 +402,7 @@ function createApp(options = {}) {
     try {
       const { data } = await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'claude-check', budget: new Budget({ maxCalls: 2, maxTokens: 200000 }), effort: 'off', maxTokens: 2000,
         system: 'JSON만 출력한다.', text: '12×7의 값을 {"answer": 값} 형식으로만 답하라.' });
-      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: cfg.claudeCli.model };
+      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: cfg.claudeCli.model, limits: claudeLimits(cfg) };
     } catch (e) {
       return { ok: false, error: e.message.slice(0, 300), seconds: Math.round((Date.now() - started) / 100) / 10 };
     }

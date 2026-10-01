@@ -1065,27 +1065,37 @@
       <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>
       <div class="panel" id="claude-login"></div>`;
     const won = (usd) => (usd ? `약 ${Math.round(usd * 1400).toLocaleString()}원` : '0원');
-    const usageRows = (u, paid) => `<table class="llm-usage"><tr><th></th><th>호출</th><th>토큰 (입력/출력)</th>${paid ? '<th>예상 비용</th>' : ''}</tr>
-      ${[['오늘', u.today], ['최근 30일', u.days30]].map(([t, x]) => `<tr><td>${t}</td><td>${x.calls}${x.errors ? ` <span class="muted small">(오류 ${x.errors})</span>` : ''}</td><td>${x.input.toLocaleString()} / ${x.output.toLocaleString()}</td>${paid ? `<td>${won(x.usd)}</td>` : ''}</tr>`).join('')}</table>
-      <p class="muted small">마지막 사용: ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</p>`;
-    const paint = async () => {
+    const month = (u) => `<p>이번 달: 세트 <b>${u.month.sets}개</b>${u.month.usd ? ` · <b>${won(u.month.usd)}</b>` : ''} <span class="muted small">· 마지막 사용 ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</span></p>`;
+    // A window's remaining share as a bar: green with room left, amber when low, red when used up.
+    const limitBar = (title, w) => {
+      if (!w) return `<div class="limit"><div class="limit-head"><b>${title}</b><span class="muted small">정보 없음</span></div></div>`;
+      const left = Math.max(0, Math.round((1 - w.used) * 100));
+      return `<div class="limit"><div class="limit-head"><b>${title}</b><span><b>${left}%</b> 남음</span></div>
+        <div class="limit-bar"><span class="${left <= 10 ? 'bad' : left <= 30 ? 'warn' : 'ok'}" style="width:${left}%"></span></div>
+        <div class="muted small">${w.resetsAt ? fmtTime(w.resetsAt) + '에 다시 채워짐' : ''}</div></div>`;
+    };
+    const paint = async (fresh) => {
+      // 새로 고침 asks Claude once (a tiny question) so the remaining share is current, not as of the last generation.
+      if (fresh) await api('POST', '/api/claude-login/check').catch(() => null);
       const [status, llm] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/llm')]);
       const p = status.providers || {};
       const card = (title, ok, okText, badText, body) => `<div class="panel llm-card"><div class="row"><h2 style="margin:0">${esc(title)}</h2><span class="spacer"></span><span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : badText}</span></div>${body}</div>`;
+      const lim = llm.claude.limits;
       $('#llm-cards').innerHTML = [
-        card(p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
-          `<p class="muted small">인터넷 API · 쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p><p>잔액: <b id="ds-balance">확인 중…</b></p>${usageRows(llm.usage.deepseek, true)}`),
-        card(p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 연결됨', 'PC 꺼짐',
-          `<p class="muted small">선생님 PC(RTX 5080)에서 실행 · 무료 · PC가 켜져 있을 때만${p.gemma?.model ? ` · ${esc(p.gemma.model)}` : ''}</p>${usageRows(llm.usage.gemma, false)}`),
         card('Claude Opus 5.5 (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
-          `<p class="muted small">서버의 Claude Code로 실행 · 구독 사용량 사용 · 호출당 비용 없음</p>${usageRows(llm.usage['claude-cli'], false)}
-           <p class="muted small">구독 한도(5시간·주간 사용률)는 연결된 뒤 추가할 예정입니다.</p>`),
+          llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
+            <p class="muted small">${lim ? `${fmtTime(lim.at)} 기준` : '아직 측정한 적 없음 — 새로 고침을 눌러 주세요'} · 구독으로 실행 · 호출당 비용 없음</p>${month(llm.usage['claude-cli'])}`
+            : '<p class="muted small">아래 Claude 구독 연결에서 로그인하면 쓸 수 있습니다.</p>'),
+        card(p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
+          `<p>잔액: <b id="ds-balance">확인 중…</b></p>${month(llm.usage.deepseek)}<p class="muted small">쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p>`),
+        card(p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 켜짐', 'PC 꺼짐',
+          `<p class="muted small">선생님 PC에서 실행 · 무료 · PC가 켜져 있을 때만${p.gemma?.model ? ` · ${esc(p.gemma.model)}` : ''}</p>${month(llm.usage.gemma)}`),
       ].join('');
       $('#llm-at').textContent = fmtTime(new Date().toISOString()) + ' 기준';
       api('GET', '/api/balance').then((x) => { if ($('#ds-balance')) $('#ds-balance').textContent = x.balance; }).catch(() => { if ($('#ds-balance')) $('#ds-balance').textContent = '확인 실패'; });
     };
-    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; try { await paint(); await claudeLoginPanel(); } finally { e.target.disabled = false; } }));
-    await paint();
+    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paint(true); await claudeLoginPanel(); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
+    await paint(false);
     claudeLoginPanel().catch(() => { const el = $('#claude-login'); if (el) el.hidden = true; });
   }
 

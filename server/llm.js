@@ -138,6 +138,18 @@ function claudeCliReady(config) {
   if (config.claudeCli?.off) return false;
   return Boolean(claudeCliToken(config)) || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
 }
+/** The subscription's use as of the last call (5-hour and weekly windows), kept for the LLM tab. */
+function saveClaudeLimits(config, info) {
+  if (!config.dataDir) return;
+  const w = info.unifiedWindows || {};
+  const pick = (x) => (x ? { used: Number(x.utilization) || 0, resetsAt: x.resetsAt ? new Date(x.resetsAt * 1000).toISOString() : '' } : null);
+  const data = { at: new Date().toISOString(), status: info.status || '', fiveHour: pick(w.five_hour), sevenDay: pick(w.seven_day) };
+  try { fs.writeFileSync(path.join(config.dataDir, 'claude-limits.json'), JSON.stringify(data)); } catch { /* display only */ }
+}
+function claudeLimits(config) {
+  try { return JSON.parse(fs.readFileSync(path.join(config.dataDir, 'claude-limits.json'), 'utf8')); } catch { return null; }
+}
+
 /** The long-lived token saved by the 시스템 page's login (deploy/claude-login.py), if any. */
 function claudeCliToken(config) {
   try { return config.dataDir ? fs.readFileSync(path.join(config.dataDir, 'claude-oauth-token.txt'), 'utf8').trim() : ''; } catch { return ''; }
@@ -331,7 +343,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       });
       for (const turn of messages.slice(2)) texts.push(`[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}`);
       const prompt = (images ? '[이미지: 경로]가 있는 자리마다 그 이미지 파일을 Read 도구로 열어 자세히 본 뒤 답한다. 다른 파일은 열지 않는다.\n\n' : '') + texts.join('\n');
-      const args = ['-p', '--output-format', 'json', '--model', config.claudeCli.model, '--system-prompt', messages[0].content, '--no-session-persistence',
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', config.claudeCli.model, '--system-prompt', messages[0].content, '--no-session-persistence',
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
         ...(effort === 'high' ? ['--effort', 'high'] : effort === 'off' ? ['--effort', 'low'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
@@ -348,8 +360,13 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         child.stdin.end(prompt);
       });
       if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
-      let result;
-      try { result = JSON.parse(stdout); } catch {
+      // Streamed events: the final "result", and "rate_limit_event"s with the subscription's 5-hour and weekly use,
+      // which the LLM tab shows.
+      const events = stdout.split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+      const limits = events.filter((e) => e.type === 'rate_limit_event').pop()?.rate_limit_info;
+      if (limits) saveClaudeLimits(config, limits);
+      const result = events.filter((e) => e.type === 'result').pop();
+      if (!result) {
         throw Object.assign(new Error(`Claude(구독) 실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`), { status: 502 });
       }
       // A usage limit, an expired login and the like come back as an error result with the reason in `result`.
@@ -551,4 +568,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

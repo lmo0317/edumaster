@@ -393,9 +393,11 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 /* LLM tab */
 .llm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .llm-grid .panel { margin: 0; }
-.llm-usage { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
-.llm-usage th, .llm-usage td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
-.llm-usage th { color: var(--muted); font-weight: 600; }
+.limit { margin: 10px 0; }
+.limit-head { display: flex; justify-content: space-between; align-items: baseline; }
+.limit-bar { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
+.limit-bar span { display: block; height: 100%; border-radius: 6px; }
+.limit-bar .ok { background: #22a35a; } .limit-bar .warn { background: #e0a100; } .limit-bar .bad { background: #d64545; }
 .analysis-fb { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 4px; }
 .analysis-fb textarea { width: 100%; }
 .analysis-fb ol { padding-left: 20px; margin: 4px 0 8px; }
