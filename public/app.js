@@ -95,7 +95,7 @@
   const MAT_STATUS = { analyzing: ['분석 중', 'run'], ready: ['분석 완료', 'ok'], failed: ['분석 실패', 'bad'] };
   const inlineRich = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
   const chip = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
-  const TARGET = { problem: '문제', solution: '해설', design: '설계', all: '전체' };
+  const TARGET = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
   const KIND = { do: '할 것', dont: '하지 말 것', feedback: '피드백' };
 
   // ------------------------------------------------------------------ login
@@ -400,7 +400,7 @@
 
   // This problem's own feedback: what the teacher taught about it (on the problem page or on one of its variants).
   // Every variant made from it gets all of it.
-  const TARGET_TXT = { problem: '문제', solution: '해설', design: '설계', all: '전체' };
+  const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
   async function feedbackPanel(m, gens) {
     const el = $('#feedback');
     if (!el) return;
@@ -417,7 +417,7 @@
       <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 이 문제로 변형 문제를 만들 때 지켜야 할 점을 적어 주세요.</p>'}</div>
       <div class="fb-add">
         <textarea id="fb-text" rows="3" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
-        <div class="fb-add-bar"><label for="fb-target">대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계</option></select>
+        <div class="fb-add-bar"><label for="fb-target">대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option></select>
           <span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>
       </div>`;
     $('#fb-add', el).addEventListener('click', guard(async () => {
@@ -749,7 +749,7 @@
       ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
       <details data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>피드백 남기기 / 다시 만들기</summary><div class="inner">
         <p class="muted small">남긴 피드백은 <a href="#/m/${job.materialId}">원본 문제</a>의 피드백으로 모여, 이 문제로 만드는 모든 변형에 이 변형 문제 내용과 함께 전달됩니다.</p>
-        <div><label>대상</label><select name="target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option><option value="design">설계 (단계·최종 문제 구성)</option></select></div>
+        <div><label>대상</label><select name="target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option></select></div>
         <label>내용</label><textarea name="fb" placeholder="예: STEP 1 연습인데 남는 물질이 B라고 문제에서 알려줘서 STEP 1을 안 거쳐도 풀립니다. 추론할 결론은 주지 마세요."></textarea>
         <label class="inline"><input type="checkbox" name="approve" checked> 바로 켜기 — 다음 생성부터 적용</label>
         <div class="row" style="margin-top:8px"><span class="spacer"></span><button name="save">피드백 저장</button><button name="regen" class="primary" ${busy || !['done', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? 'disabled' : ''}>저장하고 이 문제 다시 만들기</button></div>
@@ -792,7 +792,7 @@
     const on = rules.filter((r) => r.status === 'approved');
     const off = rules.filter((r) => r.status !== 'approved');
     const KIND_L = { do: '꼭 할 것', dont: '하지 말 것', feedback: '피드백' };
-    const TARGET_L = { problem: '문제', solution: '해설', design: '설계', all: '문제·해설 전체' };
+    const TARGET_L = { problem: '문제', solution: '해설', design: '문제', all: '문제·해설 전체' };
     const item = (r) => `<div class="learn-item" data-rule="${r.id}">
       <div class="learn-item-main">
         <div class="learn-text">${esc(r.text)}</div>
@@ -828,7 +828,7 @@
         <div class="cols cols-3" style="margin-top:10px">
           <div><label>적용 범위</label><select id="ns"><option value="global">모든 문제</option></select></div>
           <div><label>종류</label><select id="nk"><option value="do">꼭 할 것</option><option value="dont">하지 말 것</option></select></div>
-          <div><label>어디에</label><select id="nt"><option value="all">문제·해설 전체</option><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option><option value="design">설계 (단계·통합 방식)</option></select></div>
+          <div><label>어디에</label><select id="nt"><option value="all">문제·해설 전체</option><option value="problem">문제 (조건·발문·선택지)</option><option value="solution">해설</option></select></div>
         </div>
         <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="primary" id="add">추가</button></div>
       </div>
