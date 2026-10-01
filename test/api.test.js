@@ -175,52 +175,46 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
   } finally { await s.close(); }
 });
 
-test('공통 지침: the AI role goes before every call, the analysis instructions reach every analysis, the checks are listed', async () => {
+test('지침 and 전체 학습: the persona leads every call; every-problem analysis items reach every analysis; the checks are listed', async () => {
   const s = await start();
   try {
-    assert.equal((await s.call('GET', '/api/common')).status, 401, 'login required');
+    assert.equal((await s.call('GET', '/api/learning')).status, 401, 'login required');
     await s.call('POST', '/api/login', { code: 'test-code' });
-    let data = (await s.call('GET', '/api/common')).data;
-    assert.deepEqual([data.persona, data.analysis], ['', []]);
-    assert.ok(data.checks.generation.length >= 8 && data.checks.analysis.length >= 5);
+    let d = (await s.call('GET', '/api/learning')).data;
+    assert.deepEqual([d.persona, d.guides.analysis, d.guides.generation, d.lessons.analysis, d.lessons.generation], ['', [], [], [], []]);
+    assert.ok(d.checks.generation.length >= 8 && d.checks.analysis.length >= 5);
 
-    data = (await s.call('PUT', '/api/common/persona', { persona: '  화학 선생님의 조교  ' })).data;
-    assert.equal(data.persona, '화학 선생님의 조교');
-    assert.equal((await s.call('PUT', '/api/common/persona', { persona: 'x'.repeat(4001) })).status, 400);
+    assert.equal((await s.call('PUT', '/api/persona', { persona: '  화학 선생님의 조교  ' })).data.persona, '화학 선생님의 조교');
+    assert.equal((await s.call('PUT', '/api/persona', { persona: 'x'.repeat(4001) })).status, 400);
     const { withTeacherPrompt } = require('../server/llm');
     const cfg = { dataDir: s.dataDir };
-    const built = withTeacherPrompt(cfg, 'BUILT-IN');
-    assert.ok(built.indexOf('화학 선생님의 조교') < built.indexOf('BUILT-IN'), 'the AI role comes first');
-    await s.call('PUT', '/api/common/persona', { persona: '' });
-    assert.equal(withTeacherPrompt(cfg, 'BUILT-IN'), 'BUILT-IN', 'emptied: the built-in instructions alone');
+    assert.ok(withTeacherPrompt(cfg, 'BUILT-IN').indexOf('화학 선생님의 조교') < withTeacherPrompt(cfg, 'BUILT-IN').indexOf('BUILT-IN'), 'the persona comes first');
+    await s.call('PUT', '/api/persona', { persona: '' });
+    assert.equal(withTeacherPrompt(cfg, 'BUILT-IN'), 'BUILT-IN');
 
-    assert.equal((await s.call('POST', '/api/common/analysis', { text: ' ' })).status, 400);
-    data = (await s.call('POST', '/api/common/analysis', { text: '해설은 쉽게 풀어 쓴다' })).data;
-    data = (await s.call('POST', '/api/common/analysis', { text: 'STEP을 4개로 나눈다' })).data;
-    assert.deepEqual(data.analysis.map((a) => a.text), ['해설은 쉽게 풀어 쓴다', 'STEP을 4개로 나눈다']);
-    data = (await s.call('PUT', '/api/common/analysis/0', { text: '설명을 쉽게 풀어 쓴다' })).data;
-    assert.equal(data.analysis[0].text, '설명을 쉽게 풀어 쓴다');
-    assert.equal((await s.call('PUT', '/api/common/analysis/9', { text: '없음' })).status, 404);
-
-    // A new problem's analysis follows them, though the problem has no feedback of its own.
+    // 전체 학습 of analysis: a new problem's analysis follows it, though the problem has none of its own.
+    const easy = (await s.call('POST', '/api/rules', { text: '해설은 쉽게 풀어 쓴다', scope: 'global', layer: 'lesson', stage: 'analysis' })).data;
+    const four = (await s.call('POST', '/api/rules', { text: 'STEP을 4개로 나눈다', scope: 'global', layer: 'guide', stage: 'analysis' })).data;
+    d = (await s.call('GET', '/api/learning')).data;
+    assert.deepEqual([d.lessons.analysis.map((x) => x.text), d.guides.analysis.map((x) => x.text)], [['해설은 쉽게 풀어 쓴다'], ['STEP을 4개로 나눈다']]);
     const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
-    assert.equal(m.steps.length, 4, 'the common STEP count');
-    assert.ok(m.steps.every((x) => x.work.startsWith('(쉽게 풀어 씀)')), 'the common write-up');
-    data = (await s.call('DELETE', '/api/common/analysis/1')).data;
-    await s.call('DELETE', '/api/common/analysis/0');
+    assert.equal(m.steps.length, 4, 'the 지침 STEP count');
+    assert.ok(m.steps.every((x) => x.work.startsWith('(쉽게 풀어 씀)')), 'the lesson write-up');
+    assert.deepEqual(m.learningUsed.map((x) => x.layer), ['guide', 'lesson'], 'the analysis keeps what went into it');
+    const l = (await s.call('GET', `/api/materials/${m.id}/learning`)).data;
+    assert.ok(l.analysis.items.every((x) => x.inAnalysis && x.how), 'each with how it was applied');
+    await s.call('DELETE', '/api/rules/' + easy.id);
+    await s.call('DELETE', '/api/rules/' + four.id);
     const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
     await s.waitJob(again.jobId);
     m = (await s.call('GET', '/api/materials/' + m.id)).data;
     assert.equal(m.steps.length, 3, 'without them the printed steps decide again');
-    assert.equal((await s.call('GET', '/api/materials')).data.find((x) => x.id === m.id).analysisFeedbackCount, 0);
 
-    assert.equal((await s.call('GET', '/api/llm/prompts')).status, 404, 'the LLM tab no longer holds instructions');
-    assert.equal((await s.call('GET', '/api/system')).status, 404, 'the 시스템 page is gone');
+    for (const gone of ['/api/llm/prompts', '/api/system', '/api/common']) assert.equal((await s.call('GET', gone)).status, 404, gone);
   } finally { await s.close(); }
 });
-
 test('model comparison list and one comparison', async () => {
   const s = await start();
   try {
@@ -339,32 +333,34 @@ test('problem feedback: written on the problem page or on a variant it belongs t
   } finally { await s.close(); }
 });
 
-test('analysis feedback accumulates on the problem and every re-analysis gets all of it', async () => {
+test('a problem\'s analysis learning: typed with 다시 분석 or added alone, kept as items, and every re-analysis gets all of it', async () => {
   const s = await start();
   try {
     await s.call('POST', '/api/login', { code: 'test-code' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
-    const first = (await s.call('POST', `/api/materials/${a.material.id}/analyze`, { feedback: 'STEP 3 제목은 A~D의 몰질량을 구한다' })).data;
+    const id = a.material.id;
+    const first = (await s.call('POST', `/api/materials/${id}/analyze`, { feedback: 'STEP 3 제목은 A~D의 몰질량을 구한다' })).data;
     await s.waitJob(first.jobId);
-    const second = (await s.call('POST', `/api/materials/${a.material.id}/analyze`, { feedback: '표 Ⅲ의 B는 필기' })).data;
+    const second = (await s.call('POST', `/api/materials/${id}/analyze`, { feedback: '표 Ⅲ의 B는 필기', from: 'check' })).data;
     await s.waitJob(second.jobId);
-    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
-    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['STEP 3 제목은 A~D의 몰질량을 구한다', '표 Ⅲ의 B는 필기']);
-    assert.equal(m.status, 'ready');
-    m = (await s.call('DELETE', `/api/materials/${a.material.id}/analysis-feedback/0`)).data;
-    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기']);
-    // Added and edited from the problem's feedback list without analyzing again.
-    m = (await s.call('POST', `/api/materials/${a.material.id}/analysis-feedback`, { text: 'STEP을 4개로 나눈다' })).data;
-    assert.equal(m.status, 'ready', 'adding does not start an analysis');
-    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기', 'STEP을 4개로 나눈다']);
-    m = (await s.call('PUT', `/api/materials/${a.material.id}/analysis-feedback/1`, { text: 'STEP을 4개로 나눠 한 단계 더 생각하게' })).data;
-    assert.equal(m.analysisFeedback[1].text, 'STEP을 4개로 나눠 한 단계 더 생각하게');
-    assert.equal((await s.call('PUT', `/api/materials/${a.material.id}/analysis-feedback/9`, { text: '없는 것' })).status, 404);
-    assert.equal((await s.call('POST', `/api/materials/${a.material.id}/analysis-feedback`, { text: ' ' })).status, 400);
+    let l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.deepEqual(l.analysis.items.map((x) => [x.layer, x.text, x.from, x.inAnalysis]),
+      [['problem', 'STEP 3 제목은 A~D의 몰질량을 구한다', 'input', true], ['problem', '표 Ⅲ의 B는 필기', 'check', true]]);
+    // Added on its own: kept for the next analysis, which has not run.
+    const added = (await s.call('POST', '/api/rules', { text: 'STEP을 4개로 나눈다', scope: 'material', stage: 'analysis', source: { materialId: id } })).data;
+    assert.equal((await s.call('GET', '/api/materials/' + id)).data.status, 'ready', 'adding does not start an analysis');
+    l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.equal(l.analysis.items.find((x) => x.id === added.id).inAnalysis, false, 'waits for the next analysis');
+    assert.equal((await s.call('GET', '/api/materials')).data.find((x) => x.id === id).analysisFeedbackCount, 3);
+    // An analysis item does not go into a generation.
+    assert.ok(!l.generation.items.some((x) => x.stage === 'analysis'));
+    await s.call('PUT', '/api/rules/' + added.id, { text: 'STEP을 4개로 나눠 한 단계 더 생각하게' });
+    await s.call('PUT', '/api/rules/' + added.id, { status: 'pending' });
+    l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.deepEqual(l.analysis.items.find((x) => x.id === added.id) && [l.analysis.items.find((x) => x.id === added.id).text, l.analysis.items.find((x) => x.id === added.id).status], ['STEP을 4개로 나눠 한 단계 더 생각하게', 'pending'], 'switched off, still listed to switch back on');
   } finally { await s.close(); }
 });
-
 test('확인할 곳: a verdict on each note is kept by its text, also through a re-analysis that says the same', async () => {
   const s = await start();
   try {
@@ -407,36 +403,37 @@ test('단어 확인: a confused word is asked plainly, and 아니요 replaces it
   } finally { await s.close(); }
 });
 
-test('학습: everything taught, by kind and where it applies, with the latest first; a problem\'s item can be widened to every problem', async () => {
+test('a problem\'s generation learning: 지침, this problem, 전체 학습 in that order, with how each fared; moving up 문제 → 전체 학습 → 지침', async () => {
   const s = await start();
   try {
-    assert.equal((await s.call('GET', '/api/learning')).status, 401);
     await s.call('POST', '/api/login', { code: 'test-code' });
     const a = (await s.call('POST', '/api/materials', { title: 'P', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const id = a.material.id;
-    await s.call('POST', `/api/materials/${id}/analysis-feedback`, { text: 'STEP을 4개로 나눈다' });
-    await s.call('POST', '/api/common/analysis', { text: '해설은 쉽게 풀어 쓴다' });
-    const own = (await s.call('POST', '/api/rules', { text: '단서를 노출하지 않는다', target: 'problem', kind: 'feedback', scope: 'material', source: { materialId: id } })).data;
-    await s.call('POST', '/api/rules', { text: '조건을 낭비하지 않는다', target: 'all', kind: 'feedback', scope: 'global' });
-    let d = (await s.call('GET', '/api/learning')).data;
-    assert.deepEqual(d.analysis.common.map((x) => x.text), ['해설은 쉽게 풀어 쓴다']);
-    assert.deepEqual(d.analysis.problems.map((p) => [p.title, p.items.map((x) => x.text)]), [['P', ['STEP을 4개로 나눈다']]]);
-    assert.deepEqual(d.generation.common.map((r) => r.text), ['조건을 낭비하지 않는다']);
-    assert.deepEqual(d.generation.problems.map((r) => [r.text, r.materialTitle]), [['단서를 노출하지 않는다', 'P']]);
-    assert.ok(d.recent.length >= 4 && d.recent.every((x, i) => !i || d.recent[i - 1].at >= x.at), 'latest first');
-    assert.ok(d.recent.some((x) => x.kind === '분석 피드백' && x.scope === 'P'));
-    // Widening: the problem's analysis feedback moves to every problem; its generation feedback becomes global.
-    const m = (await s.call('POST', `/api/materials/${id}/analysis-feedback/0/promote`)).data;
-    assert.equal(m.analysisFeedback.length, 0);
+    const own = (await s.call('POST', '/api/rules', { text: '단서를 노출하지 않는다', target: 'problem', scope: 'material', source: { materialId: id } })).data;
+    await s.call('POST', '/api/rules', { text: '조건을 낭비하지 않는다', scope: 'global', layer: 'guide' });
+    await s.call('POST', '/api/rules', { text: '수를 작게 잡는다', scope: 'global', layer: 'lesson' });
+    let l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.deepEqual(l.generation.items.map((x) => [x.layer, x.text]), [['guide', '조건을 낭비하지 않는다'], ['problem', '단서를 노출하지 않는다'], ['lesson', '수를 작게 잡는다']]);
+    const gen = (await s.call('POST', '/api/generations', { materialId: id, stages: [{ kind: 'upto', upto: 1 }], mode: 'integrated', perStage: 1 })).data;
+    const job = await s.waitJob(gen.jobId);
+    assert.deepEqual(job.rules.map((r) => r.layer), ['guide', 'problem', 'lesson'], 'the set records each item with its kind');
+    l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.equal(l.sets[0].rules, 3);
+    // Up: this problem → 전체 학습 (it remembers where it was learned) → 지침.
     await s.call('PUT', '/api/rules/' + own.id, { scope: 'global' });
+    let d = (await s.call('GET', '/api/learning')).data;
+    const up = d.lessons.generation.find((x) => x.id === own.id);
+    assert.deepEqual([up.layer, up.learnedOn], ['lesson', 'P']);
+    await s.call('PUT', '/api/rules/' + own.id, { layer: 'guide' });
     d = (await s.call('GET', '/api/learning')).data;
-    assert.deepEqual(d.analysis.common.map((x) => x.text), ['해설은 쉽게 풀어 쓴다', 'STEP을 4개로 나눈다']);
-    assert.equal(d.generation.problems.length, 0);
-    assert.equal(d.generation.common.length, 2);
+    assert.ok(d.guides.generation.some((x) => x.id === own.id));
+    // And back to the problem it came from.
+    await s.call('PUT', '/api/rules/' + own.id, { scope: 'material' });
+    l = (await s.call('GET', `/api/materials/${id}/learning`)).data;
+    assert.equal(l.generation.items.find((x) => x.id === own.id).layer, 'problem');
   } finally { await s.close(); }
 });
-
 test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
   const s = await start();
   try {
@@ -470,7 +467,7 @@ test('analysis feedback beats the printed steps: a STEP count and an easier writ
     await s.waitJob(a.jobId);
     let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
     assert.equal(m.steps.length, 3, 'the solution prints three steps');
-    await s.call('POST', `/api/materials/${m.id}/analysis-feedback`, { text: '설명을 좀더 쉽게 해줘봐' });
+    const easy = (await s.call('POST', '/api/rules', { text: '설명을 좀더 쉽게 해줘봐', scope: 'material', stage: 'analysis', source: { materialId: m.id } })).data;
     const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, { feedback: 'STEP을 4개로 분리 해서 넣어봐 한단계 더 꼬아서 생각할수 있게' })).data;
     await s.waitJob(again.jobId);
     m = (await s.call('GET', '/api/materials/' + m.id)).data;
@@ -481,8 +478,8 @@ test('analysis feedback beats the printed steps: a STEP count and an easier writ
     assert.ok(!m.uncertainties.some((u) => /단계 표시는|STEP 수는/.test(u)), 'no STEP-count warning: the count is the one asked for');
     assert.equal(m.feedbackApplied.length, 2, 'each feedback says how it was applied');
     // Without the feedback the printed steps decide again.
-    await s.call('DELETE', `/api/materials/${m.id}/analysis-feedback/1`);
-    await s.call('DELETE', `/api/materials/${m.id}/analysis-feedback/0`);
+    for (const x of (await s.call('GET', `/api/materials/${m.id}/learning`)).data.analysis.items) await s.call('DELETE', '/api/rules/' + x.id);
+    assert.ok(easy.id);
     const plain = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
     await s.waitJob(plain.jobId);
     m = (await s.call('GET', '/api/materials/' + m.id)).data;

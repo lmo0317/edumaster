@@ -97,11 +97,51 @@ test('a problem\'s own feedback goes to that problem only, before the rules for 
   assert.deepEqual(ids, ['m1m1m1m1m1m1m1m1', 'g1g1g1g1g1g1g1g1']);
 });
 
-test('the analysis prompt carries every analysis feedback of the problem', () => {
+test('the analysis prompt carries 지침, then this problem\'s feedback, then the lessons, each as its own block', () => {
   const { analyzeText } = require('../server/prompts');
-  const text = analyzeText({ hasSolution: true, feedback: [{ text: 'STEP 2와 3을 나눠 주세요' }, { text: '표 Ⅲ의 B는 필기' }] });
-  assert.match(text, /교사의 분석 피드백[\s\S]*- STEP 2와 3을 나눠 주세요\n- 표 Ⅲ의 B는 필기/);
-  assert.doesNotMatch(analyzeText({ hasSolution: true }), /분석 피드백/);
+  const text = analyzeText({ hasSolution: true, guides: [{ text: '필기는 조건에 넣지 않는다' }], feedback: [{ text: 'STEP 2와 3을 나눠 주세요' }, { text: '표 Ⅲ의 B는 필기' }], lessons: [{ text: '해설은 쉽게 풀어 쓴다' }] });
+  assert.match(text, /\[분석 지침[^\]]*\]\n- 필기는 조건에 넣지 않는다\n\[이 문제의 분석 피드백[^\]]*\]\n- STEP 2와 3을 나눠 주세요\n- 표 Ⅲ의 B는 필기\n\[모든 문제에서 배운 분석 교훈[^\]]*\]\n- 해설은 쉽게 풀어 쓴다/);
+  assert.match(text, /STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선/);
+  assert.doesNotMatch(analyzeText({ hasSolution: true }), /분석 (지침|피드백|교훈)/);
+});
+
+test('the generation prompt labels each item 지침 / 이 문제 / 전체 학습 and says which wins', () => {
+  const { rulesBlock } = require('../server/prompts');
+  const text = rulesBlock([{ id: 'g1', layer: 'guide', kind: 'dont', text: '조건 낭비' }, { id: 'p1', layer: 'problem', kind: 'feedback', target: 'problem', text: '가정→모순' }, { id: 'l1', layer: 'lesson', kind: 'feedback', text: '작은 수' }]);
+  assert.match(text, /지침 > 이 문제 > 전체 학습/);
+  assert.match(text, /- \(g1\) \[지침·하지 말 것\] 조건 낭비\n- \(p1\) \[이 문제·문제\] 가정→모순\n- \(l1\) \[전체 학습\] 작은 수/);
+});
+
+test('learning picks by stage and layer, and older learning moves into the one store once', () => {
+  const { selectRules, analysisLearning, migrateLearning, makeRule } = require('../server/learning');
+  const at = (d) => `2026-10-0${d}T00:00:00.000Z`;
+  const m = { id: 'm1', subject: '화학', problem: { text: '' } };
+  const rules = [
+    { ...makeRule({ text: '이 문제 생성', scope: 'material', source: { materialId: 'm1' } }), createdAt: at(2) },
+    { ...makeRule({ text: '이 문제 분석', scope: 'material', stage: 'analysis', source: { materialId: 'm1' } }), createdAt: at(2) },
+    { ...makeRule({ text: '다른 문제', scope: 'material', source: { materialId: 'm2' } }), createdAt: at(2) },
+    { ...makeRule({ text: '생성 교훈', scope: 'global', layer: 'lesson' }), createdAt: at(1) },
+    { ...makeRule({ text: '생성 지침', scope: 'global', layer: 'guide' }), createdAt: at(3) },
+    { ...makeRule({ text: '분석 지침', scope: 'global', layer: 'guide', stage: 'analysis' }), createdAt: at(1) },
+  ];
+  assert.deepEqual(selectRules(rules, m).map((r) => r.text), ['생성 지침', '이 문제 생성', '생성 교훈'], '지침 first, then this problem, then lessons; generation only');
+  const a = analysisLearning(rules, m);
+  assert.deepEqual([a.guides, a.own, a.lessons].map((l) => l.map((r) => r.text)), [['분석 지침'], ['이 문제 분석'], []]);
+
+  const mem = (list) => { const map = new Map(list.map((x) => [x.id, x])); return { all: () => [...map.values()], put: (x) => { map.set(x.id, x); return x; } }; };
+  const store = { rules: mem([{ id: 'r1', text: '하지 말 것', scope: 'global', status: 'approved', createdAt: at(1) }, { id: 'r2', text: '유형별', scope: 'topic', status: 'approved', createdAt: at(1) }]),
+    materials: mem([{ id: 'm1', title: 'P', analysisFeedback: [{ text: 'STEP 4개', at: at(2) }] }]) };
+  let saved = null;
+  const moved = migrateLearning(store, { commonAnalysis: [{ text: '쉽게 풀어 쓴다', at: at(3) }] }, (p) => { saved = p; });
+  assert.equal(moved, 4);
+  const byText = new Map(store.rules.all().map((r) => [r.text, r]));
+  assert.deepEqual(['하지 말 것', '유형별', 'STEP 4개', '쉽게 풀어 쓴다'].map((t) => [byText.get(t).scope, byText.get(t).layer, byText.get(t).stage]),
+    [['global', 'guide', 'generation'], ['global', 'lesson', 'generation'], ['material', undefined, 'analysis'], ['global', 'lesson', 'analysis']]);
+  assert.equal(byText.get('STEP 4개').source.materialId, 'm1');
+  assert.equal(byText.get('STEP 4개').createdAt, at(2), 'keeps when it was taught');
+  assert.deepEqual(store.materials.all()[0].analysisFeedback, []);
+  assert.deepEqual(saved, { commonAnalysis: [] });
+  assert.equal(migrateLearning(store, {}, () => {}), 0, 'once');
 });
 
 test('the generation prompt shows adopted examples as models, not to copy', () => {

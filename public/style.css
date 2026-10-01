@@ -607,3 +607,22 @@ a.lt-name:hover { color: var(--accent); }
 .learn-n small { font-weight: 500; color: var(--muted); margin-left: 2px; }
 .fb-common { margin: 2px 2px 0; }
 .fb-kind a.muted { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+/* Learning (docs/learning.md): the kind of each item, the box to teach more, "학습됨", the 출제 노트 */
+.ly { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 0 7px; border-radius: 999px; margin-right: 4px; vertical-align: 1px; white-space: nowrap; }
+.ly-guide { background: var(--accent-soft); color: var(--accent); }
+.ly-lesson { background: #efe9fb; color: #5b3fb0; }
+.ly-problem { background: #eef0f4; color: var(--muted); }
+.teach-scope { display: flex; gap: 6px; flex-wrap: wrap; }
+.teach-scope label { margin: 0; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.teach-scope label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.teach-scope input { accent-color: var(--accent); margin: 0; }
+.toast.learned { display: flex; align-items: center; gap: 8px; background: #19794a; }
+.toast.learned button { background: rgba(255, 255, 255, .15); color: #fff; border-color: transparent; }
+.stage-tabs.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.note-doc h3 { font-size: 15px; margin: 18px 0 6px; }
+.note-doc h3:first-child { margin-top: 0; }
+.note-doc p { margin: 0; line-height: 1.8; }
+.note-doc sup { color: var(--accent); font-weight: 700; margin-left: 1px; }
+.note-src { margin: 18px 0 0; padding: 12px 0 0 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); display: grid; gap: 2px; }
+.learn-used .ok { color: var(--ok); font-weight: 600; } .learn-used .bad { color: var(--bad); font-weight: 600; }
+@media (max-width: 640px) { .stage-tabs.three .stage-txt small { display: none; } }

@@ -9,7 +9,7 @@ const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, 
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
-const { makeRule, updateRule, readingCorrections, recordCorrections, readingHint } = require('./learning');
+const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, analysisLearning, selectRules, layerOf, stageOf } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
@@ -24,6 +24,9 @@ function readSecret(file) {
 function createApp(options = {}) {
   const cfg = { ...config, ...options, budget: { ...config.budget, ...options.budget }, deepseek: { ...config.deepseek, ...options.deepseek } };
   const store = openStore(cfg.dataDir);
+  // Learning lives in one store (docs/learning.md): bring older analysis feedback and settings over, once.
+  const migrated = migrateLearning(store, llmSettings(cfg.dataDir), (patch) => saveLlmSettings(cfg.dataDir, patch));
+  if (migrated) console.log(`[learning] ${migrated}개 항목을 하나의 학습 저장소로 옮겼습니다.`);
   let apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
   const claudeKey = readSecret(path.join(cfg.dataDir, 'anthropic-api-key.txt'));
   let accessCode = readSecret(path.join(cfg.dataDir, 'access-code.txt'));
@@ -75,7 +78,7 @@ function createApp(options = {}) {
   });
   // The question sentence of a problem (its last line that is not a table row), to tell variants apart in lists.
   const questionLine = (text) => String(text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('|')).pop()?.slice(0, 160) || '';
-  const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, analysisFeedbackCount: (m.analysisFeedback || []).length, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
+  const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, analysisFeedbackCount: rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id && stageOf(r) === 'analysis').length, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
     feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
@@ -262,30 +265,69 @@ function createApp(options = {}) {
     const view = m.status === 'ready' && m.steps ? pipeline.refreshStepCountNote(m) : m;
     return { ...view, jobs: store.jobs.all().filter((j) => j.materialId === id).map(jobSummary) };
   });
-  // 학습 현황 of one original: set by set, how many variants were made, passed the checks and were adopted, and how
-  // the feedback fared; and for each feedback, on how many variants made after it was checked, kept or broken.
+  // How each generation item fared over every variant judged so far: kept / broken.
+  function keptByRule() {
+    const out = new Map();
+    for (const it of store.jobs.all().filter((j) => j.type === 'generate').flatMap((j) => j.items || [])) {
+      for (const r of it.verification?.rules || []) {
+        if (!r.judged) continue;
+        const k = out.get(r.id) || { kept: 0, broken: 0 };
+        if (r.judged.ok) k.kept++; else k.broken++;
+        out.set(r.id, k);
+      }
+    }
+    return out;
+  }
+  const titleOfMaterial = (id) => (id ? store.materials.get(id)?.title || '삭제된 문제' : '');
+  // An item as the pages show it: which of 지침 / 이 문제 / 전체 학습, where it was learned, and how it fared.
+  const itemView = (r, kept) => ({
+    id: r.id, layer: layerOf(r), stage: stageOf(r), text: r.text, target: r.target, status: r.status, createdAt: r.createdAt,
+    from: r.source?.from || 'input', fromLabel: r.source?.label || '', jobId: r.source?.jobId || '', itemIndex: r.source?.itemIndex,
+    learnedOn: titleOfMaterial(r.promotedFrom || (r.scope === 'material' ? '' : r.source?.materialId)),
+    kept: kept.get(r.id)?.kept || 0, broken: kept.get(r.id)?.broken || 0,
+  });
   route('GET', /^\/api\/materials\/([a-f0-9]+)\/learning$/, (req, res, [id]) => {
-    getMaterial(id);
+    const m = getMaterial(id);
+    const all = store.rules.all();
+    const kept = keptByRule();
     const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.materialId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const rules = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId === id);
+    const own = all.filter((r) => r.scope === 'material' && r.source?.materialId === id);
+    const ownGen = own.filter((r) => stageOf(r) === 'generation');
     const judged = (list) => ({ kept: list.filter((r) => r.judged?.ok).length, broken: list.filter((r) => r.judged && !r.judged.ok).length });
+    // Analysis: what applies now (지침, this problem's, lessons) plus this problem's switched-off ones; for each, whether
+    // the current analysis had it and what it said it did.
+    const used = new Set((m.learningUsed || []).map((x) => x.id));
+    const how = (text) => (m.feedbackApplied || []).find((x) => x.feedback.trim() === text.trim())?.how || '';
+    const learn = m.status === 'ready' ? analysisLearning(all, m) : { guides: [], own: [], lessons: [] };
+    const analysisItems = [...learn.guides, ...learn.own, ...own.filter((r) => stageOf(r) === 'analysis' && r.status !== 'approved'), ...learn.lessons]
+      // An analysis from before learningUsed was kept: an item it had is one taught before it ran.
+      .map((r) => ({ ...itemView(r, kept), inAnalysis: m.learningUsed ? used.has(r.id) : Boolean(m.analyzedAt && r.createdAt < m.analyzedAt), how: how(r.text) }));
+    // Generation: what the next set gets (in that order), plus this problem's switched-off ones; the models.
+    const picked = selectRules(all, m);
+    const generationItems = [...picked, ...ownGen.filter((r) => r.status !== 'approved')].map((r) => itemView(r, kept));
+    const examples = sets.flatMap((j, i) => (j.items || []).filter((it) => it.adopted && it.problem).map((it) => ({
+      jobId: j.id, setNo: i + 1, index: it.index, label: it.label, at: it.reviewedAt || j.createdAt,
+      preview: String(it.problem.text || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|'))?.slice(0, 140) || '' })));
     return {
+      analysis: { analyzedAt: m.analyzedAt || '', correctionsUsed: m.correctionsUsed || 0, items: analysisItems },
+      generation: { items: generationItems, examples },
       sets: sets.map((j, i) => {
         const made = (j.items || []).filter((it) => it.problem);
         return {
           id: j.id, no: i + 1, createdAt: j.createdAt, model: j.modelLabel || PROVIDERS[j.options?.provider]?.label || 'DeepSeek', status: j.status,
           items: (j.items || []).length, made: made.length, adopted: made.filter((it) => it.adopted).length,
           passed: made.filter((it) => ['passed', 'warning'].includes(it.status)).length,
-          feedbackBefore: rules.filter((r) => r.status === 'approved' && r.createdAt < j.createdAt).length,
+          feedbackBefore: ownGen.filter((r) => r.status === 'approved' && r.createdAt < j.createdAt).length,
+          rules: (j.rules || []).length,
           examples: made.reduce((n, it) => n + (it.examplesUsed || 0), 0),
           ...judged(made.flatMap((it) => it.verification?.rules || [])),
         };
       }),
-      feedback: rules.map((r) => {
+      feedback: ownGen.map((r) => {
         const uses = sets.flatMap((j) => j.items || []).flatMap((it) => (it.verification?.rules || []).filter((x) => x.id === r.id));
         return { id: r.id, text: r.text, target: r.target, status: r.status, createdAt: r.createdAt, used: uses.length, ...judged(uses) };
       }),
-      adopted: sets.flatMap((j) => j.items || []).filter((it) => it.adopted && it.problem).length,
+      adopted: examples.length,
     };
   });
   route('PUT', /^\/api\/materials\/([a-f0-9]+)$/, async (req, res, [id]) => {
@@ -322,8 +364,8 @@ function createApp(options = {}) {
     // Feedback on the reading ("STEP 3 제목은 …", "표 Ⅲ의 B는 필기") accumulates on the problem; every later
     // analysis of it gets all of it.
     const feedback = String(body.feedback || '').trim().slice(0, 1000);
-    const analysisFeedback = [...(m.analysisFeedback || []), ...(feedback ? [{ text: feedback, at: new Date().toISOString() }] : [])].slice(-20);
-    store.materials.put({ ...m, status: 'analyzing', error: '', analysisFeedback, note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
+    if (feedback) store.rules.put(makeRule({ text: feedback, scope: 'material', stage: 'analysis', source: { materialId: m.id, label: m.title, from: body.from === 'check' ? 'check' : 'input' } }));
+    store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
     return { jobId: jobs.analyze(m, provider).id };
   });
   // 확인할 곳: the teacher's verdict on each note of the analysis (an unsure reading, a self-correction, an excluded
@@ -360,29 +402,6 @@ function createApp(options = {}) {
     const note = String(body.note || '').trim().slice(0, 600);
     const noteStates = note ? { ...(m.noteStates || {}), [note]: 'fixed' } : m.noteStates;
     return { ...store.materials.put({ ...next, noteStates, teacherEditedAt: new Date().toISOString() }), replaced: count };
-  });
-  // Analysis feedback is also added and edited on its own (the problem's feedback list); it is used at the next analysis.
-  const analysisNote = (body) => {
-    const text = String(body.text || '').trim().slice(0, 1000);
-    if (text.length < 2) throw fail(400, '피드백 내용을 입력해 주세요.');
-    return text;
-  };
-  route('POST', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback$/, async (req, res, [id]) => {
-    const m = getMaterial(id);
-    const text = analysisNote(await readBody(req, 8192));
-    return store.materials.put({ ...m, analysisFeedback: [...(m.analysisFeedback || []), { text, at: new Date().toISOString() }].slice(-20) });
-  });
-  route('PUT', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)$/, async (req, res, [id, index]) => {
-    const m = getMaterial(id);
-    const list = [...(m.analysisFeedback || [])];
-    if (!list[Number(index)]) throw fail(404, '피드백을 찾지 못했습니다.');
-    list[Number(index)] = { ...list[Number(index)], text: analysisNote(await readBody(req, 8192)) };
-    return store.materials.put({ ...m, analysisFeedback: list });
-  });
-  route('DELETE', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)$/, (req, res, [id, index]) => {
-    const m = getMaterial(id);
-    const analysisFeedback = (m.analysisFeedback || []).filter((_, i) => i !== Number(index));
-    return store.materials.put({ ...m, analysisFeedback });
   });
   // Merges extra STEPs to match the teacher's step markers (for materials analyzed before auto-merge).
   route('POST', /^\/api\/materials\/([a-f0-9]+)\/align-steps$/, async (req, res, [id]) => {
@@ -460,56 +479,6 @@ function createApp(options = {}) {
     return { adopted: item.adopted };
   });
 
-  // 학습: everything the AI has been taught, in one read — by kind (분석 피드백, 생성 피드백, 본보기, 읽기 교정) and by
-  // where it applies (모든 문제 / one problem), with where each was learned and, for generation feedback, how the
-  // variants made since kept it. 최근 학습 lists the latest of all of it.
-  route('GET', /^\/api\/learning$/, () => {
-    const settings = llmSettings(cfg.dataDir);
-    const materials = store.materials.all();
-    const titleOf = new Map(materials.map((m) => [m.id, m.title]));
-    const jobs = store.jobs.all().filter((j) => j.type === 'generate');
-    const judged = new Map();
-    for (const it of jobs.flatMap((j) => j.items || [])) {
-      for (const r of it.verification?.rules || []) {
-        if (!r.judged) continue;
-        const k = judged.get(r.id) || { kept: 0, broken: 0 };
-        if (r.judged.ok) k.kept++; else k.broken++;
-        judged.set(r.id, k);
-      }
-    }
-    const rules = store.rules.all().map((r) => ({ ...r, kept: judged.get(r.id)?.kept || 0, broken: judged.get(r.id)?.broken || 0,
-      materialTitle: r.source?.materialId ? titleOf.get(r.source.materialId) || '삭제된 문제' : '' }));
-    const analysisProblems = materials.filter((m) => (m.analysisFeedback || []).length).map((m) => ({ materialId: m.id, title: m.title, analyzedAt: m.analyzedAt || '',
-      items: m.analysisFeedback.map((f, i) => ({ i, text: f.text, at: f.at, applied: Boolean(m.analyzedAt && f.at < m.analyzedAt) })) }));
-    const examples = jobs.flatMap((j) => (j.items || []).filter((it) => it.adopted && it.problem).map((it) => ({
-      materialId: j.materialId, title: titleOf.get(j.materialId) || j.title, jobId: j.id, index: it.index, label: it.label,
-      preview: String(it.problem.text || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|'))?.slice(0, 120) || '', at: it.reviewedAt || j.createdAt })));
-    const corrections = store.corrections.all();
-    const where = (r) => (r.source?.jobId ? `${r.source.label || '변형 문제'}의 고칠 점` : r.scope === 'material' ? '문제 페이지' : '학습 페이지');
-    const recent = [
-      ...rules.filter((r) => r.scope !== 'topic').map((r) => ({ at: r.createdAt, kind: '생성 피드백', scope: r.scope === 'material' ? r.materialTitle : '모든 문제', text: r.text, from: where(r), href: r.source?.jobId ? `#/j/${r.source.jobId}` : r.source?.materialId ? `#/m/${r.source.materialId}` : '' })),
-      ...analysisProblems.flatMap((p) => p.items.map((f) => ({ at: f.at, kind: '분석 피드백', scope: p.title, text: f.text, from: '문제 페이지', href: `#/m/${p.materialId}` }))),
-      ...(settings.commonAnalysis || []).map((f) => ({ at: f.at, kind: '분석 피드백', scope: '모든 문제', text: f.text, from: '학습 페이지', href: '' })),
-      ...examples.map((e) => ({ at: e.at, kind: '본보기', scope: e.title, text: `${e.label} 채택`, from: '세트 검토', href: `#/j/${e.jobId}?item=${e.index}` })),
-      ...corrections.map((c) => ({ at: c.lastAt || c.createdAt, kind: '읽기 교정', scope: '모든 문제', text: `"${c.wrong}" → "${c.right}"`, from: '분석 결과 수정', href: '' })),
-    ].filter((x) => x.at).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12);
-    return {
-      persona: settings.persona || '',
-      analysis: { common: settings.commonAnalysis || [], problems: analysisProblems },
-      generation: { common: rules.filter((r) => r.scope === 'global'), topic: rules.filter((r) => r.scope === 'topic'), problems: rules.filter((r) => r.scope === 'material') },
-      examples, corrections, recent,
-      checks: { analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair },
-    };
-  });
-  // One problem's analysis feedback made a rule for every problem (학습 → 모든 문제에 적용).
-  route('POST', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)\/promote$/, (req, res, [id, index]) => {
-    const m = getMaterial(id);
-    const item = (m.analysisFeedback || [])[Number(index)];
-    if (!item) throw fail(404, '피드백을 찾지 못했습니다.');
-    saveLlmSettings(cfg.dataDir, { commonAnalysis: [...(llmSettings(cfg.dataDir).commonAnalysis || []), { text: item.text, at: new Date().toISOString() }].slice(-30) });
-    return store.materials.put({ ...m, analysisFeedback: m.analysisFeedback.filter((_, i) => i !== Number(index)) });
-  });
-
   // learning rules
   route('GET', /^\/api\/rules$/, () => store.rules.all());
   route('POST', /^\/api\/rules$/, async (req) => {
@@ -523,14 +492,14 @@ function createApp(options = {}) {
     } else if (source?.materialId && isId(source.materialId)) {
       // Feedback written on the problem page itself (on the original, its reading or the variants in general).
       const material = getMaterial(source.materialId);
-      source = { materialId: material.id, label: material.title };
+      source = { materialId: material.id, label: material.title, from: source.from };
       if (!body.subject) { body.subject = material.subject; body.topic = material.topic; }
     }
     // Feedback on a problem belongs to that problem unless the teacher widens it.
     const scope = body.scope || (source?.materialId ? 'material' : 'global');
     // The same sentence on the same problem (a quick-feedback tag pressed on several variants) is one feedback:
     // it is switched back on instead of being stored twice.
-    const same = scope === 'material' && store.rules.all().find((r) => r.scope === 'material' && r.source?.materialId === source?.materialId && r.text.trim() === String(body.text || '').trim());
+    const same = scope === 'material' && store.rules.all().find((r) => r.scope === 'material' && r.source?.materialId === source?.materialId && stageOf(r) === (body.stage || 'generation') && r.text.trim() === String(body.text || '').trim());
     if (same) return store.rules.put(updateRule(same, { status: 'approved' }));
     return store.rules.put(makeRule({ ...body, scope, source }));
   });
@@ -539,12 +508,6 @@ function createApp(options = {}) {
     return store.rules.put(updateRule(rule, await readBody(req, 16 * 1024)));
   });
   route('DELETE', /^\/api\/rules\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.rules.remove(id) }));
-  // 학습 page: the exact text the stored knowledge adds to a model call (rules for every problem, reading hints).
-  route('GET', /^\/api\/learning\/preview$/, () => {
-    const global = store.rules.all().filter((r) => r.status === 'approved' && r.scope === 'global')
-      .map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
-    return { rules: prompts.rulesBlock(global).trim(), reading: readingHint(store.corrections.all()) };
-  });
   // Claude subscription login for the CLI provider, from the LLM tab (no SSH session needed): the server runs
   // deploy/claude-login.py, which runs `claude setup-token` in a pseudo-terminal (it needs one; `claude auth login`
   // only waits for a browser callback to the server itself), shows the sign-in link, takes the code the teacher
@@ -755,44 +718,26 @@ function createApp(options = {}) {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });
-  // 공통 지침 (instructions for every problem): the AI's role before every call, the analysis instructions every analysis
-  // follows (generation's are the global rules), and, read-only, the checks every made problem goes through.
-  function commonSettings() {
-    const s = llmSettings(cfg.dataDir);
+  // 전체 학습 and 지침 (docs/learning.md): the every-problem items by layer and stage, with where each was learned and how
+  // it fared; the reading corrections (전체 학습 of analysis); the persona and, read-only, how results are checked (지침).
+  route('GET', /^\/api\/learning$/, () => {
+    const kept = keptByRule();
+    const global = store.rules.all().filter((r) => r.scope !== 'material').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => itemView(r, kept));
+    const pick = (layer, stage) => global.filter((r) => r.layer === layer && r.stage === stage);
     return {
-      persona: s.persona || '',
-      analysis: s.commonAnalysis || [],
+      persona: llmSettings(cfg.dataDir).persona || '',
+      guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
+      lessons: { analysis: pick('lesson', 'analysis'), generation: pick('lesson', 'generation') },
+      corrections: store.corrections.all().sort((a, b) => b.count - a.count),
       checks: { analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair },
     };
-  }
+  });
   const PERSONA_MAX = 4000;
-  route('GET', /^\/api\/common$/, () => commonSettings());
-  route('PUT', /^\/api\/common\/persona$/, async (req) => {
+  route('PUT', /^\/api\/persona$/, async (req) => {
     const persona = String((await readBody(req, 64 * 1024)).persona || '').trim();
-    if (persona.length > PERSONA_MAX) throw fail(400, `AI 역할은 ${PERSONA_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
+    if (persona.length > PERSONA_MAX) throw fail(400, `페르소나는 ${PERSONA_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
     saveLlmSettings(cfg.dataDir, { persona });
-    return commonSettings();
-  });
-  const commonNote = (body) => {
-    const text = String(body.text || '').trim().slice(0, 1000);
-    if (text.length < 2) throw fail(400, '지침 내용을 입력해 주세요.');
-    return text;
-  };
-  route('POST', /^\/api\/common\/analysis$/, async (req) => {
-    const text = commonNote(await readBody(req, 8192));
-    saveLlmSettings(cfg.dataDir, { commonAnalysis: [...(llmSettings(cfg.dataDir).commonAnalysis || []), { text, at: new Date().toISOString() }].slice(-30) });
-    return commonSettings();
-  });
-  route('PUT', /^\/api\/common\/analysis\/(\d+)$/, async (req, res, [i]) => {
-    const list = [...(llmSettings(cfg.dataDir).commonAnalysis || [])];
-    if (!list[Number(i)]) throw fail(404, '지침을 찾지 못했습니다.');
-    list[Number(i)] = { ...list[Number(i)], text: commonNote(await readBody(req, 8192)) };
-    saveLlmSettings(cfg.dataDir, { commonAnalysis: list });
-    return commonSettings();
-  });
-  route('DELETE', /^\/api\/common\/analysis\/(\d+)$/, (req, res, [i]) => {
-    saveLlmSettings(cfg.dataDir, { commonAnalysis: (llmSettings(cfg.dataDir).commonAnalysis || []).filter((_, k) => k !== Number(i)) });
-    return commonSettings();
+    return { persona };
   });
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();

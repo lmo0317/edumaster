@@ -30,7 +30,7 @@ function followFeedback(text) {
   const feedback = [];
   let under = false;
   for (const line of text.split('\n')) {
-    if (line.startsWith('[')) under = /분석 피드백|공통 분석 지침/.test(line);
+    if (line.startsWith('[')) under = /분석 지침|분석 피드백|분석 교훈/.test(line);
     else if (under && line.startsWith('- ')) feedback.push(line.slice(2));
   }
   if (!feedback.length) return SAMPLE;

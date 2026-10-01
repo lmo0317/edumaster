@@ -33,11 +33,11 @@ const ANALYZE_SYSTEM = `너는 고등학교 과학·수학 킬러 문제를 해�
 - 읽기 어려운 글자·수치가 있으면 추측한 값과 함께 uncertainties에 적는다.
 
 [교사의 분석 피드백이 있을 때 — 위 규칙보다 우선한다]
-- 사용자 메시지의 "교사의 분석 피드백"과 "교사의 공통 분석 지침"은 위의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다.
+- 사용자 메시지의 "분석 지침", "이 문제의 분석 피드백", "모든 문제에서 배운 분석 교훈"은 위의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 서로 부딪히면 지침 > 이 문제의 피드백 > 교훈 순서로 따른다.
 - 피드백이 STEP 수나 나누는 방식을 정하면(예: "STEP을 4개로 분리") 해설의 단계 표시와 달라도 그대로 따른다. 판단이 여러 개 들어 있는 단계를 판단마다 나누고, 각 STEP의 marker는 그 내용이 있던 해설 단계 표시로 둔다.
 - 피드백이 설명을 쉽게·자세히 하라는 등 해설 표현을 바꾸라고 하면 work를 해설 문장 그대로 옮기지 말고 요청대로 풀어 쓴다. 단, 교사의 방법(보조 문자, 가정→모순 판정, 실험 간 비교, 비례식, 계산 순서)과 모든 수치·결론은 그대로 둔다. 방법을 바꾸라는 피드백이 아니면 다른 풀이로 바꾸지 않는다.
 - teacherRequests.stepCount: 피드백이 정한 STEP 수 (정하지 않았으면 0). teacherRequests.rewrite: 피드백 때문에 work를 해설 문장과 다르게 풀어 썼으면 true.
-- feedbackApplied: 피드백 하나마다 {"feedback":"피드백 원문 그대로","how":"무엇을 어떻게 바꿨는지 한 문장"}. 반영하지 못한 것은 how에 그 이유를 적는다.
+- feedbackApplied: 지침·피드백·교훈 항목 하나마다 {"feedback":"항목 원문 그대로","how":"무엇을 어떻게 했는지 한 문장"}. 반영하지 못한 것은 how에 그 이유를 적는다.
 ${FORMAT}
 
 반환 JSON 형식:
@@ -46,7 +46,7 @@ ${FORMAT}
  "annotations":["..."],"solutionSource":"provided|ai",
  "steps":[{"marker":"이 STEP이 속한 해설의 단계 표시(예: step1). 표시가 없으면 빈 문자열","title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
  "techniques":["..."],"finalCheck":"...","uncertainties":["..."],
- "teacherRequests":{"stepCount":0,"rewrite":false},"feedbackApplied":[{"feedback":"교사의 분석 피드백이 있을 때만","how":"..."}],
+ "teacherRequests":{"stepCount":0,"rewrite":false},"feedbackApplied":[{"feedback":"지침·피드백·교훈이 있을 때만","how":"..."}],
  "stepMarkers":["해설에 인쇄된 단계 표시를 인쇄된 순서대로 한 번씩만, 예: step1, step2, step3 (STEP마다 반복하지 않는다. 없으면 빈 배열)"],
  "verification":{"program":["원본 문제의 주어진 값과 해설의 계산을 순서대로 적은 mathjs 문장"],"answer":"ans","choices":["각 선택지 값 식"],"free":[],"checks":[{"expr":"...","desc":"..."}]}}
 - verification: 원본 문제를 해설의 계산 그대로 따라가 정답을 계산하는 검산 프로그램이다. 서버가 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 확인한다. 한 줄에 mathjs 문장 하나, 변수 이름은 영문자·숫자·_ 만, 사용 가능: + - * / ^ ( ) sqrt abs min max 비교 and or not. 수치가 아닌 선택지(ㄱ,ㄴ,ㄷ)면 choices는 빈 배열, 계산할 수치가 없으면 program에 주어진 값만 적는다. 문제에서 값이 정해지지 않는 문자는 free에 넣는다.
@@ -121,21 +121,19 @@ function proofreadText(fields) {
   return '[옮겨 적은 필드]\n' + JSON.stringify(fields, null, 1) + '\n\n이미지와 대조해 JSON만 반환하라.';
 }
 
-function analyzeText({ hasSolution, sameImage, note, feedback = [], common = [] }) {
+function analyzeText({ hasSolution, sameImage, note, guides = [], feedback = [], lessons = [] }) {
   const lines = [];
   if (sameImage) lines.push('한 이미지에 문제와 해설이 함께 있다. 문제 영역과 해설 영역을 구분해서 읽어라.');
   else if (hasSolution) lines.push('각 이미지 앞의 라벨로 문제 이미지와 교사 해설 이미지를 구분하라.');
   else lines.push('문제 이미지만 있다. 해설이 없으므로 직접 풀어 STEP을 만들어라 (solutionSource="ai").');
   lines.push('작은 원본을 확대해 위에서 아래로 자른 조각이 올 수 있다. 조각은 위아래가 조금 겹치므로 겹친 줄을 두 번 옮기지 말고 순서대로 이어 읽어라.');
   if (note) lines.push('교사 메모: ' + note);
-  if (common.length) {
-    lines.push('[모든 문제에 적용하는 교사의 공통 분석 지침 — 교사의 분석 피드백과 같이, 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 이 문제의 분석 피드백과 부딪히면 이 문제의 피드백을 따른다]');
-    for (const c of common) lines.push('- ' + c.text);
-  }
-  if (feedback.length) {
-    lines.push('[교사의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에 교사가 요청한 점. 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 모두 반영하고, 읽기에 관한 것은 이미지를 다시 확인하며, 반영한 방법을 feedbackApplied에 피드백마다 적는다]');
-    for (const f of feedback) lines.push('- ' + f.text);
-  }
+  // 지침 > 이 문제의 피드백 > 전체 학습: all three come before the rules above about STEP counts and copying the solution.
+  const block = (title, items) => { if (items.length) lines.push(title, ...items.map((x) => '- ' + x.text)); };
+  block('[분석 지침 — 선생님이 정한, 모든 문제에서 반드시 지킬 규칙. 가장 우선한다]', guides);
+  block('[이 문제의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에 선생님이 요청한 점. 읽기에 관한 것은 이미지를 다시 확인한다]', feedback);
+  block('[모든 문제에서 배운 분석 교훈 — 이 문제의 피드백과 부딪히면 이 문제의 피드백을 따른다]', lessons);
+  if (guides.length + feedback.length + lessons.length) lines.push('위 지침·피드백·교훈은 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 항목마다 어떻게 반영했는지 feedbackApplied에 적는다.');
   lines.push('지시에 따라 JSON만 반환하라.');
   return lines.join('\n');
 }
@@ -248,10 +246,11 @@ function priorBlock(prior) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+const LAYER_LABEL = { guide: '지침', problem: '이 문제', lesson: '전체 학습' };
 function rulesBlock(rules) {
-  if (!rules.length) return '\n[교사 지침] 없음. appliedRules는 빈 배열.';
-  return '\n[교사 지침 — 반드시 지킨다. 각 지침을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
-    `- (${r.id}) [${r.kind === 'dont' ? '하지 말 것' : r.kind === 'do' ? '할 것' : '피드백'}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`
+  if (!rules.length) return '\n[교사 지침·학습] 없음. appliedRules는 빈 배열.';
+  return '\n[교사 지침·학습 — 모두 지킨다. 지침은 반드시 지킬 규칙, 이 문제는 선생님이 이 원본에 대해 가르친 것, 전체 학습은 여러 문제에서 배운 교훈이다. 서로 부딪히면 지침 > 이 문제 > 전체 학습 순서로 따른다. 각 항목을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
+    `- (${r.id}) [${LAYER_LABEL[r.layer] || '이 문제'}${r.kind === 'dont' ? '·하지 말 것' : r.kind === 'do' ? '·할 것' : ''}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`
     + (r.context ? `\n    (이 피드백을 받은 문제 — 같은 실수를 반복하지 않는다. 내용·수치를 베끼지 않는다: ${r.context})` : '')).join('\n');
 }
 

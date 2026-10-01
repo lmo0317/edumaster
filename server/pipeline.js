@@ -1,7 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { selectRules, readingHint, readingPairs } = require('./learning');
+const { selectRules, analysisLearning, layerOf, readingHint, readingPairs } = require('./learning');
 const harness = require('./harness');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
@@ -217,10 +217,12 @@ async function analyzeMaterial(ctx, material) {
   if (!separate) byRole.solution = byRole.problem; // one image holds both
   if (images.some((i) => !i.dataUrl)) throw new Error('저장된 원본 이미지를 찾지 못했습니다.');
   ctx.log('원본 이미지 판독과 풀이 STEP 정리 중');
+  // What the teacher taught about reading (docs/learning.md): the analysis 지침, this problem's feedback, the lessons.
+  const learn = store ? analysisLearning(store.rules.all(), material) : { guides: [], own: [], lessons: [] };
   const { data, shapeFixes: analyzeShape = [] } = await llm.json({
     purpose: 'analyze', jobId: ctx.job.id, budget, signal, vision: true, effort: 'off', maxTokens: 16000,
     system: prompts.ANALYZE_SYSTEM,
-    text: withHint(prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note, feedback: material.analysisFeedback || [], common: ctx.commonAnalysis || [] })),
+    text: withHint(prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note, guides: learn.guides, feedback: learn.own, lessons: learn.lessons })),
     images,
   });
   if (analyzeShape.length) ctx.log(`응답 JSON 구조 보정: ${analyzeShape.join(', ')}를 최상위로 옮김`);
@@ -291,6 +293,9 @@ async function analyzeMaterial(ctx, material) {
     if (other) result.uncertainties.push(`단어 확인: 읽은 내용에 "${word}"이(가) ${n}번 나옵니다. AI가 "${word}"과(와) "${other}"을(를) 헷갈린 적이 있어서 묻습니다. 원본 사진에도 "${word}"으로 인쇄되어 있나요?`);
   }
   if (corrections.length) result.proofread.push(`과거 교사 교정 ${corrections.length}건을 판독에 참고했습니다.`);
+  // What went into this analysis, so the page can show it next to the result with how each was applied.
+  result.learningUsed = [...learn.guides, ...learn.own, ...learn.lessons].map((r) => ({ id: r.id, layer: layerOf(r), text: r.text }));
+  result.correctionsUsed = Math.min(corrections.length, 12);
   return refreshStepCountNote(result);
 }
 
@@ -868,7 +873,7 @@ async function runGeneration(ctx) {
 
 function pickRules(store, material) {
   // The problem a feedback was written about goes along: "이 조건은 불필요" means little without it.
-  return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope,
+  return selectRules(store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope, layer: layerOf(r),
     context: r.source?.excerpt ? `${r.source.label || '이전 생성 문제'}: ${r.source.excerpt.replace(/\s+/g, ' ').slice(0, 220)}` : '' }));
 }
 

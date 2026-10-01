@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel, claudeCliChoice, llmSettings } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice } = require('./llm');
 const pipeline = require('./pipeline');
 const { PROMPT_VERSION } = require('./prompts');
 
@@ -42,8 +42,6 @@ function createJobs({ store, llm, config }) {
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       maxRepairs: 2,
-      // 공통 지침's analysis instructions: every analysis follows them, like the problem's own analysis feedback.
-      commonAnalysis: llmSettings(config.dataDir).commonAnalysis || [],
       save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); store.jobs.put(job); extraSave?.(); },
       log(message) { job.log = [...(job.log || []), { t: new Date().toISOString(), message }].slice(-200); ctx.save(); },
     };
