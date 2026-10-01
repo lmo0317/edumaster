@@ -903,6 +903,44 @@
 
 
   // ------------------------------------------------------------------ system
+  // Signing the server's Claude Code in to the teacher's Claude subscription (for the "Claude Opus 5.5 (구독)" model):
+  // the server shows the sign-in link, the teacher signs in on any device and pastes the code here.
+  async function claudeLoginPanel() {
+    const el = $('#claude-login');
+    if (!el) return;
+    const st = await api('GET', '/api/claude-login');
+    if (st.loggedIn) {
+      el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip ok">연결됨</span></div>
+        <p class="muted small">문제를 만들 때 <b>Claude Opus 5.5 (구독)</b>을 고를 수 있습니다. 서버의 Claude 구독으로 실행되어 추가 비용이 없고, 구독의 사용 한도를 함께 씁니다.</p>`;
+      return;
+    }
+    el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip warn">연결 안 됨</span></div>
+      <p class="muted small">서버를 선생님의 Claude 구독에 한 번 연결하면 문제 생성에서 <b>Claude Opus 5.5 (구독)</b>을 쓸 수 있습니다 (추가 비용 없음).</p>
+      <ol class="small">
+        <li><b>로그인 시작</b>을 누르면 로그인 링크가 나옵니다.</li>
+        <li>링크를 열어 Claude 계정으로 로그인하고 승인하면 <b>코드</b>가 표시됩니다.</li>
+        <li>그 코드를 아래 칸에 붙여 넣고 <b>연결</b>을 누르세요.</li>
+      </ol>
+      <div id="cl-step">${st.url ? '' : '<button class="primary" id="cl-start">로그인 시작</button>'}</div>`;
+    const showCode = (url) => {
+      $('#cl-step', el).innerHTML = `<p><a class="button primary" href="${esc(url)}" target="_blank" rel="noopener">로그인 링크 열기</a></p>
+        <label for="cl-code">로그인 후 표시된 코드</label><input type="text" id="cl-code" autocomplete="off" spellcheck="false" placeholder="코드를 붙여 넣으세요">
+        <div class="fb-add-bar"><button id="cl-cancel">취소</button><span class="spacer"></span><button class="primary" id="cl-send">연결</button></div>`;
+      $('#cl-send', el).addEventListener('click', guard(async (e) => {
+        e.target.disabled = true;
+        try { await api('POST', '/api/claude-login/code', { code: $('#cl-code', el).value }); toast('Claude 구독에 연결했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {}); }
+        finally { if (e.target.isConnected) e.target.disabled = false; }
+      }));
+      $('#cl-cancel', el).addEventListener('click', guard(async () => { await api('POST', '/api/claude-login/cancel'); claudeLoginPanel(); }));
+    };
+    if (st.url) showCode(st.url);
+    $('#cl-start', el)?.addEventListener('click', guard(async (e) => {
+      e.target.disabled = true; e.target.textContent = '링크를 만드는 중…';
+      try { showCode((await api('POST', '/api/claude-login/start')).url); }
+      finally { if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '로그인 시작'; } }
+    }));
+  }
+
   async function systemView() {
     const [status, sys] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/system')]);
     const checks = [
@@ -919,6 +957,7 @@
     ];
 
     view.innerHTML = `
+      <div class="panel" id="claude-login"></div>
       <section class="sys-hero">
         <div class="eyebrow">EduMaster 안내</div>
         <h1>선생님의 풀이로, 단계별 연습 문제를 만듭니다</h1>
@@ -988,6 +1027,7 @@
       </div>
 
       <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
+    claudeLoginPanel().catch(() => { const el = $('#claude-login'); if (el) el.hidden = true; });
   }
 
 
