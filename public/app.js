@@ -404,9 +404,8 @@
     }));
   }
 
-  // The problem page, in the order of the loop: the original and its reading → this problem's feedback → making
-  // variants → the sets made (reviewing them is what teaches the next ones). Same rows as the LLM tab: each item's state
-  // on one line, 보기/편집 opens it in place. Which rows are open is remembered per problem while the app is open.
+  // Problem page rows work like the LLM tab: each item's state on one line, 보기/편집 opens it in place. Which rows
+  // are open is remembered per problem while the app is open.
   const openRows = new Map();
   const openSet = (id) => { if (!openRows.has(id)) openRows.set(id, new Set()); return openRows.get(id); };
   const flat = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
@@ -417,72 +416,169 @@
     return { uncertain, proofread: m.proofread || [], annotations: m.annotations || [], misaligned: m.steps.length > (m.targetSteps || 99) };
   }
 
+  // The problem page is two stages, each the same loop: what the AI made → what the teacher teaches about it → do it
+  // again. ① 원본 분석: the reading and its STEPs, analysis feedback, 다시 분석. ② 변형 문제: the sets made, generation
+  // feedback and the adopted models, a new set. Feedback sits right under what it is about, so there is no choosing
+  // which kind it is. The stage last opened on this problem is opened again.
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = m.jobs.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if (!openRows.has(m.id)) {
-      // First visit: open what needs a look — an unsure reading, the newest set; the new-feedback box when there is none yet.
+      // First visit: open what needs a look — an unsure reading, the newest set.
       const s = openSet(m.id);
       const notes = analysisNotes(m);
       if (notes.uncertain.length || notes.misaligned) s.add('a:check');
       if (gens[0]) s.add('s:' + gens[0].id);
     }
+    const key = 'em-stage-' + m.id;
+    let stage = '';
+    try { stage = localStorage.getItem(key) || ''; } catch { /* no storage */ }
+    if (editing) stage = 'read';
+    if (!['read', 'make'].includes(stage)) stage = gens.length ? 'make' : 'read';
     view.innerHTML = `<div class="lt">
-      <div class="lt-title"><h1>${esc(m.title)}</h1><p class="lt-meta" id="m-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}</p></div>
-      <section class="lt-sec">
-        <div class="lt-sec-head lt-sec-row"><div><h2>원본과 분석</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><div class="lt-sec-btns"><button class="small" id="reanalyze">다시 분석</button><button class="small" id="edit">직접 수정</button></div></div>
-        <div class="panel lt-list" id="analysis"></div>
-      </section>
-      <section class="lt-sec">
-        <div class="lt-sec-head"><h2>이 문제의 피드백</h2><p>이 문제에 가르친 내용입니다. 적용 중인 것은 모두 다음 작업에 들어갑니다.</p></div>
-        <div id="feedback" class="fb-wrap"><div class="panel muted">불러오는 중…</div></div>
-      </section>
-      <section class="lt-sec">
-        <div class="lt-sec-head"><h2>변형 문제 만들기</h2><p>정답은 서버가 계산으로 확인하고, 문제만 보고 다시 풀어 대조합니다.</p></div>
-        <div class="panel" id="generate"></div>
-      </section>
-      <section class="lt-sec">
-        <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 채택하거나 고칠 점을 남기세요. 채택한 문제는 다음 세트의 본보기가 됩니다.</p></div>
-        <div class="panel lt-list" id="variants"></div>
-      </section>
+      <div class="lt-title"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}</p></div>
+      <nav class="stage-tabs" role="tablist">
+        <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>원본 분석</b><small id="st-read"></small></span></button>
+        <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>변형 문제</b><small id="st-make"></small></span></button>
+      </nav>
+      <div class="stage" data-pane="read">
+        <section class="lt-sec">
+          <div class="lt-sec-head lt-sec-row"><div><h2>분석 결과</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><div class="lt-sec-btns"><button class="small" id="edit">직접 수정</button></div></div>
+          <div class="panel lt-list" id="analysis"></div>
+        </section>
+        <section class="lt-sec">
+          <div class="lt-sec-head"><h2>분석 피드백</h2><p>분석에서 바꾸고 싶은 점을 적고 다시 분석하면 AI가 모두 따릅니다. 몇 글자 오타는 직접 수정이 빠릅니다.</p></div>
+          <div class="fb-wrap" id="afb"></div>
+        </section>
+      </div>
+      <div class="stage" data-pane="make">
+        <section class="lt-sec">
+          <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 👍 채택하거나 ✏️ 고칠 점을 남기세요. 고칠 점은 아래 생성 피드백으로 모이고, 채택한 문제는 본보기가 됩니다.</p></div>
+          <div class="panel lt-list" id="variants"></div>
+        </section>
+        <section class="lt-sec">
+          <div class="lt-sec-head"><h2>생성 피드백</h2><p>변형 문제를 만들 때마다 AI가 지킬 점입니다.</p></div>
+          <div class="fb-wrap" id="gfb"><div class="panel muted">불러오는 중…</div></div>
+        </section>
+        <section class="lt-sec">
+          <div class="lt-sec-head"><h2>새 세트 만들기</h2><p>위 피드백과 본보기를 반영해 만듭니다. 정답은 서버가 계산으로 확인하고, 문제만 보고 다시 풀어 대조합니다.</p></div>
+          <div class="panel" id="generate"></div>
+        </section>
+      </div>
       <div class="lt-foot"><button class="small danger" id="del">이 문제 삭제</button></div>
     </div>`;
+    const show = (tab) => {
+      $$('[data-stage-tab]').forEach((b) => { b.classList.toggle('on', b.dataset.stageTab === tab); b.setAttribute('aria-selected', String(b.dataset.stageTab === tab)); });
+      $$('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== tab; });
+      try { localStorage.setItem(key, tab); } catch { /* no storage */ }
+    };
+    $$('[data-stage-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.stageTab)));
+    show(stage);
     $('#edit').addEventListener('click', () => editAnalysis(m));
-    $('#reanalyze').addEventListener('click', guard(async () => {
-      const n = (m.analysisFeedback || []).length;
-      if (!confirm(`원본을 다시 분석할까요?${n ? ` 원본 분석 피드백 ${n}개가 반영됩니다.` : ''} 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.`)) return;
-      await api('POST', `/api/materials/${m.id}/analyze`, {}); // the 기본 모델 (LLM tab)
-      route();
-    }));
     $('#del').addEventListener('click', guard(async () => { if (confirm('이 문제를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/'; } }));
     if (editing) editAnalysis(m); else showAnalysis(m);
+    analysisFeedbackPanel(m);
     generatePanel(m, n);
-    // Feedback, the sets and what the next set will carry all come from the same two reads; a feedback change repaints them.
+    // Generation feedback, the sets and what the next set will carry come from the same two reads; a change repaints them.
     const side = async () => {
       const [rules, learning] = await Promise.all([api('GET', '/api/rules'), api('GET', `/api/materials/${m.id}/learning`)]);
-      if (!$('#feedback')) return;
+      if (!$('#gfb')) return;
       const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const on = own.filter((r) => r.status === 'approved');
       const common = rules.filter((r) => r.status === 'approved' && ['global', 'topic'].includes(r.scope));
-      $('#m-meta').textContent = [m.subject, m.topic, `피드백 ${on.length + (m.analysisFeedback || []).length}개`, learning.adopted ? `본보기 ${learning.adopted}개` : '', `세트 ${gens.length}개`].filter(Boolean).join(' · ');
-      feedbackPanel(m, own, learning, gens, side);
+      $('#st-make').textContent = [`세트 ${gens.length}개`, `피드백 ${on.length}개`, learning.adopted ? `본보기 ${learning.adopted}개` : ''].filter(Boolean).join(' · ');
+      generationFeedbackPanel(m, own, learning, gens, side);
       variantsPanel(m, gens, on, learning);
       carryLine(m, n, on, common, learning.adopted);
     };
-    side().catch((e) => { if ($('#feedback')) $('#feedback').innerHTML = `<div class="panel bad">${esc(e.message)}</div>`; });
+    side().catch((e) => { if ($('#gfb')) $('#gfb').innerHTML = `<div class="panel bad">${esc(e.message)}</div>`; });
   }
 
-  // What this problem has been taught, in two groups. 적용 중: everything the AI gets now, by when it gets it —
-  // feedback for making variants (with how the later variants kept it; the checkbox switches it off), feedback for
-  // reading the original again, and the adopted variants shown as models. 새 피드백: one box for either kind.
+  // Shared by both stages' feedback: rows that open in place to edit.
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
-  function feedbackPanel(m, own, learning, gens, refresh) {
-    const el = $('#feedback');
+  const targetOptions = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
+  const emptyRow = (text) => `<div class="lt-row lt-plain fb-empty"><span class="muted small">${text}</span></div>`;
+
+  // ① Analysis feedback: one box to add (and re-analyze), then what was asked so far with how the last analysis applied it.
+  function analysisFeedbackPanel(m) {
+    const el = $('#afb');
     if (!el) return;
     const opened = openSet(m.id);
-    const o = (key) => (opened.has(key) ? ' open' : '');
+    const o = (k) => (opened.has(k) ? ' open' : '');
+    const afb = m.analysisFeedback || [];
+    // How the last analysis says it applied each one (matched by text, else by position when the counts agree).
+    const applied = m.feedbackApplied || [];
+    const howOf = (f, i) => (applied.find((x) => x.feedback.trim() === f.text.trim()) || (applied.length === afb.length ? applied[i] : null))?.how;
+    const isPending = (f) => !(m.analyzedAt && f.at < m.analyzedAt);
+    const pending = afb.filter(isPending).length;
+    const state = (f, i) => {
+      if (isPending(f)) return '<span class="warn">아직 반영 전 — 다시 분석하면 반영됩니다</span>';
+      const how = howOf(f, i);
+      return how ? `반영: ${esc(how)}` : '<span class="warn">분석에 들어갔지만 어떻게 반영했는지 보고가 없습니다</span>';
+    };
+    const row = (f, i) => `<div class="lt-row lt-plain${o('af:' + i)}" data-row="af:${i}" data-afb="${i}">
+        <div class="lt-main"><span class="lt-name lt-clamp">${esc(f.text)}</span><span class="lt-sub lt-wrap">${fmtTime(f.at)} · ${state(f, i)}</span></div>
+        <button class="small lt-open" data-open>편집</button>
+        <div class="lt-more">
+          <textarea data-f="text" rows="3">${esc(f.text)}</textarea>
+          <div class="lt-actions"><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div>
+        </div>
+      </div>`;
+    el.innerHTML = `
+      <div class="panel fb-new">
+        <textarea id="afb-text" rows="2" placeholder="예: STEP을 4개로 나눠 주세요. 설명을 더 쉽게 풀어 써 주세요. 표 Ⅲ의 'B'는 학생 필기입니다."></textarea>
+        <div class="lt-actions"><span class="muted small">${pending ? `<span class="warn">아직 반영 안 된 피드백 ${pending}개</span>` : ''}</span><span class="spacer"></span>
+          <button class="small" id="afb-add">추가만</button><button class="small primary" id="afb-go">다시 분석</button></div>
+      </div>
+      <div class="panel lt-list">${afb.map(row).join('') || emptyRow('아직 없습니다.')}</div>`;
+    rowToggles(el, opened);
+    const st = $('#st-read');
+    if (st) st.innerHTML = `STEP ${m.steps.length}개 · 피드백 ${afb.length}개${pending ? ` · <span class="warn">반영 전 ${pending}</span>` : ''}`;
+    const box = $('#afb-text', el);
+    const go = $('#afb-go', el);
+    const label = () => { go.textContent = box.value.trim() ? '추가하고 다시 분석' : '다시 분석'; };
+    box.addEventListener('input', label);
+    $('#afb-add', el).addEventListener('click', guard(async () => {
+      const text = box.value.trim();
+      if (!text) throw new Error('피드백 내용을 입력해 주세요.');
+      m.analysisFeedback = (await api('POST', `/api/materials/${m.id}/analysis-feedback`, { text })).analysisFeedback;
+      toast('추가했습니다. 다시 분석하면 반영됩니다.');
+      analysisFeedbackPanel(m);
+    }));
+    go.addEventListener('click', guard(async () => {
+      const text = box.value.trim();
+      const total = afb.length + (text ? 1 : 0);
+      if (!confirm(`원본을 다시 분석할까요?${total ? ` 분석 피드백 ${total}개를 모두 반영합니다.` : ''} 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.`)) return;
+      await api('POST', `/api/materials/${m.id}/analyze`, text ? { feedback: text } : {}); // the 기본 모델 (LLM tab)
+      route();
+    }));
+    $$('[data-afb]', el).forEach((r) => {
+      const i = Number(r.dataset.afb);
+      $('[data-act=cancel]', r).addEventListener('click', () => { $('[data-f=text]', r).value = afb[i].text; r.classList.remove('open'); opened.delete('af:' + i); });
+      $('[data-act=save]', r).addEventListener('click', guard(async () => {
+        m.analysisFeedback = (await api('PUT', `/api/materials/${m.id}/analysis-feedback/${i}`, { text: $('[data-f=text]', r).value })).analysisFeedback;
+        opened.delete('af:' + i);
+        toast('저장했습니다. 다시 분석하면 반영됩니다.');
+        analysisFeedbackPanel(m);
+      }));
+      $('[data-act=del]', r).addEventListener('click', guard(async () => {
+        if (!confirm('이 피드백을 삭제할까요?')) return;
+        m.analysisFeedback = (await api('DELETE', `/api/materials/${m.id}/analysis-feedback/${i}`)).analysisFeedback;
+        // Row keys are positions; the ones after this one moved up.
+        [...opened].filter((k) => k.startsWith('af:')).forEach((k) => opened.delete(k));
+        analysisFeedbackPanel(m);
+      }));
+    });
+  }
+
+  // ② Generation feedback: one box to add, then what every new set gets — the feedback (with how the later variants
+  // kept it; the checkbox switches one off) and the adopted variants shown as models.
+  function generationFeedbackPanel(m, own, learning, gens, refresh) {
+    const el = $('#gfb');
+    if (!el) return;
+    const opened = openSet(m.id);
+    const o = (k) => (opened.has(k) ? ' open' : '');
     const record = new Map(learning.feedback.map((f) => [f.id, f]));
-    const targets = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
     const from = (label) => esc(String(label || '변형 문제').replace(m.title + ' · ', ''));
     const ruleRow = (r) => {
       const f = record.get(r.id) || {};
@@ -495,27 +591,10 @@
         <button class="small lt-open" data-open>편집</button>
         <div class="lt-more">
           <textarea data-f="text" rows="3">${esc(r.text)}</textarea>
-          <div class="lt-actions"><select data-f="target" aria-label="대상">${targets(r.target)}</select><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div>
+          <div class="lt-actions"><select data-f="target" aria-label="대상">${targetOptions(r.target)}</select><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div>
         </div>
       </div>`;
     };
-    const afb = m.analysisFeedback || [];
-    // How the last analysis says it applied each one (matched by text, else by position when the counts agree).
-    const applied = m.feedbackApplied || [];
-    const howOf = (f, i) => (applied.find((x) => x.feedback.trim() === f.text.trim()) || (applied.length === afb.length ? applied[i] : null))?.how;
-    const afbState = (f, i) => {
-      if (!(m.analyzedAt && f.at < m.analyzedAt)) return '<span class="warn">다음에 다시 분석할 때 반영</span>';
-      const how = howOf(f, i);
-      return how ? `반영: ${esc(how)}` : '<span class="warn">지금 분석에 들어갔지만 어떻게 반영했는지 보고가 없습니다</span>';
-    };
-    const afbRow = (f, i) => `<div class="lt-row lt-plain${o('af:' + i)}" data-row="af:${i}" data-afb="${i}">
-        <div class="lt-main"><span class="lt-name lt-clamp">${esc(f.text)}</span><span class="lt-sub lt-wrap">${fmtTime(f.at)} · ${afbState(f, i)}</span></div>
-        <button class="small lt-open" data-open>편집</button>
-        <div class="lt-more">
-          <textarea data-f="text" rows="3">${esc(f.text)}</textarea>
-          <div class="lt-actions"><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div>
-        </div>
-      </div>`;
     const examples = gens.flatMap((j, i) => (j.items || []).filter((it) => it.adopted).map((it) => ({ j, it, no: gens.length - i })));
     const exampleRow = ({ j, it, no }) => `<div class="lt-row lt-plain">
         <div class="lt-main"><span class="lt-name">${esc(it.label)}</span><span class="lt-sub lt-clip">세트 ${no} · ${it.preview ? inlineRich(it.preview) : ''}</span></div>
@@ -523,78 +602,33 @@
       </div>`;
     const on = own.filter((r) => r.status === 'approved');
     const off = own.filter((r) => r.status !== 'approved');
-    const kind = (title, count, about, rows, empty) => `<div class="fb-kind"><b>${title}</b><span>${count}개</span><span class="muted">${about}</span></div>${rows || `<div class="lt-row lt-plain fb-empty"><span class="muted small">${empty}</span></div>`}`;
     el.innerHTML = `
-      <div class="fb-group">
-        <h3>적용 중인 피드백</h3>
-        <div class="panel lt-list">
-          ${kind('변형 문제를 만들 때', on.length, '체크를 끄면 다음 변형부터 빠집니다', on.map(ruleRow).join(''), '아직 없습니다. 아래에서 추가하거나, 세트에서 고칠 점을 누르면 여기로 모입니다.')}
-          ${kind('원본을 다시 분석할 때', afb.length, '읽은 내용·STEP 정리에 대한 피드백', afb.map(afbRow).join(''), '아직 없습니다.')}
-          ${kind('본보기로 쓰는 채택 문제', examples.length, '같은 단계 변형에 최대 2개씩 보여 줍니다', examples.map(exampleRow).join(''), '아직 없습니다. 세트에서 좋은 문제를 👍 채택하면 쌓입니다.')}
-          ${off.length ? `<details class="lt-off"><summary>꺼 둔 피드백 ${off.length}개</summary>${off.map(ruleRow).join('')}</details>` : ''}
-        </div>
+      <div class="panel fb-new">
+        <textarea id="fb-text" rows="2" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
+        <div class="lt-actions"><label for="fb-target" class="fb-target-label">대상</label><select id="fb-target">${targetOptions('all')}</select><span class="spacer"></span><button class="small primary" id="fb-add">추가</button></div>
       </div>
-      <div class="fb-group">
-        <h3>새 피드백</h3>
-        <div class="panel fb-new">
-          <div class="fb-for" role="radiogroup" aria-label="언제 쓸 피드백인지">
-            <label><input type="radio" name="fb-for" value="variant" checked> 변형 문제를 만들 때</label>
-            <label><input type="radio" name="fb-for" value="analysis"> 원본을 다시 분석할 때</label>
-          </div>
-          <textarea id="fb-text" rows="3"></textarea>
-          <div class="lt-actions">
-            <select id="fb-target" aria-label="대상">${targets('all')}</select>
-            <span class="spacer"></span>
-            <button class="small" id="fb-add-go" hidden>추가하고 다시 분석</button>
-            <button class="small primary" id="fb-add">추가</button>
-          </div>
-        </div>
+      <div class="panel lt-list">
+        <div class="fb-kind"><b>지킬 점</b><span>${on.length}개</span><span class="muted">체크를 끄면 다음 세트부터 빠집니다</span></div>
+        ${on.map(ruleRow).join('') || emptyRow('아직 없습니다. 위에 적거나, 세트에서 ✏️ 고칠 점을 누르면 여기로 모입니다.')}
+        <div class="fb-kind"><b>본보기</b><span>${examples.length}개</span><span class="muted">채택한 문제 · 같은 단계 변형에 최대 2개씩 보여 줍니다</span></div>
+        ${examples.map(exampleRow).join('') || emptyRow('아직 없습니다. 세트에서 좋은 문제를 👍 채택하면 쌓입니다.')}
+        ${off.length ? `<details class="lt-off"><summary>꺼 둔 피드백 ${off.length}개</summary>${off.map(ruleRow).join('')}</details>` : ''}
       </div>`;
     rowToggles(el, opened);
-
-    const kindNow = () => $('[name=fb-for]:checked', el).value;
-    const PLACE = {
-      variant: '예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다.',
-      analysis: '예: STEP을 4개로 나눠 주세요. 표 Ⅲ의 \'B\'는 학생 필기입니다. (몇 글자만 틀렸다면 원본과 분석의 직접 수정이 빠릅니다)',
-    };
-    const syncKind = () => {
-      const k = kindNow();
-      $('#fb-text', el).placeholder = PLACE[k];
-      $('#fb-target', el).hidden = k !== 'variant';
-      $('#fb-add-go', el).hidden = k !== 'analysis';
-    };
-    $$('[name=fb-for]', el).forEach((r) => r.addEventListener('change', syncKind));
-    syncKind();
-    const text = () => {
-      const t = $('#fb-text', el).value.trim();
-      if (!t) throw new Error('피드백 내용을 입력해 주세요.');
-      return t;
-    };
     $('#fb-add', el).addEventListener('click', guard(async () => {
-      const t = text();
-      if (kindNow() === 'variant') {
-        await api('POST', '/api/rules', { text: t, target: $('#fb-target', el).value, kind: 'feedback', scope: 'material', source: { materialId: m.id } });
-        toast('추가했습니다. 다음에 만드는 변형부터 들어갑니다.');
-      } else {
-        m.analysisFeedback = (await api('POST', `/api/materials/${m.id}/analysis-feedback`, { text: t })).analysisFeedback;
-        toast('추가했습니다. 원본을 다시 분석할 때 반영됩니다.');
-      }
+      const text = $('#fb-text', el).value.trim();
+      if (!text) throw new Error('피드백 내용을 입력해 주세요.');
+      await api('POST', '/api/rules', { text, target: $('#fb-target', el).value, kind: 'feedback', scope: 'material', source: { materialId: m.id } });
+      toast('추가했습니다. 다음에 만드는 세트부터 들어갑니다.');
       await refresh();
     }));
-    $('#fb-add-go', el).addEventListener('click', guard(async () => {
-      const t = text();
-      if (!confirm(`이 피드백을 더해 원본을 다시 분석할까요? 적어 둔 분석 피드백 ${afb.length + 1}개가 모두 반영되고, 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.`)) return;
-      await api('POST', `/api/materials/${m.id}/analyze`, { feedback: t }); // the 기본 모델 (LLM tab)
-      route();
-    }));
-
     $$('[data-rule]', el).forEach((r) => {
       const id = r.dataset.rule;
       const rule = own.find((x) => x.id === id);
       $('[data-act=toggle]', r).addEventListener('change', guard(async (e) => {
         try { await api('PUT', '/api/rules/' + id, { status: e.target.checked ? 'approved' : 'pending' }); }
         catch (err) { e.target.checked = !e.target.checked; throw err; }
-        toast(e.target.checked ? '다시 적용합니다. 다음에 만드는 변형부터 들어갑니다.' : '껐습니다. 다음 변형부터 빠집니다.');
+        toast(e.target.checked ? '다시 적용합니다. 다음에 만드는 세트부터 들어갑니다.' : '껐습니다. 다음 세트부터 빠집니다.');
         await refresh();
       }));
       $('[data-act=cancel]', r).addEventListener('click', () => {
@@ -611,23 +645,6 @@
         if (!confirm('이 피드백을 삭제할까요?')) return;
         await api('DELETE', '/api/rules/' + id);
         opened.delete('f:' + id);
-        await refresh();
-      }));
-    });
-    $$('[data-afb]', el).forEach((r) => {
-      const i = Number(r.dataset.afb);
-      $('[data-act=cancel]', r).addEventListener('click', () => { $('[data-f=text]', r).value = afb[i].text; r.classList.remove('open'); opened.delete('af:' + i); });
-      $('[data-act=save]', r).addEventListener('click', guard(async () => {
-        m.analysisFeedback = (await api('PUT', `/api/materials/${m.id}/analysis-feedback/${i}`, { text: $('[data-f=text]', r).value })).analysisFeedback;
-        opened.delete('af:' + i);
-        toast('저장했습니다. 원본을 다시 분석할 때 반영됩니다.');
-        await refresh();
-      }));
-      $('[data-act=del]', r).addEventListener('click', guard(async () => {
-        if (!confirm('이 피드백을 삭제할까요?')) return;
-        m.analysisFeedback = (await api('DELETE', `/api/materials/${m.id}/analysis-feedback/${i}`)).analysisFeedback;
-        // Row keys are positions; the ones after this one moved up.
-        [...opened].filter((k) => k.startsWith('af:')).forEach((k) => opened.delete(k));
         await refresh();
       }));
     });
