@@ -542,42 +542,31 @@
   // feedback and the adopted models, a new set. Feedback sits right under what it is about, so there is no choosing
   // which kind it is. The stage last opened on this problem is opened again.
   // ------------------------------------------------------------------ learning (docs/learning.md)
-  // One kind of item everywhere: 지침 (must / must not), 이 문제 (one problem's), 전체 학습 (every problem's lessons).
-  // A row shows the kind, the text, where it was learned and what it did; 편집 opens the text and the moves
-  // (이 문제 → 전체 학습 → 지침, and 지침 back to 전체 학습).
+  // A learning item as a row: the text, when it was taught, what it did (분석: 반영 / 생성: 지킴·어김); the checkbox
+  // switches it off, 편집 opens the text with 삭제.
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
   const targetOptions = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
   const emptyRow = (text) => `<div class="lt-row lt-plain fb-empty"><span class="muted small">${text}</span></div>`;
-  const LAYER = { guide: '지침', problem: '이 문제', lesson: '전체 학습' };
-  const FROM_TXT = { input: '직접 입력', check: '확인할 곳에서', fix: '세트의 고칠 점에서', promote: '올림', migrated: '예전 기록' };
-  const layerTag = (l) => `<span class="ly ly-${l}">${LAYER[l] || l}</span>`;
+  const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서' };
   function learnEffect(x) {
     if (x.status !== 'approved') return '꺼짐';
     if (x.stage === 'analysis') {
       if (x.inAnalysis === undefined) return '모든 분석에 들어감';
-      return x.inAnalysis ? (x.how ? `반영: ${esc(x.how)}` : '<span class="warn">들어갔지만 반영 보고 없음</span>') : '<span class="warn">다음 분석에 반영</span>';
+      return x.inAnalysis ? (x.how ? `반영: ${esc(x.how)}` : '반영됨') : '<span class="warn">다시 분석하면 반영</span>';
     }
     const judged = x.kept + x.broken;
-    return judged ? `변형 ${judged}개에서 지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 검토 전';
-  }
-  function learnWhere(x) {
-    const when = fmtTime(x.createdAt);
-    if (x.layer !== 'problem') return [x.learnedOn ? `${esc(x.learnedOn)}에서 배움` : FROM_TXT[x.from] || '', when].filter(Boolean).join(' · ');
-    const from = x.from === 'fix' && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT.fix}</a>` : FROM_TXT[x.from] || '';
-    return [from, when].filter(Boolean).join(' · ');
+    return judged ? `지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 검토 전';
   }
   function learnRow(x, opened) {
     const key = 'L:' + x.id;
-    const moves = x.layer === 'problem' ? '<button class="small" data-act="up" data-to="lesson">전체 학습으로</button>'
-      : x.layer === 'lesson' ? '<button class="small" data-act="up" data-to="guide">지침으로</button>'
-      : '<button class="small" data-act="up" data-to="lesson">전체 학습으로 내리기</button>';
+    const from = x.from === 'fix' && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT.fix}</a>` : FROM_TXT[x.from] || '';
     return `<div class="lt-row lt-pick${x.status === 'approved' ? '' : ' off'}${opened.has(key) ? ' open' : ''}" data-row="${key}" data-learn="${x.id}">
-        <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="이 학습 적용">
-        <div class="lt-main"><span class="lt-name lt-clamp">${layerTag(x.layer)} ${esc(x.text)}</span>
-          <span class="lt-sub lt-wrap">${x.stage === 'generation' && x.target && x.target !== 'all' ? `${TARGET_TXT[x.target]} · ` : ''}${learnWhere(x)} · ${learnEffect(x)}</span></div>
+        <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="적용">
+        <div class="lt-main"><span class="lt-name lt-clamp">${esc(x.text)}</span>
+          <span class="lt-sub lt-wrap">${[fmtTime(x.createdAt), from, learnEffect(x)].filter(Boolean).join(' · ')}</span></div>
         <button class="small lt-open" data-open>편집</button>
         <div class="lt-more"><textarea data-f="text" rows="3">${esc(x.text)}</textarea>
-          <div class="lt-actions">${x.stage === 'generation' ? `<select data-f="target" aria-label="대상">${targetOptions(x.target === 'design' ? 'problem' : x.target)}</select>` : ''}${moves}<button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div></div>
+          <div class="lt-actions"><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div></div>
       </div>`;
   }
   function bindLearnRows(box, items, opened, refresh) {
@@ -587,64 +576,33 @@
       if (!x) return;
       const close = () => { row.classList.remove('open'); opened.delete(row.dataset.row); };
       $('[data-act=toggle]', row).addEventListener('change', guard(async (e) => {
-        if (x.layer !== 'problem' && !e.target.checked && !confirm(`${LAYER[x.layer]}은(는) 모든 문제에 들어갑니다. 끄면 모든 문제에서 빠집니다. 끌까요?`)) { e.target.checked = true; return; }
         try { await api('PUT', '/api/rules/' + x.id, { status: e.target.checked ? 'approved' : 'pending' }); }
         catch (err) { e.target.checked = !e.target.checked; throw err; }
-        toast(e.target.checked ? '다시 적용합니다.' : '껐습니다. 다음부터 빠집니다.');
+        toast(e.target.checked ? '다시 적용합니다.' : '껐습니다.');
         await refresh();
       }));
       $('[data-act=cancel]', row).addEventListener('click', () => { $('[data-f=text]', row).value = x.text; close(); });
       $('[data-act=save]', row).addEventListener('click', guard(async () => {
-        await api('PUT', '/api/rules/' + x.id, { text: $('[data-f=text]', row).value, ...($('[data-f=target]', row) ? { target: $('[data-f=target]', row).value } : {}) });
+        await api('PUT', '/api/rules/' + x.id, { text: $('[data-f=text]', row).value });
         close(); toast('저장했습니다.'); await refresh();
       }));
-      $('[data-act=up]', row).addEventListener('click', guard(async (e) => {
-        const to = e.target.dataset.to;
-        await api('PUT', '/api/rules/' + x.id, { scope: 'global', layer: to });
-        close(); toast(to === 'guide' ? '지침으로 올렸습니다. 모든 문제에 가장 먼저 들어갑니다.' : x.layer === 'guide' ? '전체 학습으로 내렸습니다.' : '전체 학습으로 올렸습니다. 모든 문제에 들어갑니다.');
-        await refresh();
-      }));
       $('[data-act=del]', row).addEventListener('click', guard(async () => {
-        if (!confirm(x.layer === 'problem' ? '이 학습을 삭제할까요?' : `${LAYER[x.layer]}을(를) 삭제하면 모든 문제에서 빠집니다. 삭제할까요?`)) return;
+        if (!confirm('삭제할까요?')) return;
         await api('DELETE', '/api/rules/' + x.id);
         close(); await refresh();
       }));
     });
   }
-  // Teaching: one call for every place that adds learning; "학습됨" says where it went, with a way to widen or undo it.
+  // Adds one item: this problem's (on its page, from 확인할 곳 or a set's 고칠 점), or every problem's (전체 학습 / 지침).
   async function teach({ text, stage, scope = 'problem', target = 'all', materialId, from = 'input', jobId, itemIndex }) {
     const body = scope === 'problem'
       ? { text, stage, target, scope: 'material', source: jobId ? { jobId, itemIndex, from } : { materialId, from } }
       : { text, stage, target, scope: 'global', layer: scope };
     return api('POST', '/api/rules', body);
   }
-  function learnedNotice(rule, refresh) {
-    const layer = rule.scope === 'material' ? 'problem' : rule.layer;
-    const el = document.createElement('div');
-    el.className = 'toast learned';
-    el.innerHTML = `<span>학습됨 · ${LAYER[layer]} · ${rule.stage === 'analysis' ? '분석' : '생성'}</span>${layer === 'problem' ? '<button class="small" data-up>전체 학습으로</button>' : ''}<button class="small" data-undo>취소</button>`;
-    document.body.appendChild(el);
-    const timer = setTimeout(() => el.remove(), 7000);
-    const done = async (fn, msg) => { clearTimeout(timer); el.remove(); await fn(); toast(msg); await refresh?.(); };
-    $('[data-up]', el)?.addEventListener('click', guard(() => done(() => api('PUT', '/api/rules/' + rule.id, { scope: 'global', layer: 'lesson' }), '전체 학습으로 올렸습니다.')));
-    $('[data-undo]', el).addEventListener('click', guard(() => done(() => api('DELETE', '/api/rules/' + rule.id), '취소했습니다.')));
-  }
-  // The box to teach more, under a result: what to teach and for whom (이 문제 / 모든 문제 / 지침).
-  function teachBoxHtml(p, stage) {
-    return `<div class="panel fb-new">
-        <textarea id="${p}-text" rows="2" placeholder="${stage === 'analysis' ? '예: STEP을 4개로 나눠 주세요. 설명을 더 쉽게 풀어 써 주세요. 표 Ⅲ의 B는 학생 필기입니다.' : '예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다.'}"></textarea>
-        <div class="teach-scope" role="radiogroup" aria-label="어디에 적용할지">
-          <label><input type="radio" name="${p}-scope" value="problem" checked> 이 문제만</label>
-          <label><input type="radio" name="${p}-scope" value="lesson"> 모든 문제 (전체 학습)</label>
-          <label><input type="radio" name="${p}-scope" value="guide"> 반드시 지킬 지침</label>
-        </div>
-        <div class="lt-actions">${stage === 'generation' ? `<label for="${p}-target" class="fb-target-label">대상</label><select id="${p}-target">${targetOptions('all')}</select>` : '<span class="muted small">몇 글자 오타는 위의 분석 결과 수정이 빠릅니다.</span>'}<span class="spacer"></span>
-          ${stage === 'analysis' ? `<button class="small" id="${p}-add">추가만</button><button class="small primary" id="${p}-go">다시 분석</button>` : `<button class="small primary" id="${p}-add">추가</button>`}</div>
-      </div>`;
-  }
 
-  // The problem page: ① 원본 분석 and ② 변형 문제 each go 쓰인 학습 → 결과 → 추가 학습; 출제 노트 gathers what this
-  // problem taught as a document. The stage last opened on this problem is opened again.
+  // The problem page: ① 원본 분석 (the result, then this problem's 분석 학습) and ② 변형 문제 (the sets, this
+  // problem's 생성 학습, a new set). Every-problem learning lives on 전체 학습 and 지침.
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = setsOf(m);
@@ -659,7 +617,7 @@
     let stage = '';
     try { stage = localStorage.getItem(key) || ''; } catch { /* no storage */ }
     if (editing) stage = 'read';
-    if (!['read', 'make', 'note'].includes(stage)) stage = gens.length ? 'make' : 'read';
+    if (!['read', 'make'].includes(stage)) stage = gens.length ? 'make' : 'read';
     view.innerHTML = `<div class="lt">
       <div class="lt-title" id="m-name">
         <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><button class="small" id="name-edit">✏️ 제목 수정</button></div>
@@ -671,47 +629,40 @@
         </form>
       </div>
       <div class="flow" id="m-flow"></div>
-      <nav class="stage-tabs three" role="tablist">
+      <nav class="stage-tabs" role="tablist">
         <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>원본 분석</b><small id="st-read"></small></span></button>
         <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>변형 문제</b><small id="st-make"></small></span></button>
-        <button type="button" role="tab" data-stage-tab="note"><span class="stage-no">✎</span><span class="stage-txt"><b>출제 노트</b><small id="st-note"></small></span></button>
       </nav>
       <div class="stage" data-pane="read">
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>이 분석에 쓰인 학습</h2><p id="a-used-note">지침 → 이 문제 → 전체 학습 순서로 들어갑니다.</p></div>
-          <div class="panel lt-list" id="a-used"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
-        </section>
-        <section class="lt-sec">
-          <div class="lt-sec-head lt-sec-row"><div><h2>분석 결과</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><div class="lt-sec-btns"><button class="small" id="edit">✏️ 분석 결과 수정</button></div></div>
+          <div class="lt-sec-head lt-sec-row"><div><h2>분석 결과</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다.</p></div><div class="lt-sec-btns"><button class="small" id="edit">✏️ 분석 결과 수정</button></div></div>
           <div class="panel lt-list" id="analysis"></div>
         </section>
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>추가 학습</h2><p>분석에서 바꾸고 싶은 점을 가르칩니다. 다시 분석하면 반영됩니다.</p></div>
-          <div class="fb-wrap" id="a-teach">${teachBoxHtml('at', 'analysis')}</div>
+          <div class="lt-sec-head"><h2>분석 학습</h2><p>이 문제를 분석할 때 AI가 따를 점입니다. 다시 분석하면 반영됩니다.</p></div>
+          <div class="fb-wrap">
+            <div class="panel fb-new"><textarea id="at-text" rows="2" placeholder="예: STEP을 4개로 나눠 주세요. 설명을 더 쉽게 풀어 써 주세요."></textarea>
+              <div class="lt-actions"><span class="spacer"></span><button class="small" id="at-add">추가</button><button class="small primary" id="at-go">다시 분석</button></div></div>
+            <div class="panel lt-list" id="a-learn"></div>
+          </div>
         </section>
       </div>
       <div class="stage" data-pane="make">
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>다음 세트에 쓰일 학습</h2><p>지침 → 이 문제 → 전체 학습 순서로 들어가고, 만든 문제마다 지켰는지 검사합니다.</p></div>
-          <div class="panel lt-list" id="g-used"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
-        </section>
-        <section class="lt-sec">
-          <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 👍 채택하거나 ✏️ 고칠 점을 남기세요. 고칠 점은 이 문제의 학습이 되고, 채택한 문제는 본보기가 됩니다.</p></div>
+          <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 👍 채택하거나 ✏️ 고칠 점을 남기세요. 고칠 점은 아래 생성 학습에 들어가고, 채택한 문제는 본보기가 됩니다.</p></div>
           <div class="panel lt-list" id="variants"></div>
         </section>
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>추가 학습</h2><p>변형을 만들 때 지킬 점을 가르칩니다. 다음 세트부터 들어갑니다.</p></div>
-          <div class="fb-wrap" id="g-teach">${teachBoxHtml('gt', 'generation')}</div>
+          <div class="lt-sec-head"><h2>생성 학습</h2><p>이 문제로 변형을 만들 때 AI가 지킬 점입니다. 다음 세트부터 들어갑니다.</p></div>
+          <div class="fb-wrap">
+            <div class="panel fb-new"><textarea id="gt-text" rows="2" placeholder="예: 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
+              <div class="lt-actions"><span class="spacer"></span><button class="small primary" id="gt-add">추가</button></div></div>
+            <div class="panel lt-list" id="g-learn"></div>
+          </div>
         </section>
         <section class="lt-sec">
           <div class="lt-sec-head"><h2>새 세트 만들기</h2><p>정답은 서버가 계산으로 확인하고, 문제만 보고 다시 풀어 대조합니다.</p></div>
           <div class="panel" id="generate"></div>
-        </section>
-      </div>
-      <div class="stage" data-pane="note">
-        <section class="lt-sec">
-          <div class="lt-sec-head"><h2>출제 노트</h2><p>이 문제에서 가르친 것을 읽기 좋게 모았습니다. 번호는 어디서 배웠는지입니다.</p></div>
-          <div class="panel note-doc" id="note"></div>
         </section>
       </div>
       <div class="lt-foot"><button class="small danger" id="del">이 문제 삭제</button></div>
@@ -742,84 +693,52 @@
     if (editing) editAnalysis(m); else showAnalysis(m);
     generatePanel(m, n);
 
-    // What this problem's analysis and next set get, the sets, the note: one read, repainted after every change.
+    // This problem's learning and its sets: one read, repainted after every change.
     const side = async () => {
       const L = await api('GET', `/api/materials/${m.id}/learning`);
-      if (!$('#a-used')) return;
+      if (!$('#a-learn')) return;
       const gens = setsOf(m);
       const opened = openSet(m.id);
+      const mine = (items) => items.filter((x) => x.layer === 'problem');
       const on = (items) => items.filter((x) => x.status === 'approved');
-      // ① what went into the analysis
-      const a = L.analysis.items;
-      $('#a-used').innerHTML = a.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 가르친 것이 없습니다. 분석 결과를 보고 아래 추가 학습에 적어 주세요.');
-      $('#a-used-note').innerHTML = `지침 → 이 문제 → 전체 학습 순서로 들어갑니다.${L.analysis.correctionsUsed ? ` 읽기 교정 ${L.analysis.correctionsUsed}개도 함께 썼습니다 (<a href="#/lessons">전체 학습</a>).` : ''}`;
-      bindLearnRows($('#a-used'), a, opened, side);
-      // ② what the next set gets, and the models
-      const g = L.generation.items;
+      const a = mine(L.analysis.items);
+      const g = mine(L.generation.items);
       const ex = L.generation.examples;
-      $('#g-used').innerHTML = (g.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 가르친 것이 없습니다. 세트의 문제에 ✏️ 고칠 점을 남기거나 아래 추가 학습에 적어 주세요.'))
-        + `<div class="fb-kind"><b>본보기</b><span>${ex.length}개</span><span class="muted">채택한 문제 · 같은 단계 변형에 최대 2개씩</span></div>`
-        + (ex.map((e) => `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">${layerTag('problem')} ${esc(e.label)}</span><span class="lt-sub lt-clip">세트 ${e.setNo} · ${fmtTime(e.at)} 채택 · ${inlineRich(e.preview)}</span></div><a class="btn small" href="#/j/${e.jobId}?item=${e.index}">열기</a></div>`).join('')
-          || emptyRow('아직 없습니다. 세트에서 좋은 문제를 👍 채택하면 쌓입니다.'));
-      bindLearnRows($('#g-used'), g, opened, side);
-      const count = (items, layer) => on(items).filter((x) => x.layer === layer).length;
+      $('#a-learn').innerHTML = a.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 없습니다.');
+      bindLearnRows($('#a-learn'), a, opened, side);
+      $('#g-learn').innerHTML = (g.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 없습니다.'))
+        + (ex.length ? `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">본보기 ${ex.length}개</span><span class="lt-sub lt-wrap">채택한 문제 · ${ex.map((e) => `<a href="#/j/${e.jobId}?item=${e.index}">세트 ${e.setNo} ${esc(e.label)}</a>`).join(', ')}</span></div></div>` : '');
+      bindLearnRows($('#g-learn'), g, opened, side);
       $('#st-read').textContent = `STEP ${m.steps.length}개 · 학습 ${on(a).length}개`;
-      $('#st-make').textContent = `세트 ${gens.length}개 · 학습 ${on(g).length}개 · 본보기 ${ex.length}개`;
-      variantsPanel(m, gens, on(g).filter((x) => x.layer === 'problem'), L);
-      carryLine(m, n, { guide: count(g, 'guide'), problem: count(g, 'problem'), lesson: count(g, 'lesson') }, ex.length);
-      notePanel(m, L);
+      $('#st-make').textContent = `세트 ${gens.length}개 · 학습 ${on(g).length}개`;
+      variantsPanel(m, gens, on(g), L);
+      carryLine(m, n, on(g).length, on(L.generation.items).length - on(g).length, ex.length);
     };
-    side().catch((e) => { if ($('#a-used')) $('#a-used').innerHTML = `<div class="lt-row lt-plain"><span class="bad">${esc(e.message)}</span></div>`; });
+    side().catch((e) => { if ($('#a-learn')) $('#a-learn').innerHTML = `<div class="lt-row lt-plain"><span class="bad">${esc(e.message)}</span></div>`; });
 
-    // 추가 학습 boxes
-    const scopeOf = (p) => $(`[name=${p}-scope]:checked`).value;
-    const textOf = (p) => { const t = $(`#${p}-text`).value.trim(); if (!t) throw new Error('가르칠 내용을 적어 주세요.'); return t; };
+    const textOf = (id) => { const t = $(id).value.trim(); if (!t) throw new Error('내용을 적어 주세요.'); return t; };
     const goBtn = $('#at-go');
     $('#at-text').addEventListener('input', () => { goBtn.textContent = $('#at-text').value.trim() ? '추가하고 다시 분석' : '다시 분석'; });
     $('#at-add').addEventListener('click', guard(async () => {
-      const rule = await teach({ text: textOf('at'), stage: 'analysis', scope: scopeOf('at'), materialId: m.id });
+      await teach({ text: textOf('#at-text'), stage: 'analysis', materialId: m.id });
       $('#at-text').value = ''; goBtn.textContent = '다시 분석';
-      await side(); learnedNotice(rule, side);
+      toast('추가했습니다. 다시 분석하면 반영됩니다.');
+      await side();
     }));
     goBtn.addEventListener('click', guard(async () => {
       const text = $('#at-text').value.trim();
-      if (!confirm(`원본을 다시 분석할까요? 이 분석에 쓰일 학습을 모두 반영하고, 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.`)) return;
-      if (text && scopeOf('at') !== 'problem') await teach({ text, stage: 'analysis', scope: scopeOf('at'), materialId: m.id });
-      await api('POST', `/api/materials/${m.id}/analyze`, text && scopeOf('at') === 'problem' ? { feedback: text } : {}); // the 기본 모델 (LLM tab)
+      if (!confirm('원본을 다시 분석할까요? 분석 학습을 모두 반영하고, 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.')) return;
+      await api('POST', `/api/materials/${m.id}/analyze`, text ? { feedback: text } : {}); // the 기본 모델 (LLM tab)
       route();
     }));
     $('#gt-add').addEventListener('click', guard(async () => {
-      const rule = await teach({ text: textOf('gt'), stage: 'generation', scope: scopeOf('gt'), target: $('#gt-target').value, materialId: m.id });
+      await teach({ text: textOf('#gt-text'), stage: 'generation', materialId: m.id });
       $('#gt-text').value = '';
-      await side(); learnedNotice(rule, side);
+      toast('추가했습니다. 다음 세트부터 들어갑니다.');
+      await side();
     }));
     liveMaterial = { m, side };
     paintFlow(m);
-  }
-
-  // 출제 노트: what this problem taught, as a short document — how to read the original, how to make its variants,
-  // its models, what else applies to every problem, and how the sets fared. Numbers point to where each was learned.
-  function notePanel(m, L) {
-    const el = $('#note');
-    if (!el) return;
-    const sources = [];
-    const cite = (x) => { sources.push(x); return `<sup>${sources.length}</sup>`; };
-    const sentence = (t) => esc(t.trim().replace(/[.。]?$/, '.'));
-    const own = (items) => items.filter((x) => x.layer === 'problem' && x.status === 'approved');
-    const prose = (items) => items.map((x) => `${sentence(x.text)}${cite(x)}`).join(' ');
-    const ra = own(L.analysis.items);
-    const rg = own(L.generation.items);
-    const common = [...L.analysis.items, ...L.generation.items].filter((x) => x.layer !== 'problem' && x.status === 'approved');
-    const sets = L.sets.filter((s) => s.made);
-    const rate = (s) => (s.kept + s.broken ? `${Math.round((s.kept / (s.kept + s.broken)) * 100)}%` : '–');
-    el.innerHTML = `
-      <h3>원본은 이렇게 읽는다</h3><p>${ra.length ? prose(ra) : '<span class="muted">아직 없습니다.</span>'}</p>
-      <h3>변형은 이렇게 만든다</h3><p>${rg.length ? prose(rg) : '<span class="muted">아직 없습니다.</span>'}</p>
-      <h3>본보기</h3>${L.generation.examples.length ? `<ul class="lt-ul">${L.generation.examples.map((e) => `<li><a href="#/j/${e.jobId}?item=${e.index}">세트 ${e.setNo} · ${esc(e.label)}</a> <span class="muted">${inlineRich(e.preview)}</span></li>`).join('')}</ul>` : '<p class="muted">아직 없습니다.</p>'}
-      <h3>모든 문제에 함께 들어가는 것</h3>${common.length ? `<ul class="lt-ul">${common.map((x) => `<li>${layerTag(x.layer)} ${esc(x.text)} <span class="muted">· ${x.stage === 'analysis' ? '분석' : '생성'}</span></li>`).join('')}</ul>` : '<p class="muted">없습니다. <a href="#/lessons">전체 학습</a>과 <a href="#/guides">지침</a>에서 넣습니다.</p>'}
-      <h3>효과</h3>${sets.length ? `<div class="table-wrap"><table class="learn-table2"><tr><th>세트</th><th>들어간 학습</th><th>지킴</th><th>채택</th></tr>${sets.map((s) => `<tr><td><a href="#/j/${s.id}">세트 ${s.no}</a></td><td>${s.rules}개${s.examples ? ` · 본보기 ${s.examples}` : ''}</td><td>${rate(s)}</td><td>${s.adopted}/${s.items}</td></tr>`).join('')}</table></div>` : '<p class="muted">아직 만든 세트가 없습니다.</p>'}
-      ${sources.length ? `<ol class="note-src">${sources.map((x) => `<li>${x.stage === 'analysis' ? '분석' : '생성'} · ${learnWhere(x)}</li>`).join('')}</ol>` : ''}`;
-    if ($('#st-note')) $('#st-note').textContent = `가르친 것 ${ra.length + rg.length}개`;
   }
 
   // The sets made from this problem, newest first: when and with what each was made, how far its review got, and its
@@ -944,16 +863,16 @@
       $('[data-edit]', li).addEventListener('click', () => editAnalysis(m));
       $('[data-save]', li).addEventListener('click', guard(async () => {
         const text = wrote();
-        const rule = await teach({ text, stage: 'analysis', materialId: m.id, from: 'check' });
+        await teach({ text, stage: 'analysis', materialId: m.id, from: 'check' });
         await setNote(x, 'feedback');
         showAnalysis(m);
         paintFlow(m);
+        toast('분석 학습에 추가했습니다. 다시 분석하면 반영됩니다.');
         await liveMaterial?.side();
-        learnedNotice(rule, liveMaterial?.side);
       }));
       $('[data-go]', li).addEventListener('click', guard(async () => {
         const text = wrote();
-        if (!confirm('이 내용을 이 문제의 학습으로 더해 원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.')) return;
+        if (!confirm('이 내용을 분석 학습에 더해 원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.')) return;
         await setNote(x, 'feedback');
         await api('POST', `/api/materials/${m.id}/analyze`, { feedback: text, from: 'check' }); // the 기본 모델 (LLM tab)
         route();
@@ -1095,9 +1014,8 @@
   // What the next set of this problem will carry, in one sentence; 자세히 lists the common rules. Kept per problem so
   // generatePanel shows it whichever of the two is drawn first.
   const carryText = new Map();
-  function carryLine(m, n, k, adopted) {
-    const total = k.guide + k.problem + k.lesson;
-    carryText.set(m.id, `<p>STEP ${n}개와 학습 ${total}개(지침 ${k.guide} · 이 문제 ${k.problem} · 전체 학습 ${k.lesson})${adopted ? `, 본보기 ${adopted}개` : ''}를 반영합니다. 목록은 위 "다음 세트에 쓰일 학습"에 있습니다.</p>`);
+  function carryLine(m, n, own, common, adopted) {
+    carryText.set(m.id, `<p>STEP ${n}개, 이 문제의 생성 학습 ${own}개${common ? `, <a href="#/lessons">전체 학습</a>·<a href="#/guides">지침</a> ${common}개` : ''}${adopted ? `, 본보기 ${adopted}개` : ''}를 반영합니다.</p>`);
     if ($('#rules-preview')) $('#rules-preview').innerHTML = carryText.get(m.id);
   }
 
@@ -1235,18 +1153,17 @@
     const rules = v?.rules || [];
     const bad = rules.filter((r) => r.judged && !r.judged.ok);
     const ok = rules.filter((r) => r.judged?.ok).length;
-    const layerOfRule = new Map((job?.rules || []).map((r) => [r.id, r.layer || (r.scope === 'material' ? 'problem' : 'guide')]));
     const parts = [
       problems.length && `<span class="bad">검토 필요 ${problems.length}</span>`,
       warnings.length && `<span class="warn">확인할 점 ${warnings.length}</span>`,
-      rules.length && `쓰인 학습 ${rules.length}${ok + bad.length ? ` · 지킴 ${ok}/${ok + bad.length}` : ''}${bad.length ? ` · <span class="bad">어김 ${bad.length}</span>` : ''}`,
+      ok + bad.length && `학습 지킴 ${ok}/${ok + bad.length}${bad.length ? ` · <span class="bad">어김 ${bad.length}</span>` : ''}`,
     ].filter(Boolean);
     if (!parts.length) return '';
     const list = (xs) => `<ul class="lt-ul">${xs.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>`;
     return `<details class="jt-check${problems.length || bad.length ? ' bad' : ''}" data-k="check" ${problems.length || bad.length ? 'open' : ''}><summary>${parts.join(' · ')}</summary><div class="jt-check-in">
       ${problems.length ? `<div><b>자동 검토에서 해결되지 않은 점</b>${list(problems)}</div>` : ''}
       ${warnings.length ? `<div><b>확인할 점</b>${list(warnings)}</div>` : ''}
-      ${rules.length ? `<div><b>쓰인 학습</b><ul class="lt-ul learn-used">${rules.map((r) => `<li>${layerTag(layerOfRule.get(r.id) || 'problem')} ${esc(r.text)} <span class="${r.judged ? (r.judged.ok ? 'ok' : 'bad') : 'muted'}">${r.judged ? (r.judged.ok ? '지킴' : '어김') : '판정 없음'}</span>${r.judged && !r.judged.ok && r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
+      ${bad.length ? `<div><b>어긴 학습</b><ul class="lt-ul">${bad.map((r) => `<li>${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
     </div></details>`;
   }
 
@@ -1285,7 +1202,7 @@
       <details class="fix-panel" data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>고칠 점</summary><div class="fix-in">
         <div class="fix-tags">${FIX_TAGS.map(([name, target, text], i) => `<button type="button" class="fix-tag" data-tag="${i}" title="${esc(text)}">${esc(name)}<small>${target === 'solution' ? '해설' : '문제'}</small></button>`).join('')}</div>
         <textarea name="fb" rows="2" placeholder="더 구체적으로 (선택). 예: 실험 Ⅲ의 남은 질량이 넣은 A보다 커서 가정 없이 풀립니다."></textarea>
-        <div class="lt-actions"><span class="muted small">누른 항목과 적은 내용은 이 문제의 피드백으로 저장되어 앞으로 만드는 변형에 모두 들어갑니다.</span><span class="spacer"></span><button class="small" name="save">저장</button><button name="regen" class="small primary" ${canRegen ? '' : 'disabled'}>저장하고 다시 만들기</button></div>
+        <div class="lt-actions"><span class="muted small">누른 항목과 적은 내용은 이 문제의 생성 학습으로 저장되어 다음 세트부터 들어갑니다.</span><span class="spacer"></span><button class="small" name="save">저장</button><button name="regen" class="small primary" ${canRegen ? '' : 'disabled'}>저장하고 다시 만들기</button></div>
       </div></details>` : ''}
       ${p ? `
       <details data-k="sol"><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
@@ -1309,17 +1226,14 @@
       const tags = $$('.fix-tag.on', card).map((b) => FIX_TAGS[Number(b.dataset.tag)]);
       const note = $('textarea[name=fb]', card)?.value.trim() || '';
       if (!tags.length && !note && !andRegen) throw new Error('해당하는 것을 누르거나 내용을 적어 주세요.');
-      const made = [];
-      for (const [, target, text] of tags) made.push(await teach({ text, stage: 'generation', target, jobId: job.id, itemIndex: item.index, from: 'fix' }));
-      if (note) made.push(await teach({ text: note, stage: 'generation', jobId: job.id, itemIndex: item.index, from: 'fix' }));
+      for (const [, target, text] of tags) await teach({ text, stage: 'generation', target, jobId: job.id, itemIndex: item.index, from: 'fix' });
+      if (note) await teach({ text: note, stage: 'generation', jobId: job.id, itemIndex: item.index, from: 'fix' });
       const said = [...tags.map(([, , text]) => text), note].filter(Boolean).join('\n');
       if (andRegen) { await api('POST', `/api/jobs/${job.id}/items/${item.index}/regenerate`, { feedback: said }); wake(); }
       $$('.fix-tag.on', card).forEach((b) => b.classList.remove('on'));
       if ($('textarea[name=fb]', card)) $('textarea[name=fb]', card).value = '';
       const n = tags.length + (note ? 1 : 0);
-      if (andRegen) toast(`${n ? `이 문제의 학습 ${n}개를 더하고 ` : ''}이 문제를 다시 만드는 중입니다.`);
-      else if (made.length === 1) learnedNotice(made[0]);
-      else toast(`이 문제의 학습 ${n}개를 더했습니다. 다음 세트부터 들어갑니다.`);
+      toast(andRegen ? `${n ? `생성 학습 ${n}개를 더하고 ` : ''}이 문제를 다시 만드는 중입니다.` : `생성 학습 ${n}개를 더했습니다. 다음 세트부터 들어갑니다.`);
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
     $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
@@ -1373,7 +1287,7 @@
   }
   async function lessonsView() {
     view.innerHTML = `<div class="lt">
-      <div class="lt-title"><h1>전체 학습</h1><p class="lt-meta">여러 문제에서 배운, 모든 문제에 들어가는 교훈입니다. 문제 페이지의 학습에서 "전체 학습으로"를 누르면 여기로 옵니다. 반드시 지킬 규칙은 <a href="#/guides">지침</a>에 둡니다.</p></div>
+      <div class="lt-title"><h1>전체 학습</h1><p class="lt-meta">여러 문제에 통하는 교훈입니다. 여기 넣은 것은 모든 문제에 들어갑니다. 반드시 지킬 규칙은 <a href="#/guides">지침</a>에 둡니다.</p></div>
       <section class="lt-sec"><div class="lt-sec-head"><h2>분석 교훈</h2><p>모든 문제를 분석할 때 들어갑니다. 한 문제의 학습과 부딪히면 그 문제의 것을 따릅니다.</p></div>
         <div class="fb-wrap">${globalAddHtml('la', 'analysis', '예: 해설의 step 하나에 판단이 여러 개 있으면 판단마다 STEP을 나눈다.')}<div class="panel lt-list" id="l-a"></div></div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>읽기 교정</h2><p>사진에서 잘못 읽은 단어입니다. 분석 결과 수정이나 단어 확인에서 고치면 자동으로 쌓이고, 다음 분석부터 그 단어를 주의해서 읽습니다.</p></div>
