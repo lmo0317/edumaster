@@ -375,3 +375,24 @@ test('Claude model and effort on the LLM tab: saved, validated, and shown by nam
     assert.equal((await s.call('GET', '/api/llm')).data.claude.model, 'claude-sonnet-5-5', 'changing the 기본 모델 keeps the Claude choice');
   } finally { await s.close(); }
 });
+
+test('variant review: 채택 is saved and listed; a tag pressed on two variants is one feedback; a regenerated variant is reviewed afresh', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const job = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    assert.equal((await s.call('PUT', `/api/jobs/${job.id}/items/0/review`, { adopted: true })).data.adopted, true);
+    const listed = (await s.call('GET', `/api/materials/${a.material.id}`)).data.jobs.find((j) => j.id === job.id);
+    assert.equal(listed.items[0].adopted, true);
+    assert.ok(listed.items[0].preview, 'the variant list shows the question');
+    const text = '풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.';
+    const r1 = (await s.call('POST', '/api/rules', { text, target: 'problem', source: { jobId: job.id, itemIndex: 0 } })).data;
+    const r2 = (await s.call('POST', '/api/rules', { text, target: 'problem', source: { jobId: job.id, itemIndex: 1 } })).data;
+    assert.equal(r1.id, r2.id, 'the same tag twice is one feedback');
+    const regen = (await s.call('POST', `/api/jobs/${job.id}/items/0/regenerate`, { feedback: text })).data;
+    await s.waitJob(regen.jobId);
+    assert.equal((await s.call('GET', '/api/jobs/' + job.id)).data.items[0].adopted, false);
+  } finally { await s.close(); }
+});

@@ -70,6 +70,7 @@ function createJobs({ store, llm, config }) {
       if (!item) throw new Error('다시 만들 문제를 찾지 못했습니다.');
       const previous = { problem: item.problem, solution: item.solution, verification: item.verification, status: item.status, designNote: item.designNote, replacedAt: new Date().toISOString(), feedback: ctx.job.feedback };
       item.history = [previous, ...(item.history || [])].slice(0, 3);
+      item.adopted = false; // a new version is reviewed afresh
       const saveParent = () => store.jobs.put(parent);
       const sub = { ...ctx, save() { ctx.save(); saveParent(); }, log(m) { ctx.log(m); } };
       const prior = parent.items.filter((x) => x.index < item.index && x.problem);

@@ -432,3 +432,21 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .model-state b { color: var(--ink); }
 .model-state:hover b { text-decoration: underline; }
 @media (max-width: 600px) { .model-state { font-size: 12px; } .model-state .chip { display: none; } }
+
+/* Variant review: verdict buttons, what the problem kept, quick feedback tags */
+.item.adopted { border-color: #22a35a; box-shadow: 0 0 0 1px #22a35a inset; }
+.review-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--soft, #f7f8fa); }
+.review-bar button { font-weight: 600; }
+.review-bar .rv-adopt.on { background: #22a35a; border-color: #22a35a; color: #fff; }
+.kept { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; font-size: 13.5px; }
+.kept.bad { border-color: #e7b0b0; background: #fdf3f3; }
+.kept ul { margin: 6px 0 0; padding-left: 18px; }
+.fix-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+.fix-tag { border-radius: 999px; padding: 6px 12px; display: inline-flex; gap: 6px; align-items: baseline; }
+.fix-tag small { color: var(--muted); font-size: 11px; }
+.fix-tag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fix-tag.on small { color: rgba(255, 255, 255, .8); }
+.fix-panel textarea { width: 100%; }
+.variant-item .preview { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.variant-item > span:first-child { min-width: 0; flex: 1; }
+@media (prefers-color-scheme: dark) { .kept.bad { background: rgba(214, 69, 69, .12); } }

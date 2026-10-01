@@ -73,12 +73,14 @@ function createApp(options = {}) {
     });
     req.on('error', reject);
   });
+  // The question sentence of a problem (its last line that is not a table row), to tell variants apart in lists.
+  const questionLine = (text) => String(text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('|')).pop()?.slice(0, 160) || '';
   const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
     feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
     parentJobId: j.parentJobId, itemIndex: j.itemIndex, modelLabel: j.modelLabel,
-    items: (j.items || []).map((i) => ({ index: i.index, label: i.label, status: i.status })),
+    items: (j.items || []).map((i) => ({ index: i.index, label: i.label, status: i.status, adopted: Boolean(i.adopted), preview: questionLine(i.problem?.text) })),
   });
   const getJob = (id) => store.jobs.get(id) || (() => { throw fail(404, '작업을 찾지 못했습니다. 삭제되었거나 주소가 잘못되었습니다.'); })();
   const getMaterial = (id) => store.materials.get(id) || (() => { throw fail(404, '자료를 찾지 못했습니다.'); })();
@@ -355,6 +357,18 @@ function createApp(options = {}) {
     const feedback = String(body.feedback || '').trim().slice(0, 2000);
     return { jobId: jobs.regenerate(parent, Number(index), feedback).id };
   });
+  // The teacher's verdict on one variant: 채택 (a good problem — it goes on the worksheet and is kept as an example
+  // for this original), or not. A regenerated problem starts unreviewed again.
+  route('PUT', /^\/api\/jobs\/([a-f0-9]+)\/items\/(\d+)\/review$/, async (req, res, [id, index]) => {
+    const job = getJob(id);
+    const item = job.items?.[Number(index)];
+    if (job.type !== 'generate' || !item?.problem) throw fail(404, '문제를 찾지 못했습니다.');
+    const body = await readBody(req, 1024);
+    item.adopted = body.adopted === true;
+    item.reviewedAt = new Date().toISOString();
+    store.jobs.put(job);
+    return { adopted: item.adopted };
+  });
 
   // learning rules
   route('GET', /^\/api\/rules$/, () => store.rules.all());
@@ -374,6 +388,10 @@ function createApp(options = {}) {
     }
     // Feedback on a problem belongs to that problem unless the teacher widens it.
     const scope = body.scope || (source?.materialId ? 'material' : 'global');
+    // The same sentence on the same problem (a quick-feedback tag pressed on several variants) is one feedback:
+    // it is switched back on instead of being stored twice.
+    const same = scope === 'material' && store.rules.all().find((r) => r.scope === 'material' && r.source?.materialId === source?.materialId && r.text.trim() === String(body.text || '').trim());
+    if (same) return store.rules.put(updateRule(same, { status: 'approved' }));
     return store.rules.put(makeRule({ ...body, scope, source }));
   });
   route('PUT', /^\/api\/rules\/([a-f0-9]+)$/, async (req, res, [id]) => {
