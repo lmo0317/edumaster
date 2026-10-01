@@ -205,8 +205,17 @@ function createApp(options = {}) {
     if (m.status === 'analyzing') throw fail(409, '이미 분석 중입니다.');
     const body = await readBody(req, 8192);
     const provider = await chooseProvider(body.provider);
-    store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
+    // Feedback on the reading ("STEP 3 제목은 …", "표 Ⅲ의 B는 필기") accumulates on the problem; every later
+    // analysis of it gets all of it.
+    const feedback = String(body.feedback || '').trim().slice(0, 1000);
+    const analysisFeedback = [...(m.analysisFeedback || []), ...(feedback ? [{ text: feedback, at: new Date().toISOString() }] : [])].slice(-20);
+    store.materials.put({ ...m, status: 'analyzing', error: '', analysisFeedback, note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
     return { jobId: jobs.analyze(m, provider).id };
+  });
+  route('DELETE', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)$/, (req, res, [id, index]) => {
+    const m = getMaterial(id);
+    const analysisFeedback = (m.analysisFeedback || []).filter((_, i) => i !== Number(index));
+    return store.materials.put({ ...m, analysisFeedback });
   });
   // Merges extra STEPs to match the teacher's step markers (for materials analyzed before auto-merge).
   route('POST', /^\/api\/materials\/([a-f0-9]+)\/align-steps$/, async (req, res, [id]) => {

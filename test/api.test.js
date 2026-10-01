@@ -306,3 +306,21 @@ test('problem feedback: written on the problem page or on a variant it belongs t
     assert.ok(genB2.rules.some((r) => r.id === onPage.id));
   } finally { await s.close(); }
 });
+
+test('analysis feedback accumulates on the problem and every re-analysis gets all of it', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const first = (await s.call('POST', `/api/materials/${a.material.id}/analyze`, { feedback: 'STEP 3 제목은 A~D의 몰질량을 구한다' })).data;
+    await s.waitJob(first.jobId);
+    const second = (await s.call('POST', `/api/materials/${a.material.id}/analyze`, { feedback: '표 Ⅲ의 B는 필기' })).data;
+    await s.waitJob(second.jobId);
+    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
+    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['STEP 3 제목은 A~D의 몰질량을 구한다', '표 Ⅲ의 B는 필기']);
+    assert.equal(m.status, 'ready');
+    m = (await s.call('DELETE', `/api/materials/${a.material.id}/analysis-feedback/0`)).data;
+    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기']);
+  } finally { await s.close(); }
+});

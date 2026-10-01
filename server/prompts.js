@@ -113,13 +113,17 @@ function proofreadText(fields) {
   return '[옮겨 적은 필드]\n' + JSON.stringify(fields, null, 1) + '\n\n이미지와 대조해 JSON만 반환하라.';
 }
 
-function analyzeText({ hasSolution, sameImage, note }) {
+function analyzeText({ hasSolution, sameImage, note, feedback = [] }) {
   const lines = [];
   if (sameImage) lines.push('한 이미지에 문제와 해설이 함께 있다. 문제 영역과 해설 영역을 구분해서 읽어라.');
   else if (hasSolution) lines.push('각 이미지 앞의 라벨로 문제 이미지와 교사 해설 이미지를 구분하라.');
   else lines.push('문제 이미지만 있다. 해설이 없으므로 직접 풀어 STEP을 만들어라 (solutionSource="ai").');
   lines.push('작은 원본을 확대해 위에서 아래로 자른 조각이 올 수 있다. 조각은 위아래가 조금 겹치므로 겹친 줄을 두 번 옮기지 말고 순서대로 이어 읽어라.');
   if (note) lines.push('교사 메모: ' + note);
+  if (feedback.length) {
+    lines.push('[교사의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에서 교사가 바로잡은 점. 모두 반영하고, 해당 부분은 이미지를 다시 확인한다]');
+    for (const f of feedback) lines.push('- ' + f.text);
+  }
   lines.push('지시에 따라 JSON만 반환하라.');
   return lines.join('\n');
 }

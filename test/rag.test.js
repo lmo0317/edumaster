@@ -96,3 +96,10 @@ test('a problem\'s own feedback goes to that problem only, before the rules for 
   const ids = selectRules([global, other, mine], { id: 'aaaa', subject: '화학' }).map((r) => r.id);
   assert.deepEqual(ids, ['m1m1m1m1m1m1m1m1', 'g1g1g1g1g1g1g1g1']);
 });
+
+test('the analysis prompt carries every analysis feedback of the problem', () => {
+  const { analyzeText } = require('../server/prompts');
+  const text = analyzeText({ hasSolution: true, feedback: [{ text: 'STEP 2와 3을 나눠 주세요' }, { text: '표 Ⅲ의 B는 필기' }] });
+  assert.match(text, /교사의 분석 피드백[\s\S]*- STEP 2와 3을 나눠 주세요\n- 표 Ⅲ의 B는 필기/);
+  assert.doesNotMatch(analyzeText({ hasSolution: true }), /분석 피드백/);
+});

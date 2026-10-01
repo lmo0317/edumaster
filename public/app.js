@@ -477,7 +477,26 @@
       <h3>풀이 STEP (${m.steps.length}개)</h3>
       <div class="steps">${m.steps.map(stepHtml).join('')}</div>
       ${m.techniques?.length ? `<h3>변형 문제에서 재사용할 핵심 기법</h3><div class="rich">${m.techniques.map((t) => `<p class="bullet">• ${rich(t).replace(/^<p>|<\/p>$/g, '')}</p>`).join('')}</div>` : ''}
-      ${m.finalCheck ? `<h3>정답 재확인</h3><div class="rich">${rich(m.finalCheck)}</div>` : ''}`;
+      ${m.finalCheck ? `<h3>정답 재확인</h3><div class="rich">${rich(m.finalCheck)}</div>` : ''}
+      <div class="analysis-fb">
+        <h3>분석 피드백</h3>
+        <p class="muted small" style="margin:0 0 6px">읽은 내용이나 STEP 정리가 마음에 들지 않으면 적어 주세요. AI가 원본을 다시 읽을 때 지금까지의 분석 피드백을 모두 반영합니다. 몇 글자만 틀렸다면 위의 <b>수정</b>으로 바로 고치는 편이 빠릅니다.</p>
+        ${(m.analysisFeedback || []).length ? `<ol class="small">${m.analysisFeedback.map((f, i) => `<li>${esc(f.text)} <span class="muted">${fmtTime(f.at)}</span> <button class="small" data-afb-del="${i}">삭제</button></li>`).join('')}</ol>` : ''}
+        <textarea id="afb-text" rows="2" placeholder="예: STEP 2와 STEP 3을 선생님 해설처럼 나눠 주세요. 표 Ⅲ의 'B'는 학생 필기입니다."></textarea>
+        <div class="fb-add-bar"><span class="spacer"></span><button class="primary" id="afb-go">피드백 반영해 다시 분석</button></div>
+      </div>`;
+    $('#afb-go').addEventListener('click', guard(async () => {
+      const feedback = $('#afb-text').value.trim();
+      if (!feedback) throw new Error('분석 피드백을 입력해 주세요.');
+      const again = statusCache?.providers?.[m.analyzedWith]?.available ? m.analyzedWith : 'deepseek';
+      await api('POST', `/api/materials/${m.id}/analyze`, { feedback, provider: again });
+      route();
+    }));
+    $$('[data-afb-del]').forEach((b) => b.addEventListener('click', guard(async () => {
+      if (!confirm('이 분석 피드백을 지울까요?')) return;
+      const saved = await api('DELETE', `/api/materials/${m.id}/analysis-feedback/${b.dataset.afbDel}`);
+      showAnalysis({ ...m, analysisFeedback: saved.analysisFeedback });
+    })));
     $('#edit').addEventListener('click', () => editAnalysis(m));
     $('#align')?.addEventListener('click', guard(async (e) => {
       e.target.disabled = true; e.target.textContent = '합치는 중…';
@@ -488,10 +507,9 @@
       } finally { if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '해설 단계에 맞춰 합치기'; } }
     }));
     $('#reanalyze').addEventListener('click', guard(async () => {
-      const note = prompt('다시 분석할 때 AI에게 알려 줄 점 (선택)', m.note || '');
-      if (note === null) return;
+      if (!confirm('원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다. 분석 피드백은 모두 반영됩니다.')) return;
       const again = statusCache?.providers?.[m.analyzedWith]?.available ? m.analyzedWith : 'deepseek';
-      await api('POST', `/api/materials/${m.id}/analyze`, { note, provider: again });
+      await api('POST', `/api/materials/${m.id}/analyze`, { provider: again });
       route();
     }));
     $('#del').addEventListener('click', guard(async () => { if (confirm('이 자료를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/materials'; } }));
