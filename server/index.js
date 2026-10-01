@@ -335,8 +335,31 @@ function createApp(options = {}) {
     const note = String(body.note || '').trim().slice(0, 600);
     if (!note) throw fail(400, '확인할 항목이 없습니다.');
     const noteStates = { ...(m.noteStates || {}) };
-    if (['ok', 'feedback'].includes(body.state)) noteStates[note] = body.state; else delete noteStates[note];
+    if (['ok', 'feedback', 'fixed'].includes(body.state)) noteStates[note] = body.state; else delete noteStates[note];
     return store.materials.put({ ...m, noteStates });
+  });
+  // 단어 확인 answered 아니요: the word was misread everywhere — replace it in the reading and the STEPs at once, and
+  // remember the misreading for later analyses (like a fix in the analysis editor).
+  route('POST', /^\/api\/materials\/([a-f0-9]+)\/replace-word$/, async (req, res, [id]) => {
+    const m = getMaterial(id);
+    if (m.status !== 'ready' || !m.problem) throw fail(409, '분석이 끝난 뒤에 바꿀 수 있습니다.');
+    const body = await readBody(req, 8192);
+    const from = String(body.from || '').trim();
+    const to = String(body.to || '').trim();
+    if (!from || !to || from === to || from.length > 40 || to.length > 40) throw fail(400, '바꿀 단어가 올바르지 않습니다.');
+    const swap = (t) => (typeof t === 'string' ? t.split(from).join(to) : t);
+    const next = {
+      ...m,
+      problem: { ...m.problem, text: swap(m.problem.text), figure: swap(m.problem.figure), choices: (m.problem.choices || []).map(swap) },
+      steps: m.steps.map((s) => ({ ...s, title: swap(s.title), purpose: swap(s.purpose), technique: swap(s.technique), work: swap(s.work), result: swap(s.result) })),
+      techniques: (m.techniques || []).map(swap), finalCheck: swap(m.finalCheck),
+    };
+    const count = JSON.stringify(m).split(from).length - JSON.stringify(next).split(from).length;
+    if (!count) throw fail(400, `"${from}"이(가) 분석 결과에 없습니다.`);
+    recordCorrections(store, readingCorrections(m, next), m);
+    const note = String(body.note || '').trim().slice(0, 600);
+    const noteStates = note ? { ...(m.noteStates || {}), [note]: 'fixed' } : m.noteStates;
+    return { ...store.materials.put({ ...next, noteStates, teacherEditedAt: new Date().toISOString() }), replaced: count };
   });
   // Analysis feedback is also added and edited on its own (the problem's feedback list); it is used at the next analysis.
   const analysisNote = (body) => {

@@ -283,7 +283,13 @@ async function analyzeMaterial(ctx, material) {
   const pairs = ctx.readingPairs || harness.CONFUSABLE;
   const hit = pairs.filter((p) => p.some((w) => allText.includes(w)));
   const seen = [...new Set(hit.flat().filter((w) => allText.includes(w)))];
-  if (seen.length) result.uncertainties.push(`"${seen.join('", "')}"은(는) 판독에서 뒤바뀐 적이 있는 단어입니다(${hit.map((p) => p.join('↔')).join(', ')}). 원본과 같은지 확인해 주세요.`);
+  // One plain question per word, with how often it was read and the word it gets confused with (the page answers it
+  // with 네 / 아니요 — 바꾸기).
+  for (const word of seen) {
+    const other = hit.find((p) => p.includes(word))?.find((w) => w !== word);
+    const n = allText.split(word).length - 1;
+    if (other) result.uncertainties.push(`단어 확인: 읽은 내용에 "${word}"이(가) ${n}번 나옵니다. AI가 "${word}"과(와) "${other}"을(를) 헷갈린 적이 있어서 묻습니다. 원본 사진에도 "${word}"으로 인쇄되어 있나요?`);
+  }
   if (corrections.length) result.proofread.push(`과거 교사 교정 ${corrections.length}건을 판독에 참고했습니다.`);
   return refreshStepCountNote(result);
 }

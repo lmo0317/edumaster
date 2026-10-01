@@ -79,7 +79,7 @@ test('analysis sends past corrections to every reader and propagates a learned p
   }
   assert.ok(r.problem.text.includes('A와 B의 부피비는?'), r.problem.text);
   assert.ok(!r.steps[0].work.includes('질량비') && !r.steps[0].title.includes('질량비'), 'learned pair propagated to the solution');
-  assert.ok(r.uncertainties.some((u) => u.includes('질량비↔부피비')), 'and shown to the teacher');
+  assert.ok(r.uncertainties.some((u) => u.startsWith('단어 확인:') && u.includes('"부피비"') && u.includes('"질량비"')), 'and asked of the teacher');
 });
 
 test('a two-letter teacher correction is learned; a rewritten sentence is not', () => {

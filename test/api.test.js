@@ -387,6 +387,26 @@ test('확인할 곳: a verdict on each note is kept by its text, also through a 
   } finally { await s.close(); }
 });
 
+test('단어 확인: a confused word is asked plainly, and 아니요 replaces it everywhere and is remembered', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
+    const note = m.uncertainties.find((u) => u.startsWith('단어 확인:'));
+    assert.match(note, /^단어 확인: 읽은 내용에 "몰질량"이\(가\) \d+번 나옵니다\. AI가 "몰질량"과\(와\) "물질량"을\(를\) 헷갈린 적이 있어서 묻습니다\. 원본 사진에도 "몰질량"으로 인쇄되어 있나요\?$/);
+    const before = JSON.stringify([m.problem, m.steps]).split('몰질량').length - 1;
+    assert.equal((await s.call('POST', `/api/materials/${m.id}/replace-word`, { from: '없는말', to: '물질량' })).status, 400);
+    const r = (await s.call('POST', `/api/materials/${m.id}/replace-word`, { from: '몰질량', to: '물질량', note })).data;
+    assert.equal(r.replaced, before);
+    assert.ok(!JSON.stringify([r.problem, r.steps]).includes('몰질량'), 'replaced in the reading and the STEPs');
+    assert.equal(r.noteStates[note], 'fixed');
+    const corrections = (await s.call('GET', '/api/corrections')).data;
+    assert.ok(corrections.some((c) => c.wrong === '몰질량' && c.right === '물질량'), 'the misreading is remembered for later analyses');
+  } finally { await s.close(); }
+});
+
 test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
   const s = await start();
   try {

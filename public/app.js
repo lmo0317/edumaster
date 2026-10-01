@@ -365,11 +365,80 @@
   }
   const originals = (images) => `<div class="orig">${originalsInner(images)}</div>`;
 
+  // ------------------------------------------------------------------ the problem's progress
+  // The whole way a problem goes, across the top of its page: each step done, running, waiting for the teacher or not
+  // reached yet, and one line on what is happening now (with a spinner while the server works) or what to do next.
+  const FLOW = [['upload', '원본'], ['read', '분석'], ['check', '확인'], ['make', '변형 생성'], ['review', '검토·채택']];
+  const isBusy = (j) => ['queued', 'running'].includes(j.status);
+  const setsOf = (m) => (m.jobs || []).filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  function flowState(m) {
+    const gens = setsOf(m);
+    const making = gens.find(isBusy);
+    const regen = (m.jobs || []).find((j) => j.type === 'regenerate' && isBusy(j));
+    const ready = m.status === 'ready' && m.steps;
+    const open = ready ? analysisNotes(m).open : 0;
+    const st = { upload: { state: 'done', note: '' } };
+    st.read = m.status === 'analyzing' ? { state: 'run', note: '분석 중' } : m.status === 'failed' || !m.steps ? { state: 'bad', note: '분석 실패' } : { state: 'done', note: `STEP ${m.steps.length}개` };
+    st.check = !ready ? { state: 'todo', note: '' } : open ? { state: 'warn', note: `남은 확인 ${open}개` } : { state: 'done', note: '확인 완료' };
+    if (making) {
+      const items = making.items || [];
+      const made = items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
+      st.make = { state: 'run', note: making.status === 'queued' ? '순서 기다리는 중' : `만드는 중 ${made}/${items.length}`, done: `${made}/${items.length} 완성` };
+    } else st.make = gens.length ? { state: 'done', note: `세트 ${gens.length}개` } : { state: 'todo', note: '아직 없음' };
+    const latest = gens.find((j) => !isBusy(j));
+    const no = latest ? gens.length - gens.indexOf(latest) : 0;
+    if (!latest) st.review = { state: 'todo', note: '' };
+    else {
+      const items = latest.items || [];
+      const review = items.filter((i) => !i.adopted && i.status === 'needs_review').length;
+      const adopted = items.filter((i) => i.adopted).length;
+      st.review = regen ? { state: 'run', note: '다시 만드는 중' } : review ? { state: 'warn', note: `검토 필요 ${review}` }
+        : adopted ? { state: 'done', note: `채택 ${adopted}/${items.length}` } : { state: 'warn', note: `채택 0/${items.length}` };
+    }
+    let now;
+    if (m.status === 'analyzing') now = { tone: 'run', text: 'AI가 원본을 읽고 STEP으로 정리하고 있습니다. 보통 1~3분 걸리고, 화면을 닫아도 서버에서 계속됩니다. 끝나면 이 화면이 저절로 바뀝니다.' };
+    else if (st.read.state === 'bad') now = { tone: 'bad', text: '분석하지 못했습니다. 다시 분석하거나 더 선명한 사진을 넣어 주세요.' };
+    else if (making) now = { tone: 'run', text: `변형 문제를 만드는 중입니다 (${making.status === 'queued' ? '순서 기다리는 중' : st.make.done}). 문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 끝나면 저절로 바뀝니다.`, href: '#/j/' + making.id, action: '진행 보기' };
+    else if (regen) now = { tone: 'run', text: '세트의 문제 하나를 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.', href: '#/j/' + regen.parentJobId, action: '진행 보기' };
+    else if (open) now = { tone: 'warn', text: `분석 결과에 확인할 곳이 ${open}개 있습니다. 원본과 비교해 맞음·틀림을 눌러 주세요.`, go: 'check', action: '확인하러 가기' };
+    else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 이제 변형 문제를 만들 수 있습니다.', go: 'make', action: '변형 문제 만들러 가기' };
+    else if (st.review.state === 'warn') now = { tone: 'warn', text: `세트 ${no}의 문제를 검토해 주세요 (${st.review.note}). 좋은 문제는 채택, 아쉬운 점은 고칠 점으로 남기면 다음 세트에 반영됩니다.`, href: '#/j/' + latest.id, action: '세트 열기' };
+    else now = { tone: 'ok', text: '여기까지 끝났습니다. 생성 피드백을 더 남기고 새 세트를 만들면 더 나아집니다.', go: 'make', action: '새 세트 만들러 가기' };
+    return { st, now };
+  }
+  function flowHtml(m) {
+    const { st, now } = flowState(m);
+    const current = FLOW.find(([k]) => st[k].state !== 'done')?.[0];
+    return `<ol class="flow-steps">${FLOW.map(([k, label], i) => `<li class="fs ${st[k].state}${k === current ? ' current' : ''}">
+        <span class="fs-dot">${st[k].state === 'done' ? '✓' : st[k].state === 'run' ? '<i class="spin"></i>' : i + 1}</span>
+        <span class="fs-txt"><b>${label}</b>${st[k].note ? `<small>${esc(st[k].note)}</small>` : ''}</span></li>`).join('')}</ol>
+      <div class="flow-now ${now.tone}">${now.tone === 'run' ? '<i class="spin"></i>' : ''}<span>${esc(now.text)}</span>${now.action ? (now.href ? `<a class="btn small" href="${now.href}">${now.action}</a>` : `<button class="small" data-flow-go="${now.go}">${now.action}</button>`) : ''}</div>`;
+  }
+  // Paints the progress on the problem page; its buttons take the teacher to the step.
+  function paintFlow(m) {
+    const el = $('#m-flow');
+    if (!el) return;
+    el.innerHTML = flowHtml(m);
+    $('[data-flow-go]', el)?.addEventListener('click', (e) => {
+      const go = e.target.dataset.flowGo;
+      $(`[data-stage-tab="${go === 'check' ? 'read' : 'make'}"]`)?.click();
+      if (go === 'check') {
+        openSet(m.id).add('a:check');
+        const row = $('[data-row="a:check"]');
+        row?.classList.add('open');
+        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else $('#generate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  // The problem page being shown, so the poll can repaint its progress and sets without redrawing the page.
+  let liveMaterial = null;
+
   async function materialView(id, alive) {
     let m = await api('GET', '/api/materials/' + id);
     if (m.status === 'analyzing') {
-      view.innerHTML = `<h1>${esc(m.title)}</h1><div class="grid2"><div class="panel">${originals(m.images)}</div>
-        <div class="panel"><h2>분석 중 ${chip(MAT_STATUS, 'analyzing')}</h2><p class="muted">원본 문제를 옮겨 적고, 해설의 풀이 방법을 STEP으로 정리하고 있습니다. 보통 1~3분 걸립니다. 이 화면을 닫아도 서버에서 계속 진행됩니다.</p><div class="log" id="log"></div></div></div>`;
+      view.innerHTML = `<div class="lt"><div class="lt-title"><h1>${esc(m.title)}</h1></div>
+        <div class="flow" id="m-flow">${flowHtml(m)}</div>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>진행 기록</h2></div><div class="panel"><div class="log" id="log"><span class="muted">시작하는 중…</span></div></div></section></div>`;
       await poll(alive, () => 2500, async () => {
         m = await api('GET', '/api/materials/' + id);
         const job = m.jobs.filter((j) => j.type === 'analyze')[0];
@@ -383,7 +452,7 @@
       return;
     }
     if (m.status === 'failed' || !m.steps) {
-      view.innerHTML = `<h1>${esc(m.title)}</h1><div class="grid2"><div class="panel">${originals(m.images)}</div><div class="panel"><h2>분석 실패</h2>
+      view.innerHTML = `<h1>${esc(m.title)}</h1><div class="flow" id="m-flow">${flowHtml(m)}</div><div class="grid2"><div class="panel">${originals(m.images)}</div><div class="panel"><h2>분석 실패</h2>
         <div class="note bad">${esc(m.error || '분석 결과가 없습니다.')}</div>
         <label>분석 모델</label>${providerPicker('provider')}
         <label>AI에게 알려 줄 점 (선택)</label><textarea id="note">${esc(m.note || '')}</textarea>
@@ -393,6 +462,19 @@
       return;
     }
     renderMaterial(m, false);
+    const mark = (x) => JSON.stringify([x.status, (x.jobs || []).map((j) => [j.id, j.status, (j.items || []).map((i) => [i.status, i.adopted])])]);
+    let last = mark(m);
+    await poll(alive, () => ((liveMaterial?.m.jobs || []).some(isBusy) ? 3000 : 15000), async () => {
+      const fresh = await api('GET', '/api/materials/' + id);
+      if (fresh.status !== 'ready') { if (alive()) materialView(id, alive); return true; } // analysis started elsewhere
+      const next = mark(fresh);
+      if (next === last || liveMaterial?.m.id !== id) return false;
+      last = next;
+      liveMaterial.m.jobs = fresh.jobs;
+      paintFlow(liveMaterial.m);
+      liveMaterial.side().catch(() => {});
+      return false;
+    });
   }
 
   // Rows that open in place (LLM tab, problem page): the row's 관리/보기/편집 button toggles it, and the keys of open rows
@@ -414,12 +496,31 @@
   const firstLine = (t) => String(t || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|')) || '';
   // 확인할 곳: what the analysis was unsure of, corrected by itself, or left out as handwriting — each for the teacher
   // to call right (✓ 맞음) or wrong (✏️ 틀림: what is right becomes analysis feedback). Verdicts are kept by the note's text.
-  const NOTE_KIND = { uncertain: '판독이 불확실한 곳', proofread: 'AI가 원본과 대조해 스스로 고친 곳', annotation: '필기로 보고 문제 조건에서 뺀 것' };
+  const NOTE_KIND = { word: '단어 확인', uncertain: '판독이 불확실한 곳', proofread: 'AI가 원본과 대조해 스스로 고친 곳', annotation: '필기로 보고 문제 조건에서 뺀 것' };
+  // A word the reading has confused before (몰질량↔물질량): from the current note, or the older one-line note.
+  function wordNote(text) {
+    const now = /^단어 확인: 읽은 내용에 "(.+?)"이\(가\) \d+번 나옵니다\. AI가 "(.+?)"과\(와\) "(.+?)"을\(를\)/.exec(text);
+    if (now) return [{ word: now[1], other: now[2] === now[1] ? now[3] : now[2] }];
+    const old = /^"(.+)"은\(는\) 판독에서 뒤바뀐 적이 있는 단어입니다\((.+)\)/.exec(text);
+    if (!old) return null;
+    const pairs = old[2].split(', ').map((p) => p.split('↔'));
+    return old[1].split('", "').map((word) => ({ word, other: pairs.find((p) => p.includes(word))?.find((w) => w !== word) })).filter((x) => x.other);
+  }
+  // Where a word appears in the reading: how often, and a short piece of text around its first appearance.
+  function wordUse(m, word) {
+    const texts = [m.problem?.text, m.problem?.figure, ...(m.problem?.choices || []), ...(m.steps || []).flatMap((x) => [x.title, x.purpose, x.technique, x.work, x.result])].filter(Boolean);
+    const count = texts.reduce((n, t) => n + t.split(word).length - 1, 0);
+    const t = texts.find((x) => x.includes(word)) || '';
+    const i = t.indexOf(word);
+    const piece = i < 0 ? '' : t.slice(Math.max(0, i - 18), i + word.length + 18).replace(/\$+|\\[a-zA-Z]+|\\.|[{}^_]/g, ' ').replace(/\s+/g, ' ').trim();
+    return { count, piece };
+  }
   const noteKey = (t) => String(t).trim().slice(0, 600);
   function analysisNotes(m) {
     const states = m.noteStates || {};
     const items = [
-      ...(m.uncertainties || []).filter((u) => !/^(해설의 단계 표시는|선생님 피드백의 STEP 수는)/.test(u)).map((text) => ({ kind: 'uncertain', text })),
+      ...(m.uncertainties || []).filter((u) => !/^(해설의 단계 표시는|선생님 피드백의 STEP 수는)/.test(u))
+        .flatMap((text) => wordNote(text)?.map((w) => ({ kind: 'word', text, ...w })) || [{ kind: 'uncertain', text }]),
       ...(m.proofread || []).filter((t) => !t.startsWith('과거 교사 교정')).map((text) => ({ kind: 'proofread', text })),
       ...(m.annotations || []).map((text) => ({ kind: 'annotation', text })),
     ].map((x) => ({ ...x, state: states[noteKey(x.text)] || '' }));
@@ -464,6 +565,7 @@
           <div class="lt-actions"><span class="muted small">다시 분석해도 여기서 정한 제목은 바뀌지 않습니다.</span><span class="spacer"></span><button type="button" class="small" id="name-cancel">취소</button><button type="submit" class="small primary">저장</button></div>
         </form>
       </div>
+      <div class="flow" id="m-flow"></div>
       <nav class="stage-tabs" role="tablist">
         <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>원본 분석</b><small id="st-read"></small></span></button>
         <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>변형 문제</b><small id="st-make"></small></span></button>
@@ -524,6 +626,7 @@
     const side = async () => {
       const [rules, learning] = await Promise.all([api('GET', '/api/rules'), api('GET', `/api/materials/${m.id}/learning`)]);
       if (!$('#gfb')) return;
+      const gens = setsOf(m);
       const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const on = own.filter((r) => r.status === 'approved');
       const common = rules.filter((r) => r.status === 'approved' && ['global', 'topic'].includes(r.scope));
@@ -533,6 +636,8 @@
       carryLine(m, n, on, common, learning.adopted);
     };
     side().catch((e) => { if ($('#gfb')) $('#gfb').innerHTML = `<div class="panel bad">${esc(e.message)}</div>`; });
+    liveMaterial = { m, side };
+    paintFlow(m);
   }
 
   // Shared by both stages' feedback: rows that open in place to edit.
@@ -742,8 +847,18 @@
     const src = (id) => 'api/files/' + id;
     const thumbs = [m.images.problem, !m.images.sameImage && m.images.solution].filter(Boolean).map((id) => `<img data-zoom src="${src(id)}" alt="원본">`).join('');
     const count = (k) => items.filter((x) => x.kind === k).length;
-    const checkParts = [count('uncertain') && `판독 불확실 ${count('uncertain')}`, count('proofread') && `자동 교정 ${count('proofread')}`, count('annotation') && `뺀 필기 ${count('annotation')}`, misaligned && `STEP ${m.steps.length}개 → 해설 ${m.targetSteps}단계`].filter(Boolean);
-    const noteItem = (x, i) => `<li class="chk${x.state ? ' done' : ''}" data-note="${i}">
+    const checkParts = [count('word') && `단어 확인 ${count('word')}`, count('uncertain') && `판독 불확실 ${count('uncertain')}`, count('proofread') && `자동 교정 ${count('proofread')}`, count('annotation') && `뺀 필기 ${count('annotation')}`, misaligned && `STEP ${m.steps.length}개 → 해설 ${m.targetSteps}단계`].filter(Boolean);
+    const wordItem = (x, i) => {
+      const { count: n, piece } = wordUse(m, x.word);
+      const done = x.state === 'fixed' ? `<span class="chk-state ok">✓ "${esc(x.other)}"(으)로 바꿈</span>`
+        : x.state ? `<span class="chk-state ok">✓ "${esc(x.word)}"이(가) 맞음</span><button class="small chk-link" data-undo>되돌리기</button>` : '';
+      return `<li class="chk${x.state ? ' done' : ''}" data-note="${i}">
+        <div class="chk-text">AI가 읽은 내용에 <b>"${esc(x.word)}"</b>이(가) ${n}번 나옵니다${piece ? ` (예: "…${esc(piece)}…")` : ''}.
+          AI가 이 단어를 <b>"${esc(x.other)}"</b>과(와) 헷갈린 적이 있습니다. <b>원본 사진에도 "${esc(x.word)}"(으)로 인쇄되어 있나요?</b></div>
+        <div class="chk-act">${done || `<button class="small" data-word-ok>✓ 네, "${esc(x.word)}"이(가) 맞아요</button><button class="small" data-word-swap>아니요, "${esc(x.other)}"(으)로 바꾸기</button>`}</div>
+      </li>`;
+    };
+    const noteItem = (x, i) => x.kind === 'word' ? wordItem(x, i) : `<li class="chk${x.state ? ' done' : ''}" data-note="${i}">
         <div class="chk-line"><span class="chk-text">${flat(x.text)}</span><span class="chk-act">${x.state
           ? `<span class="chk-state ${x.state === 'ok' ? 'ok' : ''}">${x.state === 'ok' ? '✓ 맞음' : '✏️ 피드백 남김'}</span><button class="small chk-link" data-undo>되돌리기</button>`
           : '<button class="small" data-ok>✓ 맞음</button><button class="small" data-wrong>✏️ 틀림</button>'}</span></div>
@@ -787,8 +902,17 @@
         if (!t) throw new Error('무엇이 맞는지 적어 주세요.');
         return `${t} (확인할 곳: ${x.text.replace(/\s+/g, ' ').slice(0, 80)})`;
       };
-      $('[data-ok]', li)?.addEventListener('click', guard(async () => { await setNote(x, 'ok'); showAnalysis(m); }));
-      $('[data-undo]', li)?.addEventListener('click', guard(async () => { await setNote(x, null); showAnalysis(m); }));
+      $('[data-word-ok]', li)?.addEventListener('click', guard(async () => { await setNote(x, 'ok'); showAnalysis(m); paintFlow(m); }));
+      $('[data-word-swap]', li)?.addEventListener('click', guard(async () => {
+        const { count: n } = wordUse(m, x.word);
+        if (!confirm(`분석 결과의 "${x.word}" ${n}곳을 모두 "${x.other}"(으)로 바꿀까요? 이 착오는 기억해 두고 다음 분석부터 주의합니다.`)) return;
+        const saved = await api('POST', `/api/materials/${m.id}/replace-word`, { from: x.word, to: x.other, note: noteKey(x.text) });
+        toast(`"${x.word}" ${saved.replaced}곳을 "${x.other}"(으)로 바꿨습니다.`);
+        renderMaterial({ ...saved, jobs: m.jobs }, false);
+      }));
+      $('[data-ok]', li)?.addEventListener('click', guard(async () => { await setNote(x, 'ok'); showAnalysis(m); paintFlow(m); }));
+      $('[data-undo]', li)?.addEventListener('click', guard(async () => { await setNote(x, null); showAnalysis(m); paintFlow(m); }));
+      if (x.kind === 'word') return; // the rest is the 틀림 box of the ordinary notes
       $('[data-wrong]', li)?.addEventListener('click', () => { fix.hidden = false; $('textarea', fix).focus(); });
       $('[data-cancel]', li).addEventListener('click', () => { fix.hidden = true; });
       $('[data-edit]', li).addEventListener('click', () => editAnalysis(m));
@@ -799,6 +923,7 @@
         m.analysisFeedback = saved.analysisFeedback;
         toast('분석 피드백으로 저장했습니다. 다시 분석하면 반영됩니다.');
         showAnalysis(m);
+        paintFlow(m);
         analysisFeedbackPanel(m);
       }));
       $('[data-go]', li).addEventListener('click', guard(async () => {
@@ -1016,8 +1141,8 @@
     const adopted = items.filter((i) => i.adopted).length;
     const review = items.filter((i) => !i.adopted && i.status === 'needs_review').length;
     const model = esc(job.modelLabel || PROVIDER_LABEL[job.options.provider] || 'DeepSeek');
-    const line = job.status === 'queued' ? '순서를 기다리는 중'
-      : busy ? `${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''} · ${model}`
+    const line = job.status === 'queued' ? '<i class="spin"></i>순서를 기다리는 중'
+      : busy ? `<i class="spin"></i>${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''} · ${model}`
       : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">검토 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
@@ -1026,8 +1151,9 @@
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>
+      ${busy ? `<div class="jt-bar"><span style="width:${items.length ? Math.round((made / items.length) * 100) : 0}%"></span></div><p class="muted small jt-wait">문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 화면을 닫아도 서버에서 계속되고, 이 화면은 저절로 바뀝니다.</p>` : ''}
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
-      ${regenerating.length ? `<div class="note info">문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다.</div>` : ''}
+      ${regenerating.length ? `<div class="note info"><i class="spin"></i> 문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.</div>` : ''}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
         <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>

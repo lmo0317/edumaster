@@ -50,7 +50,7 @@ test('analysis path fixes the misread question word, the STEP count and the step
   assert.ok(!r.steps.some((s) => s.work.includes('물질량')), 'confusable partner corrected in the solution too');
   assert.equal(r.checks.find((c) => c.id === 'source-calculation').state, 'pass');
   assert.ok(r.proofread.some((p) => p.includes('발문 재판독')));
-  assert.ok(r.uncertainties.some((u) => u.includes('뒤바뀐 적이 있는 단어')), 'confusable words are always shown to the teacher');
+  assert.ok(r.uncertainties.some((u) => u.startsWith('단어 확인:')), 'confusable words are always asked of the teacher');
 });
 
 // Gemma's real bio transcription (2026-09-29): handwriting and a value the solution derives (2cm/ms) were

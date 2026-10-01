@@ -249,10 +249,6 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .cmp-cell b { text-align: right; }
 .plain-list { margin: 0; padding-left: 20px; }
 .plain-list li { margin: 4px 0; }
-.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; margin: 4px 0 10px; }
-.flow-step { background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-size: 13.5px; }
-.flow-step .n { display: inline-block; min-width: 18px; font-weight: 700; color: var(--accent); }
-.flow-arrow { color: var(--muted); padding: 0 2px; }
 pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; white-space: pre-wrap; margin: 6px 0; max-height: 220px; overflow: auto; }
 
 .log { font-size: 13px; color: var(--muted); max-height: 180px; overflow: auto; background: #fafbfd; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
@@ -293,7 +289,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .set-row { flex-direction: column; align-items: flex-start; gap: 4px; }
   .set-state { align-items: flex-start; text-align: left; }
   .check-grid, .sys-cards.two, .stat-row { grid-template-columns: minmax(0, 1fr); }
-  .flow-arrow { display: none; }
   header.top .bar { padding: 8px 12px; gap: 6px 10px; }
   header.top nav { order: 3; flex: 0 0 100%; flex-wrap: nowrap; overflow-x: auto; margin: 0 -4px; }
   header.top .right { margin-left: auto; }
@@ -567,3 +562,37 @@ a.lt-name:hover { color: var(--accent); }
 .chk-fix[hidden] { display: none; }
 .chk-fix textarea { width: 100%; min-height: 60px; }
 @media (max-width: 640px) { .chk-line { flex-direction: column; gap: 6px; } }
+/* The problem's progress: five steps and one line on what is happening now */
+.flow { display: grid; gap: 8px; }
+.flow-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.fs { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.fs-dot { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--line); color: var(--muted); }
+.fs-txt { display: grid; min-width: 0; line-height: 1.3; }
+.fs-txt b { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-txt small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs.done .fs-dot { background: var(--ok-soft); color: var(--ok); }
+.fs.run .fs-dot { background: var(--accent-soft); color: var(--accent); }
+.fs.warn .fs-dot { background: var(--warn-soft); color: var(--warn); }
+.fs.bad .fs-dot { background: var(--bad-soft); color: var(--bad); }
+.fs.todo { opacity: .65; }
+.fs.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; opacity: 1; }
+.fs.current.warn { border-color: #d99a1e; box-shadow: 0 0 0 1px #d99a1e inset; }
+.flow-now { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; font-size: 14px; background: var(--panel); border: 1px solid var(--line); }
+.flow-now > span { flex: 1; min-width: 0; }
+.flow-now.run { background: var(--accent-soft); border-color: transparent; color: #1b3a99; }
+.flow-now.warn { background: var(--warn-soft); border-color: #f0d49a; color: #5c3b00; }
+.flow-now.bad { background: var(--bad-soft); border-color: #e7b0b0; color: var(--bad); }
+.flow-now .btn, .flow-now button { flex: 0 0 auto; white-space: nowrap; }
+.spin { display: inline-block; width: 14px; height: 14px; flex: 0 0 auto; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+.fs-dot .spin, .flow-now .spin { margin-right: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+.jt-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.jt-bar span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.jt-wait { margin: 0; }
+@media (max-width: 640px) {
+  .flow-steps { gap: 3px; }
+  .fs { flex-direction: column; gap: 4px; padding: 6px 2px; text-align: center; }
+  .fs-txt b { font-size: 12px; } .fs-txt small { font-size: 10.5px; }
+  .flow-now { flex-wrap: wrap; }
+}
