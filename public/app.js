@@ -500,8 +500,16 @@
       </div>`;
     };
     const afb = m.analysisFeedback || [];
+    // How the last analysis says it applied each one (matched by text, else by position when the counts agree).
+    const applied = m.feedbackApplied || [];
+    const howOf = (f, i) => (applied.find((x) => x.feedback.trim() === f.text.trim()) || (applied.length === afb.length ? applied[i] : null))?.how;
+    const afbState = (f, i) => {
+      if (!(m.analyzedAt && f.at < m.analyzedAt)) return '<span class="warn">다음에 다시 분석할 때 반영</span>';
+      const how = howOf(f, i);
+      return how ? `반영: ${esc(how)}` : '<span class="warn">지금 분석에 들어갔지만 어떻게 반영했는지 보고가 없습니다</span>';
+    };
     const afbRow = (f, i) => `<div class="lt-row lt-plain${o('af:' + i)}" data-row="af:${i}" data-afb="${i}">
-        <div class="lt-main"><span class="lt-name lt-clamp">${esc(f.text)}</span><span class="lt-sub lt-wrap">${fmtTime(f.at)} · ${m.analyzedAt && f.at < m.analyzedAt ? '지금 분석에 반영됨' : '<span class="warn">다음에 다시 분석할 때 반영</span>'}</span></div>
+        <div class="lt-main"><span class="lt-name lt-clamp">${esc(f.text)}</span><span class="lt-sub lt-wrap">${fmtTime(f.at)} · ${afbState(f, i)}</span></div>
         <button class="small lt-open" data-open>편집</button>
         <div class="lt-more">
           <textarea data-f="text" rows="3">${esc(f.text)}</textarea>

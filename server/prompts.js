@@ -23,7 +23,7 @@ const ANALYZE_SYSTEM = `너는 고등학교 과학·수학 킬러 문제를 해�
 - 선택지는 choices 배열에 순서대로. ㄱ,ㄴ,ㄷ 보기가 있으면 보기 내용은 problem.text에 넣고 choices에는 "ㄱ, ㄴ" 같은 조합을 넣는다.
 
 [풀이 STEP 정리]
-- 해설이 주어졌으면 solutionSource="provided". 해설에 step1, step2 ... 같은 단계 표시가 있으면 steps의 개수와 순서는 반드시 그 표시와 같아야 한다. 한 단계 안의 계산이 길어도 나누지 않고, 해설 끝의 '선택지 분석'·'정답' 정리는 마지막 STEP의 work에 넣는다.
+- 해설이 주어졌으면 solutionSource="provided". 해설에 step1, step2 ... 같은 단계 표시가 있으면 steps의 개수와 순서는 반드시 그 표시와 같아야 한다 (교사의 분석 피드백이 STEP 수를 정했으면 그것을 따른다). 한 단계 안의 계산이 길어도 나누지 않고, 해설 끝의 '선택지 분석'·'정답' 정리는 마지막 STEP의 work에 넣는다.
 - 해설의 방법을 바꾸지 않는다. 교사가 도입한 보조 문자(예: A 1g의 몰수 n), 가정→계산→모순 판정, 실험 간 비교, 치환, 비례식 등 방법과 순서를 그대로 보존한다. 더 좋아 보이는 다른 풀이로 바꾸지 않는다.
 - 각 STEP: title(무엇을 구하는 단계인지), purpose(이 단계가 결정하는 값/사실), technique(이 단계의 핵심 기법, 보조 문자 정의 포함), work(해설에 인쇄된 문장과 식을 순서대로 그대로 옮긴다. 요약하거나 다시 풀지 않는다. 수식은 LaTeX. 읽기 어려운 부분은 "[판독 불확실: 추정 내용]"으로 표시하고 uncertainties에도 적는다. 읽히지 않는 곳을 네 논리나 다른 풀이로 메우지 않는다), result(이 단계의 결론 값/사실).
 - STEP은 논리 단위다. 사소한 계산을 쪼개 STEP을 늘리지 말고, 서로 다른 판단을 하나로 합치지도 않는다. 개수는 원본에 따른다 (보통 2~5).
@@ -31,6 +31,13 @@ const ANALYZE_SYSTEM = `너는 고등학교 과학·수학 킬러 문제를 해�
 - finalCheck: STEP 결과로 정답을 다시 계산해 문제의 정답과 일치하는지 확인한 과정.
 - techniques: 이 문제 풀이의 핵심 기법을 짧은 문장 목록으로 (변형 문제에서 반드시 재사용해야 할 것).
 - 읽기 어려운 글자·수치가 있으면 추측한 값과 함께 uncertainties에 적는다.
+
+[교사의 분석 피드백이 있을 때 — 위 규칙보다 우선한다]
+- 사용자 메시지의 "교사의 분석 피드백"은 위의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다.
+- 피드백이 STEP 수나 나누는 방식을 정하면(예: "STEP을 4개로 분리") 해설의 단계 표시와 달라도 그대로 따른다. 판단이 여러 개 들어 있는 단계를 판단마다 나누고, 각 STEP의 marker는 그 내용이 있던 해설 단계 표시로 둔다.
+- 피드백이 설명을 쉽게·자세히 하라는 등 해설 표현을 바꾸라고 하면 work를 해설 문장 그대로 옮기지 말고 요청대로 풀어 쓴다. 단, 교사의 방법(보조 문자, 가정→모순 판정, 실험 간 비교, 비례식, 계산 순서)과 모든 수치·결론은 그대로 둔다. 방법을 바꾸라는 피드백이 아니면 다른 풀이로 바꾸지 않는다.
+- teacherRequests.stepCount: 피드백이 정한 STEP 수 (정하지 않았으면 0). teacherRequests.rewrite: 피드백 때문에 work를 해설 문장과 다르게 풀어 썼으면 true.
+- feedbackApplied: 피드백 하나마다 {"feedback":"피드백 원문 그대로","how":"무엇을 어떻게 바꿨는지 한 문장"}. 반영하지 못한 것은 how에 그 이유를 적는다.
 ${FORMAT}
 
 반환 JSON 형식:
@@ -39,10 +46,11 @@ ${FORMAT}
  "annotations":["..."],"solutionSource":"provided|ai",
  "steps":[{"marker":"이 STEP이 속한 해설의 단계 표시(예: step1). 표시가 없으면 빈 문자열","title":"...","purpose":"...","technique":"...","work":"...","result":"..."}],
  "techniques":["..."],"finalCheck":"...","uncertainties":["..."],
+ "teacherRequests":{"stepCount":0,"rewrite":false},"feedbackApplied":[{"feedback":"교사의 분석 피드백이 있을 때만","how":"..."}],
  "stepMarkers":["해설에 인쇄된 단계 표시를 인쇄된 순서대로 한 번씩만, 예: step1, step2, step3 (STEP마다 반복하지 않는다. 없으면 빈 배열)"],
  "verification":{"program":["원본 문제의 주어진 값과 해설의 계산을 순서대로 적은 mathjs 문장"],"answer":"ans","choices":["각 선택지 값 식"],"free":[],"checks":[{"expr":"...","desc":"..."}]}}
 - verification: 원본 문제를 해설의 계산 그대로 따라가 정답을 계산하는 검산 프로그램이다. 서버가 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 확인한다. 한 줄에 mathjs 문장 하나, 변수 이름은 영문자·숫자·_ 만, 사용 가능: + - * / ^ ( ) sqrt abs min max 비교 and or not. 수치가 아닌 선택지(ㄱ,ㄴ,ㄷ)면 choices는 빈 배열, 계산할 수치가 없으면 program에 주어진 값만 적는다. 문제에서 값이 정해지지 않는 문자는 free에 넣는다.
-- steps의 개수는 stepMarkers의 개수와 같아야 한다 (stepMarkers가 있을 때).
+- steps의 개수는 stepMarkers의 개수와 같아야 한다 (stepMarkers가 있을 때). 교사의 분석 피드백이 STEP 수를 정했으면 그 수를 따른다.
 - problem.text에는 선택지(①~⑤)를 넣지 않는다. 선택지는 choices에만.`;
 
 const PROOFREAD_SYSTEM = `너는 교정자다. 이미지에 인쇄된 원본과, 다른 사람이 옮겨 적은 필드들을 글자 단위로 대조해 잘못 옮긴 곳만 찾는다.
@@ -121,7 +129,7 @@ function analyzeText({ hasSolution, sameImage, note, feedback = [] }) {
   lines.push('작은 원본을 확대해 위에서 아래로 자른 조각이 올 수 있다. 조각은 위아래가 조금 겹치므로 겹친 줄을 두 번 옮기지 말고 순서대로 이어 읽어라.');
   if (note) lines.push('교사 메모: ' + note);
   if (feedback.length) {
-    lines.push('[교사의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에서 교사가 바로잡은 점. 모두 반영하고, 해당 부분은 이미지를 다시 확인한다]');
+    lines.push('[교사의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에 교사가 요청한 점. 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 모두 반영하고, 읽기에 관한 것은 이미지를 다시 확인하며, 반영한 방법을 feedbackApplied에 피드백마다 적는다]');
     for (const f of feedback) lines.push('- ' + f.text);
   }
   lines.push('지시에 따라 JSON만 반환하라.');

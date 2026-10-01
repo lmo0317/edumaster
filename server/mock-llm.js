@@ -23,6 +23,23 @@ const SAMPLE = {
   uncertainties: [],
 };
 
+// The analysis follows the teacher's analysis feedback the way the prompt asks: "STEP을 n개로" splits the last STEP,
+// "쉽게" writes the solution out, and each feedback says how it was applied.
+function followFeedback(text) {
+  const feedback = (text.split('[교사의 분석 피드백')[1] || '').split('\n').slice(1).filter((l) => l.startsWith('- ')).map((l) => l.slice(2));
+  if (!feedback.length) return SAMPLE;
+  const count = Number(feedback.map((f) => /STEP[을를]?\s*(\d+)\s*개/.exec(f)?.[1]).find(Boolean)) || 0;
+  const rewrite = feedback.some((f) => /쉽게/.test(f));
+  let steps = SAMPLE.steps.map((s) => ({ ...s, marker: '' }));
+  while (count && steps.length < count) {
+    const last = steps.pop();
+    steps.push({ ...last, title: last.title + ' (앞부분)', result: '' }, { ...last, title: last.title + ' (뒷부분)', purpose: '나머지' });
+  }
+  if (rewrite) steps = steps.map((s) => ({ ...s, work: '(쉽게 풀어 씀) ' + s.work }));
+  return { ...SAMPLE, steps, teacherRequests: { stepCount: count, rewrite },
+    feedbackApplied: feedback.map((f) => ({ feedback: f, how: /STEP/.test(f) ? `STEP을 ${steps.length}개로 나눔` : rewrite ? '해설을 쉽게 풀어 씀' : '반영함' })) };
+}
+
 let counter = 0;
 
 // How many original STEPs a stage uses, from the stage name the prompt (or the problem's mock tag) carries.
@@ -85,7 +102,7 @@ function mock(messages) {
   const user = messages[1].content;
   const text = typeof user === 'string' ? user : user.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
   let data;
-  if (system === prompts.ANALYZE_SYSTEM) data = SAMPLE;
+  if (system === prompts.ANALYZE_SYSTEM) data = followFeedback(text);
   else if (system === prompts.REGROUP_SYSTEM) {
     const n = Number(/STEP을 (\d+)개 묶음/.exec(text)?.[1]); const total = Number(/이 (\d+)개 STEP을/.exec(text)?.[1]);
     data = { groups: Array.from({ length: n }, (_, i) => ({ steps: i < n - 1 ? [i + 1] : Array.from({ length: total - n + 1 }, (_, k) => n + k), title: `묶음 ${i + 1}` })) };
@@ -97,7 +114,12 @@ function mock(messages) {
     data = { text: SAMPLE.problem.text, figure: SAMPLE.problem.figure || '' };
   } else if (system === prompts.REREAD_HEADINGS_SYSTEM) {
     data = { steps: SAMPLE.steps.map((s, i) => ({ marker: `step${i + 1}`, title: s.title })) };
-  } else if (system === prompts.PROOFREAD_SYSTEM) data = { fixes: [{ field: 'problem.text', wrong: '실험 I~III에 대한', right: '실험 Ⅰ~Ⅲ에 대한', reason: '로마 숫자' }], solutionStepCount: 3 };
+  } else if (system === prompts.PROOFREAD_SYSTEM) {
+    // Like a real proofreader, it takes a solution written out differently for the printed one being misread.
+    const rewritten = /"steps\[0\]\.work": "\(쉽게 풀어 씀\) /.test(text);
+    data = { fixes: [{ field: 'problem.text', wrong: '실험 I~III에 대한', right: '실험 Ⅰ~Ⅲ에 대한', reason: '로마 숫자' },
+      ...(rewritten ? [{ field: 'steps[0].work', wrong: '(쉽게 풀어 씀) ', right: '', reason: '원본에 없는 문장' }] : [])], solutionStepCount: 3 };
+  }
   else if (system === prompts.SOLVE_SYSTEM) data = solved(text);
   else if (system === prompts.SOLUTION_REVIEW_SYSTEM) data = { steps: [{ step: 1, ok: true, issues: [] }], rules: [] };
   else if (system === prompts.WRITE_SOLUTION_SYSTEM) {

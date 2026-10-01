@@ -356,6 +356,35 @@ test('analysis feedback accumulates on the problem and every re-analysis gets al
   } finally { await s.close(); }
 });
 
+test('analysis feedback beats the printed steps: a STEP count and an easier write-up survive merging, proofreading and printed titles', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: '피드백 반영', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
+    assert.equal(m.steps.length, 3, 'the solution prints three steps');
+    await s.call('POST', `/api/materials/${m.id}/analysis-feedback`, { text: '설명을 좀더 쉽게 해줘봐' });
+    const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, { feedback: 'STEP을 4개로 분리 해서 넣어봐 한단계 더 꼬아서 생각할수 있게' })).data;
+    await s.waitJob(again.jobId);
+    m = (await s.call('GET', '/api/materials/' + m.id)).data;
+    assert.equal(m.steps.length, 4, 'not merged back to the three printed steps');
+    assert.equal(m.teacherStepCount, 4);
+    assert.equal(m.targetSteps, 4);
+    assert.ok(m.steps.every((x) => x.work.startsWith('(쉽게 풀어 씀)')), 'the easier write-up is not "corrected" back to the printed solution');
+    assert.ok(!m.uncertainties.some((u) => /단계 표시는|STEP 수는/.test(u)), 'no STEP-count warning: the count is the one asked for');
+    assert.equal(m.feedbackApplied.length, 2, 'each feedback says how it was applied');
+    // Without the feedback the printed steps decide again.
+    await s.call('DELETE', `/api/materials/${m.id}/analysis-feedback/1`);
+    await s.call('DELETE', `/api/materials/${m.id}/analysis-feedback/0`);
+    const plain = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
+    await s.waitJob(plain.jobId);
+    m = (await s.call('GET', '/api/materials/' + m.id)).data;
+    assert.equal(m.steps.length, 3);
+    assert.equal(m.teacherStepCount, 0);
+  } finally { await s.close(); }
+});
+
 test('LLM tab data: calls, tokens and cost per model from the ledger, today and over 30 days', async () => {
   const s = await start();
   try {

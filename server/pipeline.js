@@ -50,16 +50,21 @@ function normalizeMaterial(data) {
     stepHeadings: arr(data?.stepHeadings).map((h) => str(h, 300)).filter(Boolean).slice(0, 10),
     checks: arr(data?.checks).slice(0, 20),
     printedValues: arr(data?.printedValues).map((v) => str(v, 40)).filter(Boolean).slice(0, 20),
+    // What the teacher's analysis feedback asked for: a STEP count of its own, a solution written out differently.
+    teacherStepCount: Math.min(10, Math.max(0, Number.parseInt(data?.teacherRequests?.stepCount ?? data?.teacherStepCount, 10) || 0)),
+    rewritten: Boolean(data?.teacherRequests?.rewrite ?? data?.rewritten),
+    feedbackApplied: arr(data?.feedbackApplied).map((x) => ({ feedback: str(x?.feedback, 1000), how: str(x?.how, 500) })).filter((x) => x.how).slice(0, 20),
   };
 }
 
 // ---------------------------------------------------------------- STEP count vs. the teacher's step markers
 
-const STEP_COUNT_NOTE = /^(해설의 단계 표시는|교정 단계에서 해설의 STEP 표시를)/;
+const STEP_COUNT_NOTE = /^(해설의 단계 표시는|교정 단계에서 해설의 STEP 표시를|선생님 피드백의 STEP 수는)/;
 const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[^0-9]/g, ''), 10) || 0;
 
-/** How many STEPs the teacher's solution has, if the solution shows step markers. */
+/** How many STEPs the analysis should have: the count the teacher's analysis feedback asked for, else the solution's step markers. */
 function targetStepCount(material) {
+  if (material.teacherStepCount) return material.teacherStepCount;
   if (material.stepHeadings?.length) return material.stepHeadings.length;
   // Models sometimes list one marker per STEP ("step1, step1, step2, step3, step3"), so count distinct
   // markers — from the marker list and from each STEP's own marker — and fall back to the proofreader's count.
@@ -74,7 +79,9 @@ function refreshStepCountNote(material) {
   const notes = (material.uncertainties || []).filter((u) => !STEP_COUNT_NOTE.test(u));
   const markers = [...new Set(material.stepMarkers || [])];
   if (target && target !== material.steps.length) {
-    notes.push(`해설의 단계 표시는 ${target}개${markers.length === target ? `(${markers.join(', ')})` : ''}인데 정리한 STEP은 ${material.steps.length}개입니다.`);
+    notes.push(material.teacherStepCount
+      ? `선생님 피드백의 STEP 수는 ${target}개인데 정리한 STEP은 ${material.steps.length}개입니다.`
+      : `해설의 단계 표시는 ${target}개${markers.length === target ? `(${markers.join(', ')})` : ''}인데 정리한 STEP은 ${material.steps.length}개입니다.`);
   }
   // targetSteps is what the screen compares against (it offers the one-click merge when STEPs exceed it).
   return { ...material, stepMarkers: markers, targetSteps: target, uncertainties: notes };
@@ -226,7 +233,7 @@ async function analyzeMaterial(ctx, material) {
     ctx.log('옮겨 적은 내용을 원본 이미지와 대조하는 중');
     const fields = { 'problem.text': result.problem.text, 'problem.figure': result.problem.figure };
     result.problem.choices.forEach((c, i) => { fields[`problem.choices[${i}]`] = c; });
-    result.steps.forEach((s, i) => { for (const k of ['title', 'work', 'result']) fields[`steps[${i}].${k}`] = s[k]; });
+    if (!result.rewritten) result.steps.forEach((s, i) => { for (const k of ['title', 'work', 'result']) fields[`steps[${i}].${k}`] = s[k]; });
     const { data: check } = await llm.json({
       purpose: 'proofread', jobId: ctx.job.id, budget, signal, vision: true, effort: 'low', maxTokens: 32000,
       system: prompts.PROOFREAD_SYSTEM, text: withHint(prompts.proofreadText(fields)), images,
@@ -245,7 +252,8 @@ async function analyzeMaterial(ctx, material) {
   await printedProblemReread(ctx, result, byRole.problem);
   await focusedReread(ctx, result, byRole, Boolean(src.solution));
 
-  // The teacher's solution decides the STEP count: merge extra STEPs automatically and say so.
+  // The teacher's solution decides the STEP count (or the count the teacher's analysis feedback asked for): merge extra
+  // STEPs automatically and say so.
   try {
     const proposal = await proposeStepAlignment({ llm, budget, jobId: ctx.job.id, signal }, result);
     if (proposal) {
@@ -256,7 +264,7 @@ async function analyzeMaterial(ctx, material) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError' && e.status !== 422) throw e;
   }
   // Printed step headings are the truest STEP titles.
-  if (result.stepHeadings.length && result.stepHeadings.length === result.steps.length) {
+  if (!result.teacherStepCount && result.stepHeadings.length && result.stepHeadings.length === result.steps.length) {
     result.steps.forEach((s, i) => {
       const heading = result.stepHeadings[i];
       if (heading && harness.plain(heading).replace(/\s/g, '') !== harness.plain(s.title).replace(/\s/g, '')) {
