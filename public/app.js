@@ -617,14 +617,19 @@
           <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
         <div class="cols cols-2">
           <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
-          <div><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
+          <div id="effort-box"><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
+          <div id="claude-effort-note" hidden><label>Claude 추론 강도</label><p class="small" style="margin:6px 0"><b id="claude-effort-name"></b> <a href="#/llm">LLM 탭에서 변경</a></p></div>
         </div>
         <p class="muted small">STEP k만 연습: 앞 STEP의 결과를 조건으로 주고 STEP k만 쓰게 하는 문제입니다.</p>
       </div></details>
       <div class="gen-go"><span class="muted small" id="estimate"></span><button class="primary" id="go">생성 시작</button></div>`;
     const estimate = () => {
-      const gemma = $('[name=genProvider]:checked', el)?.value === 'gemma';
-      $('#effort').disabled = gemma;
+      const chosen = $('[name=genProvider]:checked', el)?.value || 'deepseek';
+      const gemma = chosen === 'gemma';
+      // Each model's own reasoning setting: DeepSeek's here, Claude's from the LLM tab, none for the PC model.
+      $('#effort-box').hidden = chosen !== 'deepseek';
+      $('#claude-effort-note').hidden = chosen !== 'claude-cli';
+      if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[statusCache?.providers?.['claude-cli']?.effort] || '자동';
       const count = $$('[data-stage]:checked', el).length * Number($('#per').value);
       $('#estimate').textContent = !count ? '만들 문제를 하나 이상 고르세요.'
         : `${count}문제 · 모델 호출 약 ${count * 2}~${count * 4}회 예상 (설계 + 독립 풀이, 필요할 때만 수정 1회)` + (gemma ? ' · Gemma는 무료지만 PC에서 돌아가 문제당 몇 분씩 걸릴 수 있습니다' : '');
