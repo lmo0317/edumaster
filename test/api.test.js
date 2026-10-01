@@ -356,6 +356,31 @@ test('analysis feedback accumulates on the problem and every re-analysis gets al
   } finally { await s.close(); }
 });
 
+test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const id = a.material.id;
+    assert.equal((await s.call('PUT', `/api/materials/${id}/name`, { title: ' ' })).status, 400);
+    let m = (await s.call('PUT', `/api/materials/${id}/name`, { title: '몰질량 — 한계 반응물', subject: '화학', topic: '양적 관계' })).data;
+    assert.deepEqual([m.title, m.subject, m.topic, m.titleFromUser], ['몰질량 — 한계 반응물', '화학', '양적 관계', true]);
+    assert.ok(!m.teacherEditedAt, 'renaming is not an edit of the analysis');
+    const again = (await s.call('POST', `/api/materials/${id}/analyze`, {})).data;
+    await s.waitJob(again.jobId);
+    m = (await s.call('GET', '/api/materials/' + id)).data;
+    assert.equal(m.title, '몰질량 — 한계 반응물', 'a re-analysis does not rename it');
+    const gen = (await s.call('POST', '/api/generations', { materialId: id, stages: [{ kind: 'upto', upto: 1 }], mode: 'integrated', perStage: 1 })).data;
+    await s.waitJob(gen.jobId);
+    await s.call('PUT', `/api/materials/${id}/name`, { title: '새 이름' });
+    assert.equal((await s.call('GET', '/api/jobs/' + gen.jobId)).data.materialTitle, '새 이름', 'the set shows the name as it is now');
+    // The analysis editor renaming it also sticks.
+    m = (await s.call('PUT', '/api/materials/' + id, { title: '편집기에서 바꾼 이름' })).data;
+    assert.equal(m.titleFromUser, true);
+  } finally { await s.close(); }
+});
+
 test('analysis feedback beats the printed steps: a STEP count and an easier write-up survive merging, proofreading and printed titles', async () => {
   const s = await start();
   try {

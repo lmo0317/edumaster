@@ -577,3 +577,11 @@ a.lt-name:hover { color: var(--accent); }
 @media (max-width: 640px) { .stage-tabs button { padding: 10px 12px; gap: 8px; } .stage-txt small { white-space: normal; } }
 .stage[hidden] { display: none; }
 .fb-new .lt-actions { align-items: center; }
+/* Problem name: heading with 제목 수정, or the small form in its place */
+.name-show { display: flex; align-items: flex-start; gap: 12px; }
+.name-text { flex: 1; min-width: 0; }
+.name-show[hidden], .name-form[hidden] { display: none; }
+.name-form { display: grid; gap: 10px; margin: 0; }
+.name-form label { margin: 0 0 4px; font-size: 13px; }
+.name-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 640px) { .name-row { grid-template-columns: minmax(0, 1fr); } }

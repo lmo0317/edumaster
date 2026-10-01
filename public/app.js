@@ -436,18 +436,26 @@
     if (editing) stage = 'read';
     if (!['read', 'make'].includes(stage)) stage = gens.length ? 'make' : 'read';
     view.innerHTML = `<div class="lt">
-      <div class="lt-title"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}</p></div>
+      <div class="lt-title" id="m-name">
+        <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><button class="small" id="name-edit">✏️ 제목 수정</button></div>
+        <form class="name-form panel" hidden>
+          <div><label for="name-title">제목</label><input type="text" id="name-title" maxlength="120" value="${esc(m.title)}" required></div>
+          <div class="name-row"><div><label for="name-subject">과목</label><input type="text" id="name-subject" maxlength="40" value="${esc(m.subject || '')}" placeholder="예: 화학"></div>
+            <div><label for="name-topic">유형</label><input type="text" id="name-topic" maxlength="120" value="${esc(m.topic || '')}" placeholder="예: 화학 반응의 양적 관계"></div></div>
+          <div class="lt-actions"><span class="muted small">다시 분석해도 여기서 정한 제목은 바뀌지 않습니다.</span><span class="spacer"></span><button type="button" class="small" id="name-cancel">취소</button><button type="submit" class="small primary">저장</button></div>
+        </form>
+      </div>
       <nav class="stage-tabs" role="tablist">
         <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>원본 분석</b><small id="st-read"></small></span></button>
         <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>변형 문제</b><small id="st-make"></small></span></button>
       </nav>
       <div class="stage" data-pane="read">
         <section class="lt-sec">
-          <div class="lt-sec-head lt-sec-row"><div><h2>분석 결과</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><div class="lt-sec-btns"><button class="small" id="edit">직접 수정</button></div></div>
+          <div class="lt-sec-head lt-sec-row"><div><h2>분석 결과</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><div class="lt-sec-btns"><button class="small" id="edit">✏️ 분석 결과 수정</button></div></div>
           <div class="panel lt-list" id="analysis"></div>
         </section>
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>분석 피드백</h2><p>분석에서 바꾸고 싶은 점을 적고 다시 분석하면 AI가 모두 따릅니다. 몇 글자 오타는 직접 수정이 빠릅니다.</p></div>
+          <div class="lt-sec-head"><h2>분석 피드백</h2><p>분석에서 바꾸고 싶은 점을 적고 다시 분석하면 AI가 모두 따릅니다. 몇 글자 오타는 위의 분석 결과 수정으로 바로 고치는 편이 빠릅니다.</p></div>
           <div class="fb-wrap" id="afb"></div>
         </section>
       </div>
@@ -475,6 +483,20 @@
     $$('[data-stage-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.stageTab)));
     show(stage);
     $('#edit').addEventListener('click', () => editAnalysis(m));
+    // The name in place: 제목 수정 swaps the heading for a small form.
+    const nameForm = $('#m-name .name-form');
+    const naming = (on) => { $('#m-name .name-show').hidden = on; nameForm.hidden = !on; if (on) $('#name-title').focus(); };
+    $('#name-edit').addEventListener('click', () => naming(true));
+    $('#name-cancel').addEventListener('click', () => { nameForm.reset(); naming(false); });
+    nameForm.addEventListener('submit', guard(async (e) => {
+      e.preventDefault();
+      const saved = await api('PUT', `/api/materials/${m.id}/name`, { title: $('#name-title').value, subject: $('#name-subject').value, topic: $('#name-topic').value });
+      Object.assign(m, { title: saved.title, subject: saved.subject, topic: saved.topic, titleFromUser: saved.titleFromUser });
+      $('#m-name h1').textContent = saved.title;
+      $('#m-name .lt-meta').textContent = [saved.subject, saved.topic].filter(Boolean).join(' · ') || '과목·유형 없음';
+      naming(false);
+      toast('제목을 바꿨습니다.');
+    }));
     $('#del').addEventListener('click', guard(async () => { if (confirm('이 문제를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/'; } }));
     if (editing) editAnalysis(m); else showAnalysis(m);
     analysisFeedbackPanel(m);
@@ -937,7 +959,7 @@
       : busy ? `${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''} · ${model}`
       : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">검토 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
-      <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.title)}</a>
+      <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'}</h1>
         <a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>

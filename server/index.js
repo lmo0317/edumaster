@@ -296,7 +296,17 @@ function createApp(options = {}) {
     if (!merged.steps.length) throw fail(400, 'STEP이 하나 이상 있어야 합니다.');
     // Reading RAG: a teacher's word fix of the model's transcription (물질량 → 몰질량) is remembered for later analyses.
     if (m.status === 'ready' && m.problem) recordCorrections(store, readingCorrections(m, merged), m);
-    return store.materials.put(pipeline.refreshStepCountNote({ ...m, ...merged, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() }));
+    // A title the teacher changed is theirs from then on: a later analysis does not rename the problem.
+    const titleFromUser = m.titleFromUser || (body.title !== undefined && merged.title !== m.title);
+    return store.materials.put(pipeline.refreshStepCountNote({ ...m, ...merged, titleFromUser, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() }));
+  });
+  // The name of the problem (title, subject, topic), changed from the problem page's head without touching the analysis.
+  route('PUT', /^\/api\/materials\/([a-f0-9]+)\/name$/, async (req, res, [id]) => {
+    const m = getMaterial(id);
+    const body = await readBody(req, 8192);
+    const title = String(body.title ?? m.title).trim().slice(0, 120);
+    if (!title) throw fail(400, '제목을 입력해 주세요.');
+    return store.materials.put({ ...m, title, subject: String(body.subject ?? m.subject ?? '').trim().slice(0, 40), topic: String(body.topic ?? m.topic ?? '').trim().slice(0, 120), titleFromUser: m.titleFromUser || title !== m.title });
   });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
     getMaterial(id);
@@ -385,7 +395,8 @@ function createApp(options = {}) {
     const materialId = url.searchParams.get('materialId');
     return store.jobs.all().filter((j) => (!materialId || j.materialId === materialId) && (j.type !== 'analyze' || url.searchParams.get('all'))).slice(0, 100).map(jobSummary);
   });
-  route('GET', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => getJob(id));
+  // The problem's name as it is now (it may have been renamed since the set was made).
+  route('GET', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => { const job = getJob(id); return { ...job, materialTitle: store.materials.get(job.materialId)?.title || job.title }; });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/cancel$/, (req, res, [id]) => { getJob(id); return { cancelled: jobs.cancel(id) }; });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/resume$/, (req, res, [id]) => ({ jobId: jobs.resume(getJob(id)).id }));
   route('DELETE', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => {
