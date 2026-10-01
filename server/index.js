@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -96,7 +96,7 @@ function createApp(options = {}) {
         deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
         gemma: { label: pcModelLabel(gemma.model), available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
         ...(claudeKey && cfg.claude.selectable ? { claude: { label: PROVIDERS.claude.label, available: true, note: '유료 · 품질 가장 높음 · DeepSeek보다 비쌈' } } : {}),
-        ...(claudeCliReady(cfg) ? { 'claude-cli': { label: PROVIDERS['claude-cli'].label, available: true, note: '서버의 Claude 구독으로 실행 · 추가 비용 없음 · 품질 가장 높음 · 느릴 수 있음' } } : {}),
+        ...(claudeCliReady(cfg) ? { 'claude-cli': { label: claudeCliChoice(cfg).label, available: true, note: '서버의 Claude 구독으로 실행 · 추가 비용 없음 · 품질 가장 높음 · 느릴 수 있음' } } : {}),
         ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
       },
       activeJobs: jobs.activeCount(),
@@ -107,8 +107,8 @@ function createApp(options = {}) {
   // Picks the provider for a new job and refuses Gemma while the PC is off.
   const DEFAULTABLE = ['deepseek', 'claude-cli', 'gemma'];
   const defaultProvider = () => {
-    try { const p = JSON.parse(fs.readFileSync(path.join(cfg.dataDir, 'llm-settings.json'), 'utf8')).defaultProvider; return DEFAULTABLE.includes(p) ? p : 'deepseek'; }
-    catch { return 'deepseek'; }
+    const p = llmSettings(cfg.dataDir).defaultProvider;
+    return DEFAULTABLE.includes(p) ? p : 'deepseek';
   };
   const chooseProvider = async (value) => {
     // No model named: the 기본 모델 chosen on the LLM tab, if it can be used right now; otherwise DeepSeek.
@@ -196,13 +196,21 @@ function createApp(options = {}) {
         lastAt: mine.map((r) => r.createdAt).sort().pop() || '',
       };
     }
-    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model, limits: claudeLimits(cfg) }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' } };
+    return { usage, claude: { loggedIn: claudeCliReady(cfg), ...claudeCliChoice(cfg), limits: claudeLimits(cfg), models: CLAUDE_MODELS, efforts: CLAUDE_EFFORTS }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' } };
+  });
+  // The Claude model and effort the subscription runs (LLM tab).
+  route('PUT', /^\/api\/llm\/claude$/, async (req) => {
+    const body = await readBody(req, 1024);
+    if (!CLAUDE_MODELS[body.model]) throw fail(400, '고를 수 없는 Claude 모델입니다.');
+    if (!CLAUDE_EFFORTS.includes(body.effort)) throw fail(400, '추론 강도 값이 올바르지 않습니다.');
+    saveLlmSettings(cfg.dataDir, { claude: { model: body.model, effort: body.effort } });
+    return claudeCliChoice(cfg);
   });
   // 기본 모델: the model pages preselect and requests without a model use (LLM tab).
   route('PUT', /^\/api\/llm\/default$/, async (req) => {
     const body = await readBody(req, 1024);
     if (!DEFAULTABLE.includes(body.provider)) throw fail(400, '기본 모델로 고를 수 없는 모델입니다.');
-    fs.writeFileSync(path.join(cfg.dataDir, 'llm-settings.json'), JSON.stringify({ defaultProvider: body.provider }));
+    saveLlmSettings(cfg.dataDir, { defaultProvider: body.provider });
     return { defaultProvider: defaultProvider() };
   });
   // Replacing the DeepSeek key from the LLM tab: the new key is tried on DeepSeek's balance endpoint first and kept
@@ -440,7 +448,7 @@ function createApp(options = {}) {
     try {
       const { data } = await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'claude-check', budget: new Budget({ maxCalls: 2, maxTokens: 200000 }), effort: 'off', maxTokens: 2000,
         system: 'JSON만 출력한다.', text: '12×7의 값을 {"answer": 값} 형식으로만 답하라.' });
-      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: cfg.claudeCli.model, limits: claudeLimits(cfg) };
+      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: claudeCliChoice(cfg).label, limits: claudeLimits(cfg) };
     } catch (e) {
       return { ok: false, error: e.message.slice(0, 300), seconds: Math.round((Date.now() - started) / 100) / 10 };
     }

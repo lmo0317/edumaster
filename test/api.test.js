@@ -358,3 +358,20 @@ test('기본 모델: chosen on the LLM tab, it is what requests without a model 
     assert.match((await s.call('GET', '/api/llm')).data.deepseek.key, /^$|^…/, 'only the last characters are ever shown');
   } finally { await s.close(); }
 });
+
+test('Claude model and effort on the LLM tab: saved, validated, and shown by name', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    assert.equal((await s.call('PUT', '/api/llm/claude', { model: 'gpt-9', effort: 'low' })).status, 400);
+    assert.equal((await s.call('PUT', '/api/llm/claude', { model: 'claude-opus-5-5', effort: 'turbo' })).status, 400);
+    const r = (await s.call('PUT', '/api/llm/claude', { model: 'claude-sonnet-5-5', effort: 'medium' })).data;
+    assert.equal(r.label, 'Claude Sonnet 5.5 (구독)');
+    const llm = (await s.call('GET', '/api/llm')).data;
+    assert.equal(llm.claude.model, 'claude-sonnet-5-5');
+    assert.equal(llm.claude.effort, 'medium');
+    assert.ok(llm.claude.models['claude-opus-5-5']);
+    await s.call('PUT', '/api/llm/default', { provider: 'deepseek' });
+    assert.equal((await s.call('GET', '/api/llm')).data.claude.model, 'claude-sonnet-5-5', 'changing the 기본 모델 keeps the Claude choice');
+  } finally { await s.close(); }
+});

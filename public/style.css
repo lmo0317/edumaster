@@ -396,6 +396,9 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .llm-card.llm-default { border-color: #22a35a; box-shadow: 0 0 0 1px #22a35a inset; }
 .llm-default-row { display: flex; gap: 8px; align-items: center; margin: 6px 0 4px; min-height: 28px; }
 #ds-key-form input { width: 100%; margin-top: 6px; }
+.claude-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+.claude-choice label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin: 0; }
+.claude-choice select { width: 100%; margin-top: 2px; }
 .limit { margin: 10px 0; }
 .limit-head { display: flex; justify-content: space-between; align-items: baseline; }
 .limit-bar { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }

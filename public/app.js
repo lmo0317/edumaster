@@ -1068,6 +1068,7 @@
   // ------------------------------------------------------------------ LLM
   // Each model problems can be made with: whether it is connected and what it has used (today / 30 days). The
   // DeepSeek balance and the numbers are fetched when the page opens and on 새로 고침, not continuously.
+  const EFFORT_TXT = { auto: '자동 (설계·검토는 높게)', low: '낮음 (빠름)', medium: '중간', high: '높음', xhigh: '매우 높음', max: '최대 (느림·한도 많이 씀)' };
   async function llmView() {
     view.innerHTML = `<div class="row"><h1 style="margin-right:auto">LLM</h1><span class="muted small" id="llm-at"></span><button id="llm-refresh">새로 고침</button></div>
       <p class="muted">문제를 만들 때 쓰는 AI 모델의 연결 상태와 사용량입니다. 잔액과 사용량은 이 화면을 열거나 <b>새로 고침</b>을 누를 때 가져옵니다.</p>
@@ -1095,8 +1096,12 @@
           : `<button class="small" data-default="${key}" ${ok ? '' : 'disabled'}>기본 모델로 사용</button>`}</div>${body}</div>`;
       const lim = llm.claude.loggedIn ? llm.claude.limits : null;
       $('#llm-cards').innerHTML = [
-        card('claude-cli', 'Claude Opus 5.5 (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
-          `${llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
+        card('claude-cli', llm.claude.label || 'Claude (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
+          `<div class="claude-choice">
+            <label>모델<select id="cl-model">${Object.entries(llm.claude.models || {}).map(([id, name]) => `<option value="${id}" ${id === llm.claude.model ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></label>
+            <label>추론 강도<select id="cl-effort">${(llm.claude.efforts || []).map((e) => `<option value="${e}" ${e === llm.claude.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></label>
+          </div>
+          ${llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
             <p class="muted small">${lim ? `${fmtTime(lim.at)} 기준` : '아직 측정한 적 없음 — 새로 고침을 눌러 주세요'} · 구독으로 실행 · 호출당 비용 없음</p>${month(llm.usage['claude-cli'])}` : ''}
           <div id="claude-login"></div>`),
         card('deepseek', p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
@@ -1115,6 +1120,15 @@
         toast('기본 모델을 바꿨습니다. 문제 분석·생성에서 이 모델이 처음 선택됩니다.');
         await paint(false);
       })));
+      // Model and effort are saved as soon as one is picked; the next Claude call uses them.
+      const saveChoice = guard(async () => {
+        await api('PUT', '/api/llm/claude', { model: $('#cl-model').value, effort: $('#cl-effort').value });
+        await loadStatus().catch(() => {});
+        toast('Claude 설정을 바꿨습니다. 다음 호출부터 적용됩니다. 쓸 수 있는지는 연결 확인으로 볼 수 있습니다.');
+        await paint(false);
+      });
+      $('#cl-model')?.addEventListener('change', saveChoice);
+      $('#cl-effort')?.addEventListener('change', saveChoice);
       $('#ds-key-edit').addEventListener('click', () => { $('#ds-key-form').hidden = false; $('#ds-key').focus(); });
       $('#ds-key-cancel').addEventListener('click', () => { $('#ds-key').value = ''; $('#ds-key-form').hidden = true; });
       $('#ds-key-save').addEventListener('click', guard(async (e) => {

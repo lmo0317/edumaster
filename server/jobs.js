@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice } = require('./llm');
 const pipeline = require('./pipeline');
 const { PROMPT_VERSION } = require('./prompts');
 
@@ -93,7 +93,9 @@ function createJobs({ store, llm, config }) {
       job.status = 'running'; job.startedAt = job.startedAt || new Date().toISOString();
       const ctx = context(job, controller);
       ctx.save();
-      // The PC provider serves whichever local model is loaded; the job keeps its name (reports, PDFs).
+      // The PC provider serves whichever local model is loaded, and the subscription runs the Claude model chosen on
+      // the LLM tab; the job keeps that name (reports, PDFs).
+      if (ctx.provider === 'claude-cli') job.modelLabel = claudeCliChoice(config).label;
       const named = ctx.provider === 'gemma' && llm.gemmaStatus
         ? llm.gemmaStatus(true).then((s) => { if (s.model) job.modelLabel = pcModelLabel(s.model).replace(' (PC)', ''); }).catch(() => {})
         : Promise.resolve();

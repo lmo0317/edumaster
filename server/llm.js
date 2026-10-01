@@ -138,6 +138,29 @@ function claudeCliReady(config) {
   if (config.claudeCli?.off) return false;
   return Boolean(claudeCliToken(config)) || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
 }
+// LLM tab settings (data/llm-settings.json): the 기본 모델, and which Claude model and effort the subscription runs.
+const CLAUDE_MODELS = {
+  'claude-opus-5-5': 'Claude Opus 5.5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
+  'claude-fable-5-1': 'Claude Fable 5.1',
+};
+const CLAUDE_EFFORTS = ['auto', 'low', 'medium', 'high', 'xhigh', 'max'];
+function llmSettings(dataDir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'llm-settings.json'), 'utf8')) || {}; } catch { return {}; }
+}
+function saveLlmSettings(dataDir, patch) {
+  const next = { ...llmSettings(dataDir), ...patch };
+  fs.writeFileSync(path.join(dataDir, 'llm-settings.json'), JSON.stringify(next, null, 1));
+  return next;
+}
+/** The Claude model and effort the subscription runs: the LLM tab's choice, else the server's default. */
+function claudeCliChoice(config) {
+  const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};
+  const model = CLAUDE_MODELS[s.model] ? s.model : config.claudeCli.model;
+  return { model, effort: CLAUDE_EFFORTS.includes(s.effort) ? s.effort : 'auto', label: `${CLAUDE_MODELS[model] || model} (구독)` };
+}
+
 /** The subscription's use as of the last call (5-hour and weekly windows), kept for the LLM tab. */
 function saveClaudeLimits(config, info) {
   if (!config.dataDir) return;
@@ -343,9 +366,10 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       });
       for (const turn of messages.slice(2)) texts.push(`[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}`);
       const prompt = (images ? '[이미지: 경로]가 있는 자리마다 그 이미지 파일을 Read 도구로 열어 자세히 본 뒤 답한다. 다른 파일은 열지 않는다.\n\n' : '') + texts.join('\n');
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', config.claudeCli.model, '--system-prompt', messages[0].content, '--no-session-persistence',
+      const choice = claudeCliChoice(config);
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', choice.model, '--system-prompt', messages[0].content, '--no-session-persistence',
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
-        ...(effort === 'high' ? ['--effort', 'high'] : effort === 'off' ? ['--effort', 'low'] : [])];
+        ...(effort === 'off' ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
         const token = claudeCliToken(config);
         const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env: token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env });
@@ -473,7 +497,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? config.claudeCli.model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     let messages = [{ role: 'system', content: system }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -570,4 +594,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

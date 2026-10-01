@@ -56,3 +56,19 @@ test('claude-cli: a text-only call gets no tools; a usage limit comes back as a 
     await assert.rejects(() => llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'low', system: 's', text: '문제' }), /usage limit reached/);
   } finally { delete process.env.FAKE_LIMIT; }
 });
+
+test('claude-cli: the model and effort chosen on the LLM tab are what the CLI is run with (reading calls stay quick)', async () => {
+  const { saveLlmSettings, claudeCliChoice } = require('../server/llm');
+  saveLlmSettings(dataDir, { claude: { model: 'claude-sonnet-5-5', effort: 'high' } });
+  try {
+    const llm = llmFor();
+    await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'low', system: 's', text: '문제' });
+    let s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    assert.equal(s.args[s.args.indexOf('--model') + 1], 'claude-sonnet-5-5');
+    assert.equal(s.args[s.args.indexOf('--effort') + 1], 'high');
+    await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'off', system: 's', text: '문제' });
+    s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    assert.equal(s.args[s.args.indexOf('--effort') + 1], 'low');
+    assert.equal(claudeCliChoice({ dataDir, claudeCli: { model: 'claude-opus-5-5' } }).label, 'Claude Sonnet 5.5 (구독)');
+  } finally { saveLlmSettings(dataDir, { claude: {} }); }
+});
