@@ -81,7 +81,17 @@
   const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5', 'claude-cli': 'Claude Opus 5.5 (구독)' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
-  const loadStatus = async () => (statusCache = await api('GET', '/api/status'));
+  const loadStatus = async () => { statusCache = await api('GET', '/api/status'); paintModelState(statusCache); return statusCache; };
+  // Header: the 기본 모델 (links to the LLM tab), and when it cannot be used right now, what is used instead.
+  function paintModelState(status) {
+    const el = $('#model-state');
+    if (!el) return;
+    if (!status?.authenticated) { el.textContent = status?.llm === 'mock' ? '모의 모드' : ''; return; }
+    const key = status.defaultProvider || 'deepseek';
+    const p = status.providers?.[key];
+    const label = p?.label || PROVIDER_LABEL[key] || key;
+    el.innerHTML = `<a class="model-state" href="#/llm" title="기본 모델 바꾸기">기본 모델: <b>${esc(label)}</b>${p?.available === false || !p ? ' <span class="chip warn">꺼짐 → DeepSeek 사용</span>' : ''}${status.llm === 'mock' ? ' · 모의 모드' : ''}</a>`;
+  }
   // Starts on the 기본 모델 chosen on the LLM tab (or DeepSeek when that one cannot be used right now).
   function providerPicker(name, selected = statusCache?.defaultProvider) {
     const providers = statusCache?.providers || { deepseek: { label: 'DeepSeek V4 Flash', available: true, note: '' } };
@@ -114,10 +124,11 @@
       await api('POST', '/api/login', { code: e.target.code.value });
       el.remove();
       $('#logout').hidden = false;
+      loadStatus().catch(() => {});
       route();
     }));
   }
-  $('#logout').addEventListener('click', guard(async () => { await api('POST', '/api/logout'); location.hash = '#/'; showLogin(); }));
+  $('#logout').addEventListener('click', guard(async () => { await api('POST', '/api/logout'); location.hash = '#/'; $('#model-state').textContent = ''; showLogin(); }));
 
   // ------------------------------------------------------------------ images
   async function readImage(file) {
@@ -1141,7 +1152,6 @@
   (async () => {
     try {
       const status = await loadStatus();
-      $('#model-state').textContent = status.llm === 'mock' ? '모의 모드' : '';
       if (!status.authenticated) return showLogin();
       $('#logout').hidden = false;
     } catch { /* shown per view */ }

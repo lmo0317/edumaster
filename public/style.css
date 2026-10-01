@@ -423,3 +423,9 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 /* 전체 피드백: problem feedback grouped under each problem */
 .learn-sub { margin: 8px 0 14px; }
 .learn-sub > .row { margin-bottom: 6px; }
+
+/* Header: the 기본 모델 */
+.model-state { color: var(--muted); text-decoration: none; white-space: nowrap; }
+.model-state b { color: var(--ink); }
+.model-state:hover b { text-decoration: underline; }
+@media (max-width: 600px) { .model-state { font-size: 12px; } .model-state .chip { display: none; } }
