@@ -345,6 +345,14 @@ test('analysis feedback accumulates on the problem and every re-analysis gets al
     assert.equal(m.status, 'ready');
     m = (await s.call('DELETE', `/api/materials/${a.material.id}/analysis-feedback/0`)).data;
     assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기']);
+    // Added and edited from the problem's feedback list without analyzing again.
+    m = (await s.call('POST', `/api/materials/${a.material.id}/analysis-feedback`, { text: 'STEP을 4개로 나눈다' })).data;
+    assert.equal(m.status, 'ready', 'adding does not start an analysis');
+    assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기', 'STEP을 4개로 나눈다']);
+    m = (await s.call('PUT', `/api/materials/${a.material.id}/analysis-feedback/1`, { text: 'STEP을 4개로 나눠 한 단계 더 생각하게' })).data;
+    assert.equal(m.analysisFeedback[1].text, 'STEP을 4개로 나눠 한 단계 더 생각하게');
+    assert.equal((await s.call('PUT', `/api/materials/${a.material.id}/analysis-feedback/9`, { text: '없는 것' })).status, 404);
+    assert.equal((await s.call('POST', `/api/materials/${a.material.id}/analysis-feedback`, { text: ' ' })).status, 400);
   } finally { await s.close(); }
 });
 

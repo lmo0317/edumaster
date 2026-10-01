@@ -316,6 +316,24 @@ function createApp(options = {}) {
     store.materials.put({ ...m, status: 'analyzing', error: '', analysisFeedback, note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
     return { jobId: jobs.analyze(m, provider).id };
   });
+  // Analysis feedback is also added and edited on its own (the problem's feedback list); it is used at the next analysis.
+  const analysisNote = (body) => {
+    const text = String(body.text || '').trim().slice(0, 1000);
+    if (text.length < 2) throw fail(400, '피드백 내용을 입력해 주세요.');
+    return text;
+  };
+  route('POST', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback$/, async (req, res, [id]) => {
+    const m = getMaterial(id);
+    const text = analysisNote(await readBody(req, 8192));
+    return store.materials.put({ ...m, analysisFeedback: [...(m.analysisFeedback || []), { text, at: new Date().toISOString() }].slice(-20) });
+  });
+  route('PUT', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)$/, async (req, res, [id, index]) => {
+    const m = getMaterial(id);
+    const list = [...(m.analysisFeedback || [])];
+    if (!list[Number(index)]) throw fail(404, '피드백을 찾지 못했습니다.');
+    list[Number(index)] = { ...list[Number(index)], text: analysisNote(await readBody(req, 8192)) };
+    return store.materials.put({ ...m, analysisFeedback: list });
+  });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)$/, (req, res, [id, index]) => {
     const m = getMaterial(id);
     const analysisFeedback = (m.analysisFeedback || []).filter((_, i) => i !== Number(index));
