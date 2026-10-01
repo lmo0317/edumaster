@@ -407,6 +407,36 @@ test('단어 확인: a confused word is asked plainly, and 아니요 replaces it
   } finally { await s.close(); }
 });
 
+test('학습: everything taught, by kind and where it applies, with the latest first; a problem\'s item can be widened to every problem', async () => {
+  const s = await start();
+  try {
+    assert.equal((await s.call('GET', '/api/learning')).status, 401);
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'P', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const id = a.material.id;
+    await s.call('POST', `/api/materials/${id}/analysis-feedback`, { text: 'STEP을 4개로 나눈다' });
+    await s.call('POST', '/api/common/analysis', { text: '해설은 쉽게 풀어 쓴다' });
+    const own = (await s.call('POST', '/api/rules', { text: '단서를 노출하지 않는다', target: 'problem', kind: 'feedback', scope: 'material', source: { materialId: id } })).data;
+    await s.call('POST', '/api/rules', { text: '조건을 낭비하지 않는다', target: 'all', kind: 'feedback', scope: 'global' });
+    let d = (await s.call('GET', '/api/learning')).data;
+    assert.deepEqual(d.analysis.common.map((x) => x.text), ['해설은 쉽게 풀어 쓴다']);
+    assert.deepEqual(d.analysis.problems.map((p) => [p.title, p.items.map((x) => x.text)]), [['P', ['STEP을 4개로 나눈다']]]);
+    assert.deepEqual(d.generation.common.map((r) => r.text), ['조건을 낭비하지 않는다']);
+    assert.deepEqual(d.generation.problems.map((r) => [r.text, r.materialTitle]), [['단서를 노출하지 않는다', 'P']]);
+    assert.ok(d.recent.length >= 4 && d.recent.every((x, i) => !i || d.recent[i - 1].at >= x.at), 'latest first');
+    assert.ok(d.recent.some((x) => x.kind === '분석 피드백' && x.scope === 'P'));
+    // Widening: the problem's analysis feedback moves to every problem; its generation feedback becomes global.
+    const m = (await s.call('POST', `/api/materials/${id}/analysis-feedback/0/promote`)).data;
+    assert.equal(m.analysisFeedback.length, 0);
+    await s.call('PUT', '/api/rules/' + own.id, { scope: 'global' });
+    d = (await s.call('GET', '/api/learning')).data;
+    assert.deepEqual(d.analysis.common.map((x) => x.text), ['해설은 쉽게 풀어 쓴다', 'STEP을 4개로 나눈다']);
+    assert.equal(d.generation.problems.length, 0);
+    assert.equal(d.generation.common.length, 2);
+  } finally { await s.close(); }
+});
+
 test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
   const s = await start();
   try {

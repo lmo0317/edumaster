@@ -596,3 +596,14 @@ a.lt-name:hover { color: var(--accent); }
   .fs-txt b { font-size: 12px; } .fs-txt small { font-size: 10.5px; }
   .flow-now { flex-wrap: wrap; }
 }
+/* 학습: the count of each kind by where it applies */
+.learn-sum { padding: 6px 18px; }
+.learn-table2 { width: 100%; border-collapse: collapse; font-size: 14px; }
+.learn-table2 th, .learn-table2 td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.learn-table2 tr:last-child th, .learn-table2 tr:last-child td { border-bottom: 0; }
+.learn-table2 tr:first-child th { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.learn-table2 td { width: 34%; }
+.learn-n { border: 0; background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 3px 10px; border-radius: 999px; font-size: 13.5px; }
+.learn-n small { font-weight: 500; color: var(--muted); margin-left: 2px; }
+.fb-common { margin: 2px 2px 0; }
+.fb-kind a.muted { margin-left: auto; font-size: 12.5px; color: var(--muted); }

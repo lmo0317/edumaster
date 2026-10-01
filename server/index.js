@@ -460,6 +460,56 @@ function createApp(options = {}) {
     return { adopted: item.adopted };
   });
 
+  // 학습: everything the AI has been taught, in one read — by kind (분석 피드백, 생성 피드백, 본보기, 읽기 교정) and by
+  // where it applies (모든 문제 / one problem), with where each was learned and, for generation feedback, how the
+  // variants made since kept it. 최근 학습 lists the latest of all of it.
+  route('GET', /^\/api\/learning$/, () => {
+    const settings = llmSettings(cfg.dataDir);
+    const materials = store.materials.all();
+    const titleOf = new Map(materials.map((m) => [m.id, m.title]));
+    const jobs = store.jobs.all().filter((j) => j.type === 'generate');
+    const judged = new Map();
+    for (const it of jobs.flatMap((j) => j.items || [])) {
+      for (const r of it.verification?.rules || []) {
+        if (!r.judged) continue;
+        const k = judged.get(r.id) || { kept: 0, broken: 0 };
+        if (r.judged.ok) k.kept++; else k.broken++;
+        judged.set(r.id, k);
+      }
+    }
+    const rules = store.rules.all().map((r) => ({ ...r, kept: judged.get(r.id)?.kept || 0, broken: judged.get(r.id)?.broken || 0,
+      materialTitle: r.source?.materialId ? titleOf.get(r.source.materialId) || '삭제된 문제' : '' }));
+    const analysisProblems = materials.filter((m) => (m.analysisFeedback || []).length).map((m) => ({ materialId: m.id, title: m.title, analyzedAt: m.analyzedAt || '',
+      items: m.analysisFeedback.map((f, i) => ({ i, text: f.text, at: f.at, applied: Boolean(m.analyzedAt && f.at < m.analyzedAt) })) }));
+    const examples = jobs.flatMap((j) => (j.items || []).filter((it) => it.adopted && it.problem).map((it) => ({
+      materialId: j.materialId, title: titleOf.get(j.materialId) || j.title, jobId: j.id, index: it.index, label: it.label,
+      preview: String(it.problem.text || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|'))?.slice(0, 120) || '', at: it.reviewedAt || j.createdAt })));
+    const corrections = store.corrections.all();
+    const where = (r) => (r.source?.jobId ? `${r.source.label || '변형 문제'}의 고칠 점` : r.scope === 'material' ? '문제 페이지' : '학습 페이지');
+    const recent = [
+      ...rules.filter((r) => r.scope !== 'topic').map((r) => ({ at: r.createdAt, kind: '생성 피드백', scope: r.scope === 'material' ? r.materialTitle : '모든 문제', text: r.text, from: where(r), href: r.source?.jobId ? `#/j/${r.source.jobId}` : r.source?.materialId ? `#/m/${r.source.materialId}` : '' })),
+      ...analysisProblems.flatMap((p) => p.items.map((f) => ({ at: f.at, kind: '분석 피드백', scope: p.title, text: f.text, from: '문제 페이지', href: `#/m/${p.materialId}` }))),
+      ...(settings.commonAnalysis || []).map((f) => ({ at: f.at, kind: '분석 피드백', scope: '모든 문제', text: f.text, from: '학습 페이지', href: '' })),
+      ...examples.map((e) => ({ at: e.at, kind: '본보기', scope: e.title, text: `${e.label} 채택`, from: '세트 검토', href: `#/j/${e.jobId}?item=${e.index}` })),
+      ...corrections.map((c) => ({ at: c.lastAt || c.createdAt, kind: '읽기 교정', scope: '모든 문제', text: `"${c.wrong}" → "${c.right}"`, from: '분석 결과 수정', href: '' })),
+    ].filter((x) => x.at).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12);
+    return {
+      persona: settings.persona || '',
+      analysis: { common: settings.commonAnalysis || [], problems: analysisProblems },
+      generation: { common: rules.filter((r) => r.scope === 'global'), topic: rules.filter((r) => r.scope === 'topic'), problems: rules.filter((r) => r.scope === 'material') },
+      examples, corrections, recent,
+      checks: { analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair },
+    };
+  });
+  // One problem's analysis feedback made a rule for every problem (학습 → 모든 문제에 적용).
+  route('POST', /^\/api\/materials\/([a-f0-9]+)\/analysis-feedback\/(\d+)\/promote$/, (req, res, [id, index]) => {
+    const m = getMaterial(id);
+    const item = (m.analysisFeedback || [])[Number(index)];
+    if (!item) throw fail(404, '피드백을 찾지 못했습니다.');
+    saveLlmSettings(cfg.dataDir, { commonAnalysis: [...(llmSettings(cfg.dataDir).commonAnalysis || []), { text: item.text, at: new Date().toISOString() }].slice(-30) });
+    return store.materials.put({ ...m, analysisFeedback: m.analysisFeedback.filter((_, i) => i !== Number(index)) });
+  });
+
   // learning rules
   route('GET', /^\/api\/rules$/, () => store.rules.all());
   route('POST', /^\/api\/rules$/, async (req) => {
