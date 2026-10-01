@@ -136,7 +136,11 @@ const PROVIDERS = {
 /** The Claude Code CLI is installed and someone has logged in to it on this machine (the file holds the login). */
 function claudeCliReady(config) {
   if (config.claudeCli?.off) return false;
-  return fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
+  return Boolean(claudeCliToken(config)) || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
+}
+/** The long-lived token saved by the 시스템 page's login (deploy/claude-login.py), if any. */
+function claudeCliToken(config) {
+  try { return config.dataDir ? fs.readFileSync(path.join(config.dataDir, 'claude-oauth-token.txt'), 'utf8').trim() : ''; } catch { return ''; }
 }
 
 // POST JSON with our own timeout and the job's cancel signal.
@@ -331,7 +335,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
         ...(effort === 'high' ? ['--effort', 'high'] : effort === 'off' ? ['--effort', 'low'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
-        const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env: process.env });
+        const token = claudeCliToken(config);
+        const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env: token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env });
         let out = ''; let err = '';
         const timer = setTimeout(() => { child.kill('SIGTERM'); reject(Object.assign(new Error('Claude(구독) 응답 시간이 초과되었습니다.'), { status: 504 })); }, config.claudeCli.timeoutMs);
         const abort = () => child.kill('SIGTERM');

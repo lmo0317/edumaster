@@ -316,46 +316,45 @@ function createApp(options = {}) {
       .map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
     return { rules: prompts.rulesBlock(global).trim(), reading: readingHint(store.corrections.all()) };
   });
-  // Claude subscription login for the CLI provider, from the 시스템 page: the server runs `claude auth login`, shows
-  // the sign-in link, and passes the code the teacher pastes after signing in straight to that process. The code is
-  // never stored or logged. One login at a time, given up after 10 minutes.
+  // Claude subscription login for the CLI provider, from the 시스템 page (no SSH session needed): the server runs
+  // deploy/claude-login.py, which runs `claude setup-token` in a pseudo-terminal (it needs one; `claude auth login`
+  // only waits for a browser callback to the server itself), shows the sign-in link, takes the code the teacher
+  // pastes after signing in, and saves the long-lived token in data/ (mode 600). The code and the token are never
+  // logged or sent back. One login at a time, given up after 10 minutes.
   let claudeLogin = null;
-  const stripAnsi = (s) => String(s).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r/g, '');
-  route('GET', /^\/api\/claude-login$/, () => ({ loggedIn: claudeCliReady(cfg), pending: Boolean(claudeLogin), url: claudeLogin?.url || '' }));
+  route('GET', /^\/api\/claude-login$/, () => ({ loggedIn: claudeCliReady(cfg), pending: Boolean(claudeLogin?.url), url: claudeLogin?.url || '' }));
   route('POST', /^\/api\/claude-login\/start$/, async () => {
-    if (claudeLogin?.url) return { url: claudeLogin.url };
+    if (claudeLogin?.url && !claudeLogin.done) return { url: claudeLogin.url };
     const { spawn } = require('node:child_process');
-    const command = `${cfg.claudeCli.bin} auth login --claudeai`;
-    // Under `script` the CLI gets a terminal, as it would in an SSH session.
-    const child = process.platform === 'linux' ? spawn('script', ['-qfec', command, '/dev/null']) : spawn(cfg.claudeCli.bin, ['auth', 'login', '--claudeai']);
-    const state = { child, out: '', url: '', done: false, code: null };
+    const child = spawn('python3', [path.join(cfg.root, 'deploy', 'claude-login.py'), path.join(cfg.dataDir, 'claude-oauth-token.txt')],
+      { env: { ...process.env, CLAUDE_BIN: cfg.claudeCli.bin } });
+    const state = { child, url: '', done: false, result: null };
     claudeLogin = state;
-    const end = () => { state.done = true; if (claudeLogin === state) claudeLogin = null; };
-    child.stdout.on('data', (d) => { state.out = (state.out + stripAnsi(d)).slice(-8000); });
-    child.stderr.on('data', (d) => { state.out = (state.out + stripAnsi(d)).slice(-8000); });
-    child.on('close', (c) => { state.code = c; end(); });
-    child.on('error', end);
+    let buf = '';
+    child.stdout.on('data', (d) => {
+      buf += d;
+      for (let i; (i = buf.indexOf('\n')) >= 0;) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        try { const msg = JSON.parse(line); if (msg.url) state.url = msg.url; if ('ok' in msg) state.result = msg; } catch { /* not a status line */ }
+      }
+    });
+    child.on('close', () => { state.done = true; if (!state.result) state.result = { ok: false, error: '로그인 과정이 끝났습니다.' }; if (claudeLogin === state) claudeLogin = null; });
+    child.on('error', () => { state.done = true; state.result = { ok: false, error: '로그인 도구를 실행하지 못했습니다.' }; });
     setTimeout(() => { if (!state.done) child.kill('SIGTERM'); }, 10 * 60 * 1000).unref();
-    for (let i = 0; i < 40 && !state.url && !state.done; i++) {
-      await new Promise((r) => setTimeout(r, 250));
-      state.url = /https:\/\/\S+/.exec(state.out)?.[0] || '';
-    }
-    if (!state.url) { child.kill('SIGTERM'); throw fail(502, '로그인 링크를 받지 못했습니다: ' + state.out.trim().slice(-200)); }
+    for (let i = 0; i < 280 && !state.url && !state.done; i++) await new Promise((r) => setTimeout(r, 250));
+    if (!state.url) { child.kill('SIGTERM'); throw fail(502, state.result?.error || '로그인 링크를 받지 못했습니다.'); }
     return { url: state.url };
   });
   route('POST', /^\/api\/claude-login\/code$/, async (req) => {
     const body = await readBody(req, 4096);
     const code = String(body.code || '').trim();
     const state = claudeLogin;
-    if (!state) throw fail(409, '진행 중인 로그인이 없습니다. 로그인을 다시 시작해 주세요.');
-    if (!code) throw fail(400, '코드를 붙여 넣어 주세요.');
-    const before = state.out.length;
-    state.child.stdin.write(code + '\r');
-    for (let i = 0; i < 120 && !state.done && !claudeCliReady(cfg); i++) await new Promise((r) => setTimeout(r, 250));
-    if (claudeCliReady(cfg)) { if (!state.done) state.child.kill('SIGTERM'); return { loggedIn: true }; }
-    // Show what the CLI said after the code (it never echoes the code back in full).
-    const said = state.out.slice(before).trim().split('\n').filter((l) => l && !l.includes(code)).slice(-3).join(' ');
-    throw fail(400, '로그인되지 않았습니다. ' + (said || '코드를 다시 확인해 주세요.'));
+    if (!state || state.done) throw fail(409, '진행 중인 로그인이 없습니다. 로그인을 다시 시작해 주세요.');
+    if (!code || /\s/.test(code)) throw fail(400, '코드를 그대로 붙여 넣어 주세요.');
+    state.child.stdin.write(code + '\n');
+    for (let i = 0; i < 480 && !state.result; i++) await new Promise((r) => setTimeout(r, 250));
+    if (state.result?.ok && claudeCliReady(cfg)) return { loggedIn: true };
+    throw fail(400, '로그인되지 않았습니다. ' + (state.result?.error || '시간이 초과되었습니다.') + ' 로그인을 다시 시작해 주세요.');
   });
   route('POST', /^\/api\/claude-login\/cancel$/, () => { claudeLogin?.child.kill('SIGTERM'); claudeLogin = null; return { ok: true }; });
 
