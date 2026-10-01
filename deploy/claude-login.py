@@ -78,9 +78,16 @@ if not code:
 mark = len(text())
 os.write(fd, code.encode() + b"\r")
 token_re = re.compile(r"sk-ant-oat[0-9A-Za-z_-]+")
-pump(90, lambda t: token_re.search(t[mark:].replace(" ", "").replace("\n", "")) or "error" in t[mark:].lower())
+# The token may be wrapped and drawn inside a box: drop whitespace and box-drawing characters before looking.
+squash = lambda t: re.sub(r"[\s─-╿|]", "", t)
+pump(80, lambda t: token_re.search(squash(t[mark:])) or "error" in t[mark:].lower())
 after = text()[mark:]
-token = token_re.search(after.replace(" ", "").replace("\n", ""))
+token = token_re.search(squash(after))
+# What the CLI said after the code, with the code and any token masked, for diagnosing a failed login.
+log = os.path.join(os.path.dirname(os.path.abspath(TOKEN_FILE)), "claude-login.log")
+masked = re.sub(r"\*{4,}\S*", "[CODE]", token_re.sub("[TOKEN]", after.replace(code, "[CODE]")))  # the CLI echoes the code's tail
+with os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+    f.write("\n".join(" ".join(line.split()) for line in masked.splitlines() if line.strip())[-4000:])
 if token:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     with os.fdopen(os.open(TOKEN_FILE, flags, 0o600), "w") as f:

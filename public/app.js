@@ -927,9 +927,21 @@
         <label for="cl-code">로그인 후 표시된 코드</label><input type="text" id="cl-code" autocomplete="off" spellcheck="false" placeholder="코드를 붙여 넣으세요">
         <div class="fb-add-bar"><button id="cl-cancel">취소</button><span class="spacer"></span><button class="primary" id="cl-send">연결</button></div>`;
       $('#cl-send', el).addEventListener('click', guard(async (e) => {
-        e.target.disabled = true;
-        try { await api('POST', '/api/claude-login/code', { code: $('#cl-code', el).value }); toast('Claude 구독에 연결했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {}); }
-        finally { if (e.target.isConnected) e.target.disabled = false; }
+        e.target.disabled = true; e.target.textContent = '확인하는 중… (최대 1~2분)';
+        try {
+          await api('POST', '/api/claude-login/code', { code: $('#cl-code', el).value });
+          // The server checks the code with Claude in the background; ask for the result every few seconds.
+          for (let i = 0; i < 60; i++) {
+            await new Promise((r) => setTimeout(r, 2500));
+            const st = await api('GET', '/api/claude-login');
+            if (st.loggedIn) { toast('Claude 구독에 연결했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {}); return; }
+            if (!st.checking && st.result && !st.result.ok) throw new Error('연결되지 않았습니다: ' + (st.result.error || '코드를 다시 확인해 주세요.') + ' 로그인을 다시 시작해 주세요.');
+          }
+          throw new Error('확인이 너무 오래 걸립니다. 잠시 후 시스템 화면을 다시 열어 확인해 주세요.');
+        } finally {
+          if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '연결'; }
+          if ($('#claude-login') && !(await api('GET', '/api/claude-login').catch(() => ({}))).pending) claudeLoginPanel();
+        }
       }));
       $('#cl-cancel', el).addEventListener('click', guard(async () => { await api('POST', '/api/claude-login/cancel'); claudeLoginPanel(); }));
     };

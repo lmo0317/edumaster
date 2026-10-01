@@ -322,7 +322,11 @@ function createApp(options = {}) {
   // pastes after signing in, and saves the long-lived token in data/ (mode 600). The code and the token are never
   // logged or sent back. One login at a time, given up after 10 minutes.
   let claudeLogin = null;
-  route('GET', /^\/api\/claude-login$/, () => ({ loggedIn: claudeCliReady(cfg), pending: Boolean(claudeLogin?.url), url: claudeLogin?.url || '' }));
+  let lastLoginResult = null;
+  route('GET', /^\/api\/claude-login$/, () => ({
+    loggedIn: claudeCliReady(cfg), pending: Boolean(claudeLogin?.url), url: claudeLogin?.url || '',
+    checking: Boolean(claudeLogin?.codeSent && !claudeLogin.result), result: lastLoginResult,
+  }));
   route('POST', /^\/api\/claude-login\/start$/, async () => {
     if (claudeLogin?.url && !claudeLogin.done) return { url: claudeLogin.url };
     const { spawn } = require('node:child_process');
@@ -335,7 +339,7 @@ function createApp(options = {}) {
       buf += d;
       for (let i; (i = buf.indexOf('\n')) >= 0;) {
         const line = buf.slice(0, i); buf = buf.slice(i + 1);
-        try { const msg = JSON.parse(line); if (msg.url) state.url = msg.url; if ('ok' in msg) state.result = msg; } catch { /* not a status line */ }
+        try { const msg = JSON.parse(line); if (msg.url) state.url = msg.url; if ('ok' in msg) { state.result = msg; lastLoginResult = { ...msg, at: new Date().toISOString() }; } } catch { /* not a status line */ }
       }
     });
     child.on('close', () => { state.done = true; if (!state.result) state.result = { ok: false, error: '로그인 과정이 끝났습니다.' }; if (claudeLogin === state) claudeLogin = null; });
@@ -351,10 +355,12 @@ function createApp(options = {}) {
     const state = claudeLogin;
     if (!state || state.done) throw fail(409, '진행 중인 로그인이 없습니다. 로그인을 다시 시작해 주세요.');
     if (!code || /\s/.test(code)) throw fail(400, '코드를 그대로 붙여 넣어 주세요.');
+    if (state.codeSent) throw fail(409, '이미 코드를 확인하는 중입니다.');
+    // The check takes up to a minute or so; the page asks GET /api/claude-login for the result instead of waiting here.
+    state.codeSent = true;
+    lastLoginResult = null;
     state.child.stdin.write(code + '\n');
-    for (let i = 0; i < 480 && !state.result; i++) await new Promise((r) => setTimeout(r, 250));
-    if (state.result?.ok && claudeCliReady(cfg)) return { loggedIn: true };
-    throw fail(400, '로그인되지 않았습니다. ' + (state.result?.error || '시간이 초과되었습니다.') + ' 로그인을 다시 시작해 주세요.');
+    return { checking: true };
   });
   route('POST', /^\/api\/claude-login\/cancel$/, () => { claudeLogin?.child.kill('SIGTERM'); claudeLogin = null; return { ok: true }; });
 
