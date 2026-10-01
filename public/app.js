@@ -413,10 +413,11 @@
           <span class="muted small">${fmtTime(r.createdAt)}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">${esc(r.source.label || '변형 문제')}에서 남김</a>` : ''}</span></div></div>
       <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div></div>`;
     el.innerHTML = `
-      <div class="row"><h2 style="margin:0">피드백</h2><span class="spacer"></span><span class="muted small">켜진 ${on.length}개가 이 문제의 모든 변형에 반영됩니다</span></div>
-      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 이 문제로 변형 문제를 만들 때 지켜야 할 점을 적어 주세요.</p>'}</div>
+      <h2 style="margin:0">변형 문제 피드백</h2>
+      <p class="muted small" style="margin:4px 0 0">아래 <b>변형 문제 만들기</b>에서 AI가 지킬 점입니다. 켜진 ${on.length}개가 이 문제로 만드는 모든 변형 문제에 반영됩니다. 위 <b>분석 결과</b>(읽은 문제·STEP)가 틀렸다면 여기가 아니라 분석 결과의 <b>수정</b>에서 직접 고쳐 주세요.</p>
+      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 변형 문제를 보고 고칠 점이 있으면 적어 주세요.</p>'}</div>
       <div class="fb-add">
-        <textarea id="fb-text" rows="3" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
+        <textarea id="fb-text" rows="3" placeholder="변형 문제를 만들 때 지킬 점. 예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
         <div class="fb-add-bar"><label for="fb-target">대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option></select>
           <span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>
       </div>`;
@@ -463,6 +464,7 @@
     el.innerHTML = `
       <div class="row"><h2 style="margin:0">분석 결과</h2><span class="spacer"></span>
         <button class="small" id="edit">수정</button><button class="small" id="reanalyze">다시 분석</button><button class="small danger" id="del">삭제</button></div>
+      <p class="muted small" style="margin:4px 0">AI가 원본을 읽고 정리한 내용입니다. 원본과 다른 곳은 <b>수정</b>으로 직접 고치세요 — 고친 내용이 변형 문제의 기준이 되고, 잘못 읽은 단어는 다음 판독 때 주의하도록 학습됩니다.</p>
       <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${m.solutionSource === 'ai' ? '<span class="chip warn">해설 없음 → AI가 만든 풀이</span>' : '<span class="chip ok">교사 해설 기반</span>'} <span class="chip">분석: ${PROVIDER_LABEL[m.analyzedWith] || 'DeepSeek'}</span> ${m.teacherEditedAt ? '<span class="chip">교사 수정됨</span>' : ''}</p>
       ${m.steps.length > (m.targetSteps || 99) ? `<div class="note warn row"><span style="flex:1">해설의 단계 표시는 ${m.targetSteps}개인데 정리한 STEP은 ${m.steps.length}개입니다.</span><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : ''}
       ${m.uncertainties?.filter((u) => !u.startsWith('해설의 단계 표시는')).length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.filter((u) => !u.startsWith('해설의 단계 표시는')).map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
