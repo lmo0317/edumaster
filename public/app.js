@@ -839,64 +839,72 @@
     draw();
   }
 
+  // 새 세트 만들기: every setting is one row of small choices, then one line saying what will be made and with what,
+  // and the button. What the set will carry (this problem's learning, every-problem learning, models) comes from
+  // carryLine, which may arrive before or after this panel is drawn.
+  const carryCounts = new Map();
   async function generatePanel(m, n) {
     const el = $('#generate');
     const upto = Array.from({ length: n - 1 }, (_, i) => i + 1);
     const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
-    try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
+    try { await loadStatus(); } catch { /* the choices fall back to DeepSeek only */ }
     if (!$('#generate')) return;
+    const providers = statusCache?.providers || { deepseek: { label: 'DeepSeek V4 Flash', available: true, note: '' } };
+    const def = providers[statusCache?.defaultProvider]?.available ? statusCache.defaultProvider : 'deepseek';
+    const opt = (type, name, value, label, on, attrs = '') => `<label class="opt"><input type="${type}" ${name ? `name="${name}"` : ''} value="${value}" ${on ? 'checked' : ''} ${attrs}><span>${label}</span></label>`;
+    const stage = (json, label, on) => `<label class="opt"><input type="checkbox" data-stage='${json}' ${on ? 'checked' : ''}><span>${label}</span></label>`;
     el.innerHTML = `
-      <div id="rules-preview" class="lt-carry">${carryText.get(m.id) || '<span class="muted">반영할 내용을 확인하는 중…</span>'}</div>
-      <div class="gen-picks"><span class="gen-label">만들 문제</span>
-        <div class="stage-picks">${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`}</label>`).join('')}
-        <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 문제 (STEP 1~${n})</label>
-        ${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k}만 연습</label>`).join('')}</div></div>
-      <details class="gen-more lt-base" data-k="gen-more"><summary>세부 설정 <span class="muted" id="gen-summary"></span></summary><div class="gen-more-in">
-        <label>만들 모델</label>${providerPicker('genProvider')}
-        <label>최종 문제 방식</label>
-        <div><label class="inline"><input type="radio" name="mode" value="integrated" checked> 통합 변형 (권장) — 앞 연습 문제의 아이디어를 엮은 새 구조</label>
-          <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
-        <div class="cols cols-2">
-          <div><label>단계마다 만들 문제 수</label><select id="per"><option>1</option><option>2</option><option>3</option></select></div>
-          <div id="effort-box"><label>DeepSeek 사고 강도</label><select id="effort"><option value="low">기본 (비용 적음)</option><option value="high">정밀 (토큰 더 사용)</option></select></div>
-          <div id="claude-effort-note" hidden><label>Claude 추론 강도</label><p class="small" style="margin:6px 0"><b id="claude-effort-name"></b> <a href="#/llm">LLM 탭에서 변경</a></p></div>
-        </div>
-        <p class="muted small">STEP k만 연습: 앞 STEP의 결과를 조건으로 주고 STEP k만 쓰게 하는 문제입니다.</p>
-      </div></details>
-      <div class="gen-go"><span class="muted small" id="estimate"></span><button class="primary" id="go">변형 문제 만들기</button></div>`;
-    const estimate = () => {
-      const chosen = $('[name=genProvider]:checked', el)?.value || 'deepseek';
+      <div class="gen-form">
+        <div class="gen-row"><span class="gen-k">만들 문제</span><div class="opts">
+          ${upto.map((k) => stage(`{"kind":"upto","upto":${k}}`, k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`, true)).join('')}
+          ${stage('{"kind":"twin"}', '최종 문제', true)}
+          ${focus.map((k) => stage(`{"kind":"focus","step":${k}}`, `STEP ${k}만`, false)).join('')}</div></div>
+        <div class="gen-row"><span class="gen-k">모델</span><div class="opts">
+          ${Object.entries(providers).map(([key, p]) => opt('radio', 'genProvider', key, esc(p.label), key === def, p.available ? '' : 'disabled')).join('')}</div></div>
+        <div class="gen-row"><span class="gen-k">최종 문제</span><div class="opts">
+          ${opt('radio', 'mode', 'integrated', '새 구조로 (권장)', true)}${opt('radio', 'mode', 'numeric', '숫자만 바꾸기', false)}</div></div>
+        <div class="gen-row"><span class="gen-k">단계마다</span><div class="opts">
+          ${[1, 2, 3].map((k) => opt('radio', 'per', k, `${k}문제`, k === 1)).join('')}</div></div>
+        <div class="gen-row" id="effort-box"><span class="gen-k">사고 강도</span><div class="opts">
+          ${opt('radio', 'effort', 'low', '기본', true)}${opt('radio', 'effort', 'high', '정밀 (토큰 더 씀)', false)}</div></div>
+        <div class="gen-row" id="claude-effort-note" hidden><span class="gen-k">추론 강도</span><div class="gen-v"><b id="claude-effort-name"></b> <a class="muted small" href="#/llm">LLM 탭에서 변경</a></div></div>
+        <p class="gen-hint" id="gen-hint"></p>
+      </div>
+      <div class="gen-go"><span id="estimate"></span><button class="primary" id="go">만들기</button></div>`;
+    const value = (name) => $(`[name=${name}]:checked`, el)?.value;
+    const summary = () => {
+      const chosen = value('genProvider') || 'deepseek';
       // Each model's own reasoning setting: DeepSeek's here, Claude's from the LLM tab, none for the PC model.
       $('#effort-box').hidden = chosen !== 'deepseek';
       $('#claude-effort-note').hidden = chosen !== 'claude-cli';
-      if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[statusCache?.providers?.['claude-cli']?.effort] || '자동';
-      const count = $$('[data-stage]:checked', el).length * Number($('#per').value);
+      if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[providers['claude-cli']?.effort] || '자동';
+      const focusPicked = $$('[data-stage*="focus"]:checked', el).length;
+      $('#gen-hint').textContent = [providers[chosen]?.note, focusPicked ? 'STEP k만: 앞 STEP의 결과를 조건으로 주고 그 STEP만 쓰게 하는 문제입니다.' : ''].filter(Boolean).join(' · ');
+      const count = $$('[data-stage]:checked', el).length * Number(value('per'));
+      const c = carryCounts.get(m.id);
       $('#estimate').textContent = !count ? '만들 문제를 하나 이상 고르세요.'
-        : `${count}문제${chosen === 'gemma' ? ' · PC 모델은 무료지만 문제당 몇 분씩 걸릴 수 있습니다' : ''}`;
+        : [`${count}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', esc(providers[chosen]?.label || '')].filter(Boolean).join(' · ');
       $('#go').disabled = !count;
-      const picked = $('[name=genProvider]:checked', el);
-      $('#gen-summary').textContent = `— ${picked?.closest('label')?.querySelector('b, strong')?.textContent || PROVIDER_LABEL[picked?.value] || 'DeepSeek'} · ${$('[name=mode]:checked', el).value === 'integrated' ? '통합 변형' : '수치 변형'} · 단계마다 ${$('#per').value}문제`;
+      $('#go').textContent = count ? `${count}문제 만들기` : '만들기';
     };
-    $$('input, select', el).forEach((x) => x.addEventListener('change', estimate));
-    estimate();
+    el.summary = summary;
+    $$('input', el).forEach((x) => x.addEventListener('change', summary));
+    summary();
     $('#go').addEventListener('click', guard(async () => {
       $('#go').disabled = true;
       const r = await api('POST', '/api/generations', {
         materialId: m.id,
         stages: $$('[data-stage]:checked', el).map((x) => JSON.parse(x.dataset.stage)),
-        mode: $('[name=mode]:checked', el).value, perStage: Number($('#per').value), effort: $('#effort').value,
-        provider: $('[name=genProvider]:checked', el)?.value,
+        mode: value('mode'), perStage: Number(value('per')), effort: value('effort'), provider: value('genProvider'),
       });
       location.hash = '#/j/' + r.jobId;
     }));
   }
 
-  // What the next set of this problem will carry, in one sentence; 자세히 lists the common rules. Kept per problem so
-  // generatePanel shows it whichever of the two is drawn first.
-  const carryText = new Map();
+  // What the next set of this problem will carry, counted for the line above the button.
   function carryLine(m, n, own, common, adopted) {
-    carryText.set(m.id, `<p>STEP ${n}개, 이 문제의 생성 학습 ${own}개${common ? `, <a href="#/lessons">전체 학습</a>·<a href="#/guides">지침</a> ${common}개` : ''}${adopted ? `, 본보기 ${adopted}개` : ''}를 반영합니다.</p>`);
-    if ($('#rules-preview')) $('#rules-preview').innerHTML = carryText.get(m.id);
+    carryCounts.set(m.id, { own, common, adopted });
+    $('#generate')?.summary?.();
   }
 
   // ------------------------------------------------------------------ job

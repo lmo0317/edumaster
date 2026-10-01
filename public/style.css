@@ -331,11 +331,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .conn { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 40; background: var(--warn-soft); color: #5c3b00; border: 1px solid #f0d49a; border-radius: 8px; padding: 8px 14px; font-size: 13.5px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); max-width: calc(100% - 24px); }
 
 /* Problem page: feedback input on one line, variant sets with their problems */
-.stage-picks { display: flex; flex-wrap: wrap; gap: 4px 14px; }
-.gen-more { margin-top: 12px; }
-.gen-go { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-.gen-go .muted { flex: 1; min-width: 180px; }
-#rules-preview summary { cursor: pointer; }
 .fb-add-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .fb-add-bar label { margin: 0; font-weight: 600; white-space: nowrap; }
 .fb-add-bar select { width: auto; min-width: 96px; }
@@ -459,13 +454,6 @@ a.lt-name:hover { color: var(--accent); }
 .lt-item-text { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt-state { font-size: 12.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .lt-state.ok { color: var(--ok); } .lt-state.warn { color: var(--warn); } .lt-state.bad { color: var(--bad); } .lt-state.run { color: var(--accent); }
-.lt-carry p { margin: 0; }
-.lt-carry-more { display: grid; gap: 6px; padding-top: 6px; font-size: 13.5px; }
-.gen-picks { display: grid; gap: 6px; margin: 14px 0 4px; }
-.gen-label { font-weight: 600; font-size: 14px; }
-.gen-more.lt-base { border: 0; margin-top: 8px; }
-.gen-more-in { padding: 4px 0 8px; }
-.gen-go { border-top: 1px solid var(--line); padding-top: 14px; }
 .lt-foot { display: flex; justify-content: flex-end; }
 .lt-foot .danger { border-color: transparent; background: none; }
 
@@ -500,7 +488,6 @@ a.lt-name:hover { color: var(--accent); }
   .review-bar button { padding: 7px 4px; }
 }
 #items { max-width: 860px; margin: 0 auto; }
-.lt-carry details { border: 0; }
 .jt-jump { scrollbar-width: none; }
 .jt-jump::-webkit-scrollbar { display: none; }
 @media (max-width: 640px) { .rv-long { display: none; } }
@@ -590,3 +577,23 @@ a.lt-name:hover { color: var(--accent); }
 .fb-common { margin: 2px 2px 0; }
 .fb-kind a.muted { margin-left: auto; font-size: 12.5px; color: var(--muted); }
 /* Learning (docs/learning.md): the kind of each item, the box to teach more, "학습됨", the 출제 노트 */
+
+/* 새 세트 만들기: each setting one row of small choices, then what will be made and the button */
+.gen-form { display: grid; }
+.gen-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.gen-row:first-child { border-top: 0; padding-top: 0; }
+.gen-row[hidden] { display: none; }
+.gen-k { font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.gen-v { font-size: 14px; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt { margin: 0; font-weight: 500; font-size: 13.5px; cursor: pointer; }
+.opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.opt span { display: inline-block; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); }
+.opt input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt input:disabled + span { opacity: .45; cursor: not-allowed; }
+.gen-hint { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.gen-hint:empty { display: none; }
+.gen-go { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+#estimate { flex: 1; min-width: 180px; font-size: 13.5px; color: var(--muted); }
+@media (max-width: 640px) { .gen-row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
