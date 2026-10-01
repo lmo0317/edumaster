@@ -326,6 +326,18 @@ function createApp(options = {}) {
     store.materials.put({ ...m, status: 'analyzing', error: '', analysisFeedback, note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
     return { jobId: jobs.analyze(m, provider).id };
   });
+  // 확인할 곳: the teacher's verdict on each note of the analysis (an unsure reading, a self-correction, an excluded
+  // mark) — 'ok' it is right, 'feedback' it is wrong and the fix went to the analysis feedback, null undecided again.
+  // Keyed by the note's text, so a re-analysis that says the same thing keeps the verdict.
+  route('PUT', /^\/api\/materials\/([a-f0-9]+)\/checks$/, async (req, res, [id]) => {
+    const m = getMaterial(id);
+    const body = await readBody(req, 8192);
+    const note = String(body.note || '').trim().slice(0, 600);
+    if (!note) throw fail(400, '확인할 항목이 없습니다.');
+    const noteStates = { ...(m.noteStates || {}) };
+    if (['ok', 'feedback'].includes(body.state)) noteStates[note] = body.state; else delete noteStates[note];
+    return store.materials.put({ ...m, noteStates });
+  });
   // Analysis feedback is also added and edited on its own (the problem's feedback list); it is used at the next analysis.
   const analysisNote = (body) => {
     const text = String(body.text || '').trim().slice(0, 1000);

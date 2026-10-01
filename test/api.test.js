@@ -365,6 +365,28 @@ test('analysis feedback accumulates on the problem and every re-analysis gets al
   } finally { await s.close(); }
 });
 
+test('확인할 곳: a verdict on each note is kept by its text, also through a re-analysis that says the same', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
+    const note = m.annotations[0];
+    assert.ok(note, 'the mock analysis leaves out a handwritten mark');
+    assert.equal((await s.call('PUT', `/api/materials/${m.id}/checks`, { note: '', state: 'ok' })).status, 400);
+    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note, state: 'ok' })).data;
+    assert.equal(m.noteStates[note], 'ok');
+    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note: m.proofread[0], state: 'feedback' })).data;
+    const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
+    await s.waitJob(again.jobId);
+    m = (await s.call('GET', '/api/materials/' + m.id)).data;
+    assert.equal(m.noteStates[note], 'ok', 'the same note after a re-analysis is still checked');
+    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note, state: null })).data;
+    assert.equal(m.noteStates[note], undefined, 'undone');
+  } finally { await s.close(); }
+});
+
 test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
   const s = await start();
   try {
