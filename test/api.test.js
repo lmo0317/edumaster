@@ -175,7 +175,7 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
   } finally { await s.close(); }
 });
 
-test('LLM tab: persona and stage additions go around the built-in instructions; code checks switch off, answer checks do not', async () => {
+test('LLM tab: persona and stage additions go around the built-in instructions; the checks are listed, fixed', async () => {
   const s = await start();
   try {
     assert.equal((await s.call('GET', '/api/llm/prompts')).status, 401, 'login required');
@@ -186,7 +186,6 @@ test('LLM tab: persona and stage additions go around the built-in instructions; 
     assert.deepEqual(data.stages.map((x) => x.key), ['read', 'design', 'review', 'write']);
     assert.ok(data.stages.every((x) => x.prompts.length && x.prompts.every((p) => p.text && p.purpose)), 'every stage shows its built-in instructions and what each is for');
     assert.equal(data.stages.reduce((a, x) => a + x.prompts.length, 0), 13, 'all built-in instructions are shown');
-    assert.ok(data.checks.code.every((c) => c.enabled), 'all code checks start on');
     assert.ok(data.checks.generation.length >= 8 && data.checks.analysis.length >= 5);
 
     data = (await s.call('PUT', '/api/llm/prompts', { persona: '  화학 선생님의 조교  ', addenda: { design: '보기는 다섯 개로' } })).data;
@@ -208,23 +207,9 @@ test('LLM tab: persona and stage additions go around the built-in instructions; 
     await s.call('PUT', '/api/llm/prompts', { persona: '', addenda: { design: '', review: '' } });
     assert.equal(withTeacherPrompt(cfg, 'BUILT-IN', 'generate'), 'BUILT-IN', 'emptied: the built-in instructions alone');
 
-    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['choices'] })).status, 400, 'the answer checks cannot be switched off');
-    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['nope'] })).status, 400);
-    const checks = (await s.call('PUT', '/api/llm/checks', { disabled: ['format', 'variant-shape'] })).data;
-    assert.deepEqual(checks.code.filter((c) => !c.enabled).map((c) => c.id).sort(), ['format', 'variant-shape']);
+    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['format'] })).status, 404, 'the checks cannot be switched off');
     assert.equal((await s.call('GET', '/api/system')).status, 404, 'the 시스템 page is gone');
   } finally { await s.close(); }
-});
-
-test('the check catalog names every code check, and a switched-off check is not run', () => {
-  const harness = require('../server/harness');
-  const ids = new Set(harness.CHECK_CATALOG.map((c) => c.id));
-  const material = { problem: { text: '' }, solution: { text: '' }, steps: [] };
-  const item = { problem: { text: '$x', choices: ['1', '1'], answer: '9' }, solution: { text: '' }, stage: { stepIds: [] } };
-  const all = harness.inspectItem(material, item, 'integrated');
-  assert.ok(all.length && all.every((c) => ids.has(c.id)), 'every check the code runs is in the catalog: ' + all.map((c) => c.id).join(','));
-  const off = harness.inspectItem(material, item, 'integrated', new Set(['format']));
-  assert.ok(!off.some((c) => c.id === 'format') && off.length === all.filter((c) => c.id !== 'format').length);
 });
 
 test('model comparison list and one comparison', async () => {

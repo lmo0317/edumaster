@@ -688,7 +688,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     soft.push(...cov.notes);
   }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
-  const codeChecks = harness.inspectItem(material, item, mode, ctx.disabledChecks); // minus the ones switched off on the LLM tab
+  const codeChecks = harness.inspectItem(material, item, mode);
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
     if (lean && solutionOnly(c)) rewriteNotes.push(`${c.label}: ${c.evidence}`);
@@ -877,7 +877,7 @@ const SYSTEM_CHECKS = {
     { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 안 쓰인 조건이 있으면 설계 결함.', onFail: 'repair' },
     { label: '통합 변형 여부', how: '통합 모드의 최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 코드 골격 비교) 본다.', onFail: 'repair' },
     { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문이 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair' },
-    { label: '교사 풀이 방법 (v1 하네스)', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 확인.', onFail: 'repair' },
+    { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 확인.', onFail: 'repair' },
     { label: '보기·정답 연결, O/X 일관성', how: '보기 수·중복·정답 번호, ㄱㄴㄷ 해설의 참 판정과 정답 보기가 맞는지 코드로 확인.', onFail: 'review' },
     { label: '결론 노출·표기 형식', how: '앞 STEP의 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 확인.', onFail: 'repair' },
     { label: '교사 지침 준수', how: '생성 모델이 지침별로 적용 방법을 적고, 독립 풀이가 문제에 관한 지침을 다시 판정한다.', onFail: 'note' },

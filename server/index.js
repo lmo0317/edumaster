@@ -652,10 +652,9 @@ function createApp(options = {}) {
     return comparePdf(res, id, key);
   }, { open: true });
   // LLM tab: the AI's persona, each stage's built-in instructions (read-only) with the teacher's addition, and the
-  // harness — the model checks (fixed) and the code checks the teacher can switch off (not the ones that guard the answer).
+  // checks every made problem goes through (read-only).
   function promptSettings() {
     const s = llmSettings(cfg.dataDir);
-    const off = new Set(s.disabledChecks || []);
     return {
       version: prompts.PROMPT_VERSION,
       persona: s.persona || '',
@@ -664,7 +663,6 @@ function createApp(options = {}) {
         prompts: st.purposes.filter((p) => prompts.SYSTEMS[p]).map((p) => ({ id: p, purpose: PROMPT_PURPOSE[p] || '', text: prompts.SYSTEMS[p] })),
       })),
       checks: {
-        code: harness.CHECK_CATALOG.map((c) => ({ ...c, enabled: c.hard || !off.has(c.id) })),
         analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair,
       },
       budget: cfg.budget,
@@ -693,17 +691,6 @@ function createApp(options = {}) {
     }
     saveLlmSettings(cfg.dataDir, patch);
     return promptSettings();
-  });
-  route('PUT', /^\/api\/llm\/checks$/, async (req) => {
-    const body = await readBody(req, 4096);
-    const known = new Map(harness.CHECK_CATALOG.map((c) => [c.id, c]));
-    const disabled = [...new Set(Array.isArray(body.disabled) ? body.disabled.map(String) : [])];
-    for (const id of disabled) {
-      if (!known.has(id)) throw fail(400, '알 수 없는 검사입니다.');
-      if (known.get(id).hard) throw fail(400, `'${known.get(id).label}' 검사는 정답을 지키는 검사라 끌 수 없습니다.`);
-    }
-    saveLlmSettings(cfg.dataDir, { disabledChecks: disabled });
-    return promptSettings().checks;
   });
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();

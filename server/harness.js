@@ -260,28 +260,7 @@ function checkUnusedCoefficient(item) {
     unused.length ? `반응식의 계수 ${unused.join(', ')}가 발문에도 해설에도 쓰이지 않습니다. 풀이에 쓰이지 않는 조건이므로 계수 관계를 필요한 만큼만 문장으로 주거나 묻는 값에 쓰이게 해야 합니다.` : '')];
 }
 
-/** The code checks, as the LLM tab lists them (each can be switched off there). */
-const CHECK_CATALOG = [
-  { id: 'choices', label: '보기·정답 연결', about: '보기 수가 원본과 같고, 보기끼리 겹치지 않고, 정답 번호가 보기 안에 있는지', hard: true },
-  { id: 'explanation-consistency', label: '해설 O/X 판정과 정답', about: 'ㄱㄴㄷ 문제에서 해설의 참·거짓 판정과 고른 정답 보기가 맞는지', hard: true },
-  { id: 'source-method', label: '선생님 보조 문자 유지', about: '선생님 해설이 정의한 n, m 같은 보조 문자를 변형 해설도 쓰는지' },
-  { id: 'source-method-order', label: '보조 문자 도입 순서', about: '보조 문자를 선생님 해설과 같은 STEP에서 처음 쓰는지' },
-  { id: 'source-assumption', label: '가정→모순 판정 유지', about: '선생님 STEP 1의 가정→모순 추론이 변형 해설에도 있는지' },
-  { id: 'source-step-titles', label: 'STEP 제목 유지', about: '해설의 STEP 제목이 선생님 해설의 제목과 같은지 (실험 번호만 바뀔 수 있음)' },
-  { id: 'source-tables', label: '해설의 표 유지', about: '선생님이 표로 정리한 STEP을 변형 해설도 표로 쓰는지' },
-  { id: 'source-equation', label: '반응식 계수 유지', about: '문제에 싣는 반응식의 계수 구조를 원본대로 두는지' },
-  { id: 'unused-coefficient', label: '안 쓰이는 반응 계수', about: '반응식의 문자 계수(b 등)가 발문이나 해설에 실제로 쓰이는지' },
-  { id: 'source-assumption-needed', label: '가정 없이 풀리는 실험', about: '남은 질량이 넣은 질량보다 커서 가정→모순 없이 남은 물질이 정해지는 실험이 없는지' },
-  { id: 'variant-design', label: '숫자만 바꾼 최종 문제', about: '통합 변형의 최종 문제가 원본과 문장·표 구조가 같고 숫자만 다른지' },
-  { id: 'variant-shape', label: '같은 표 구조의 최종 문제', about: '최종 문제의 표 구조와 숨긴 값 위치가 원본과 같은지' },
-  { id: 'stage-clue-leak', label: '결론 미리 노출', about: '추론해야 할 남는 물질(A/B)을 표에 미리 적었는지' },
-  { id: 'format', label: '표기 형식', about: '수식의 $ 짝, $ 밖의 수식 기호, 표의 칸 수' },
-];
-
-function inspectItem(material, item, mode, disabled = new Set()) {
-  return inspectAll(material, item, mode).filter((c) => !disabled.has(c.id));
-}
-function inspectAll(material, item, mode) {
+function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
     ...checkOxConsistency(item),
@@ -378,4 +357,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { CHECK_CATALOG, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

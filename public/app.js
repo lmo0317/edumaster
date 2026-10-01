@@ -1011,7 +1011,7 @@
   }
 
 
-  // ------------------------------------------------------------------ system
+  // ------------------------------------------------------------------ Claude login
   // Signing the server's Claude Code in to the teacher's Claude subscription (for the "Claude Opus 5.5 (구독)" model):
   // the server shows the sign-in link, the teacher signs in on any device and pastes the code here.
   async function claudeLoginPanel() {
@@ -1075,156 +1075,159 @@
   }
 
   // ------------------------------------------------------------------ LLM
-  // Each model problems can be made with: whether it is connected and what it has used (today / 30 days). The
-  // DeepSeek balance and the numbers are fetched when the page opens and on 새로 고침, not continuously.
+  // One column, three sections, one pattern: every model and every instruction is a row with its state on one line,
+  // and 관리/편집 opens that row in place. The balance and limits are fetched when the page opens and on 새로 고침.
   const EFFORT_TXT = { auto: '자동 (설계·검토는 높게)', low: '낮음 (빠름)', medium: '중간', high: '높음', xhigh: '매우 높음', max: '최대 (느림·한도 많이 씀)' };
 
   async function llmView() {
-    view.innerHTML = `<div class="row"><h1 style="margin-right:auto">LLM</h1><span class="muted small" id="llm-at"></span><button id="llm-refresh">새로 고침</button></div>
-      <p class="muted">문제를 만들 때 쓰는 AI 모델의 연결 상태와 사용량입니다. 잔액과 사용량은 이 화면을 열거나 <b>새로 고침</b>을 누를 때 가져옵니다.</p>
-      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>
-      <div id="llm-ai"></div>`;
-    const won = (usd) => (usd ? `약 ${Math.round(usd * 1400).toLocaleString()}원` : '0원');
-    const month = (u) => `<p>이번 달: 세트 <b>${u.month.sets}개</b>${u.month.usd ? ` · <b>${won(u.month.usd)}</b>` : ''} <span class="muted small">· 마지막 사용 ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</span></p>`;
-    // A window's remaining share as a bar: green with room left, amber when low, red when used up.
-    const limitBar = (title, w) => {
-      if (!w) return `<div class="limit"><div class="limit-head"><b>${title}</b><span class="muted small">정보 없음</span></div></div>`;
-      const left = Math.max(0, Math.round((1 - w.used) * 100));
-      return `<div class="limit"><div class="limit-head"><b>${title}</b><span><b>${left}%</b> 남음</span></div>
-        <div class="limit-bar"><span class="${left <= 10 ? 'bad' : left <= 30 ? 'warn' : 'ok'}" style="width:${left}%"></span></div>
-        <div class="muted small">${w.resetsAt ? fmtTime(w.resetsAt) + '에 다시 채워짐' : ''}</div></div>`;
+    view.innerHTML = `<div class="lt">
+      <div class="lt-head"><h1>LLM</h1><span class="muted small" id="llm-at"></span><button class="small" id="llm-refresh">새로 고침</button></div>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>모델</h2><p>고른 모델이 <b>기본 모델</b>이 되어 문제 분석·생성에서 먼저 선택됩니다.</p></div>
+        <div class="panel lt-list" id="lt-models"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
+      </section>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>AI 지시문</h2><p>기본 지시문은 고정이고, 여기 쓴 내용이 덧붙습니다. 문제 하나에만 해당하는 내용은 그 문제의 피드백으로 남겨 주세요.</p></div>
+        <div class="panel lt-list" id="lt-prompts"></div>
+      </section>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>자동 검토</h2></div>
+        <div class="panel lt-checks" id="lt-checks"></div>
+      </section>
+    </div>`;
+    const opened = new Set(); // rows left open survive a repaint
+    const toggleRows = (box) => $$('[data-open]', box).forEach((b) => b.addEventListener('click', () => {
+      const row = b.closest('.lt-row');
+      row.classList.toggle('open');
+      if (row.classList.contains('open')) opened.add(row.dataset.row); else opened.delete(row.dataset.row);
+    }));
+    const isOpen = (key) => (opened.has(key) ? ' open' : '');
+
+    const won = (usd) => `약 ${Math.round(usd * 1400).toLocaleString()}원`;
+    const month = (u) => (u?.month?.sets ? `이번 달 ${u.month.sets}세트${u.month.usd ? ' · ' + won(u.month.usd) : ''}` : '이번 달 사용 없음');
+    const left = (w) => (w ? Math.max(0, Math.round((1 - w.used) * 100)) : null);
+    const meter = (title, w) => {
+      const n = left(w);
+      return `<span class="lt-meter"><span>${title}</span><span class="lt-bar"><i class="${n === null ? '' : n <= 10 ? 'bad' : n <= 30 ? 'warn' : 'ok'}" style="width:${n ?? 0}%"></i></span><b>${n === null ? '–' : n + '%'}</b></span>`;
     };
-    const paint = async (fresh) => {
+
+    const paintModels = async (fresh) => {
       // 새로 고침 asks Claude once (a tiny question) so the remaining share is current, not as of the last generation.
       if (fresh) await api('POST', '/api/claude-login/check').catch(() => null);
       const [status, llm] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/llm')]);
       const p = status.providers || {};
       const def = status.defaultProvider || 'deepseek';
-      // One card per model: its state, what matters for it, managing it, and making it the 기본 모델.
-      const card = (key, title, ok, okText, badText, body) => `<div class="panel llm-card${def === key ? ' llm-default' : ''}">
-        <div class="row"><h2 style="margin:0">${esc(title)}</h2><span class="spacer"></span><span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : badText}</span></div>
-        <div class="llm-default-row">${def === key ? '<span class="chip ok">기본 모델</span><span class="muted small">문제 분석·생성에서 처음 선택되는 모델</span>'
-          : `<button class="small" data-default="${key}" ${ok ? '' : 'disabled'}>기본 모델로 사용</button>`}</div>${body}</div>`;
-      const lim = llm.claude.loggedIn ? llm.claude.limits : null;
-      $('#llm-cards').innerHTML = [
-        card('claude-cli', llm.claude.label || 'Claude (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
-          `<div class="claude-choice">
-            <label>모델<select id="cl-model">${Object.entries(llm.claude.models || {}).map(([id, name]) => `<option value="${id}" ${id === llm.claude.model ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></label>
-            <label>추론 강도<select id="cl-effort">${(llm.claude.efforts || []).map((e) => `<option value="${e}" ${e === llm.claude.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></label>
-          </div>
-          ${llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
-            <p class="muted small">${lim ? `${fmtTime(lim.at)} 기준` : '아직 측정한 적 없음 — 새로 고침을 눌러 주세요'} · 구독으로 실행 · 호출당 비용 없음</p>${month(llm.usage['claude-cli'])}` : ''}
-          <div id="claude-login"></div>`),
-        card('deepseek', p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
-          `<p>잔액: <b id="ds-balance">확인 중…</b></p>${month(llm.usage.deepseek)}<p class="muted small">쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p>
-          <div class="fb-add-bar"><span class="muted small">API 키 ${esc(llm.deepseek.key || '없음')}</span><span class="spacer"></span><button class="small" id="ds-key-edit">키 변경</button></div>
-          <div id="ds-key-form" hidden><input type="password" id="ds-key" autocomplete="off" placeholder="새 DeepSeek API 키 (sk-…)">
-            <div class="fb-add-bar"><span class="muted small">저장 전에 DeepSeek에 확인합니다.</span><span class="spacer"></span><button class="small" id="ds-key-cancel">취소</button><button class="small primary" id="ds-key-save">저장</button></div></div>`),
-        card('gemma', p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 켜짐', 'PC 꺼짐',
-          `<p class="muted small">선생님 PC에서 실행 · 무료 · PC가 켜져 있을 때만${p.gemma?.model ? ` · ${esc(p.gemma.model)}` : ''}</p>${month(llm.usage.gemma)}`),
+      const c = llm.claude;
+      const lim = c.loggedIn ? c.limits : null;
+      const row = (key, { name, ok, state, fact, more, open = '관리' }) => `<div class="lt-row${isOpen(key)}" data-row="${key}">
+        <input type="radio" name="lt-default" id="lt-def-${key}" value="${key}" aria-label="${esc(name)} 기본 모델로 사용" ${def === key ? 'checked' : ''} ${ok ? '' : 'disabled'}>
+        <div class="lt-main">
+          <span class="lt-name">${esc(name)}${def === key ? '<span class="lt-tag">기본</span>' : ''}</span>
+          <span class="lt-sub"><i class="lt-dot ${ok ? 'ok' : ''}"></i>${state}</span>
+        </div>
+        <div class="lt-fact">${fact}</div>
+        <button class="small lt-open" data-open>${open}</button>
+        <div class="lt-more">${more}</div>
+      </div>`;
+      $('#lt-models').innerHTML = [
+        row('claude-cli', {
+          name: c.label || 'Claude (구독)', ok: c.loggedIn,
+          state: c.loggedIn ? `연결됨 · ${month(llm.usage['claude-cli'])}` : '연결 안 됨',
+          fact: c.loggedIn ? `${meter('5시간', lim?.fiveHour)}${meter('1주일', lim?.sevenDay)}` : '',
+          open: c.loggedIn ? '관리' : '연결하기',
+          more: `<div class="lt-fields">
+              <div><label for="cl-model">모델</label><select id="cl-model">${Object.entries(c.models || {}).map(([id, n]) => `<option value="${id}" ${id === c.model ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+              <div><label for="cl-effort">추론 강도</label><select id="cl-effort">${(c.efforts || []).map((e) => `<option value="${e}" ${e === c.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></div>
+            </div>
+            ${c.loggedIn ? `<p class="lt-note">구독으로 실행되어 호출당 비용이 없습니다. ${lim ? `한도는 ${fmtTime(lim.at)} 기준이고, 5시간 한도는 ${lim.fiveHour?.resetsAt ? fmtTime(lim.fiveHour.resetsAt) : '-'}, 1주일 한도는 ${lim.sevenDay?.resetsAt ? fmtTime(lim.sevenDay.resetsAt) : '-'}에 다시 채워집니다.` : '한도는 새로 고침을 누르면 가져옵니다.'}</p>` : ''}
+            <div id="claude-login"></div>`,
+        }),
+        row('deepseek', {
+          name: p.deepseek?.label || 'DeepSeek', ok: p.deepseek?.available,
+          state: p.deepseek?.available ? `사용 가능 · ${month(llm.usage.deepseek)}` : 'API 키 없음',
+          fact: `<span class="lt-money">잔액 <b id="ds-balance">…</b></span>`,
+          more: `<p class="lt-note">쓴 만큼 결제합니다. 평일 한국 시간 10–13시, 15–19시는 단가가 2배입니다.</p>
+            <div><label for="ds-key">API 키 바꾸기 <span class="muted small">(지금 키 ${esc(llm.deepseek.key || '없음')})</span></label>
+            <div class="lt-inline"><input type="password" id="ds-key" autocomplete="off" placeholder="새 DeepSeek API 키 (sk-…)"><button class="primary" id="ds-key-save">저장</button></div>
+            <p class="lt-note">저장하기 전에 DeepSeek에 맞는 키인지 확인합니다.</p></div>`,
+        }),
+        row('gemma', {
+          name: p.gemma?.label || 'PC 모델', ok: p.gemma?.available,
+          state: p.gemma?.available ? `PC 켜짐 · ${month(llm.usage.gemma)}` : 'PC 꺼짐',
+          fact: '<span class="lt-money">무료</span>',
+          more: `<p class="lt-note">선생님 PC에서 실행되어 비용이 없지만 느리고, PC가 켜져 있을 때만 쓸 수 있습니다.${p.gemma?.model ? ` 지금 모델: ${esc(p.gemma.model)}` : ''}</p>`,
+        }),
       ].join('');
       $('#llm-at').textContent = fmtTime(new Date().toISOString()) + ' 기준';
+      toggleRows($('#lt-models'));
       api('GET', '/api/balance').then((x) => { if ($('#ds-balance')) $('#ds-balance').textContent = x.balance; }).catch(() => { if ($('#ds-balance')) $('#ds-balance').textContent = '확인 실패'; });
-      $$('[data-default]').forEach((b) => b.addEventListener('click', guard(async () => {
-        await api('PUT', '/api/llm/default', { provider: b.dataset.default });
+      $$('[name=lt-default]').forEach((r) => r.addEventListener('change', guard(async () => {
+        await api('PUT', '/api/llm/default', { provider: r.value });
         await loadStatus().catch(() => {});
-        toast('기본 모델을 바꿨습니다. 문제 분석·생성에서 이 모델이 처음 선택됩니다.');
-        await paint(false);
+        toast('기본 모델을 바꿨습니다.');
+        await paintModels(false);
       })));
       // Model and effort are saved as soon as one is picked; the next Claude call uses them.
       const saveChoice = guard(async () => {
         await api('PUT', '/api/llm/claude', { model: $('#cl-model').value, effort: $('#cl-effort').value });
         await loadStatus().catch(() => {});
-        toast('Claude 설정을 바꿨습니다. 다음 호출부터 적용됩니다. 쓸 수 있는지는 연결 확인으로 볼 수 있습니다.');
-        await paint(false);
+        toast('Claude 설정을 바꿨습니다. 다음 호출부터 적용됩니다.');
+        await paintModels(false);
       });
-      $('#cl-model')?.addEventListener('change', saveChoice);
-      $('#cl-effort')?.addEventListener('change', saveChoice);
-      $('#ds-key-edit').addEventListener('click', () => { $('#ds-key-form').hidden = false; $('#ds-key').focus(); });
-      $('#ds-key-cancel').addEventListener('click', () => { $('#ds-key').value = ''; $('#ds-key-form').hidden = true; });
+      $('#cl-model').addEventListener('change', saveChoice);
+      $('#cl-effort').addEventListener('change', saveChoice);
       $('#ds-key-save').addEventListener('click', guard(async (e) => {
         e.target.disabled = true;
-        try { await api('PUT', '/api/llm/deepseek-key', { key: $('#ds-key').value }); toast('DeepSeek API 키를 바꿨습니다.'); await paint(false); }
+        try { await api('PUT', '/api/llm/deepseek-key', { key: $('#ds-key').value }); toast('DeepSeek API 키를 바꿨습니다.'); await paintModels(false); }
         finally { if (e.target.isConnected) e.target.disabled = false; }
       }));
       claudeLoginPanel().catch(() => {});
     };
-    llmPromptPanels().catch((e) => { if ($('#llm-ai')) $('#llm-ai').innerHTML = `<div class="panel bad">${esc(e.message)}</div>`; });
-    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paint(true); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
-    await paint(false);
-  }
 
-
-  // LLM tab, below the model cards: what every call is told. The teacher's persona goes before the built-in
-  // instructions, a stage's addition after them; the built-in ones are shown but fixed. Then the harness:
-  // the model's own checks (fixed) and the code checks, which can be switched off except the ones guarding the answer.
-  async function llmPromptPanels() {
-    const box = $('#llm-ai');
-    if (!box) return;
-    const d = await api('GET', '/api/llm/prompts');
-    const ON_FAIL = { fix: ['ok', '자동 수정'], repair: ['run', '다시 고치게 함'], review: ['bad', '교사 검토 필요'], note: ['warn', '확인할 점'] };
-    const checkRows = (list) => `<div class="table-wrap"><table class="rules sys"><tr><th>검사</th><th>하는 일</th><th>걸리면</th></tr>${list.map((c) => `<tr><td><b>${esc(c.label)}</b></td><td>${esc(c.how)}</td><td><span class="chip ${ON_FAIL[c.onFail][0]}">${ON_FAIL[c.onFail][1]}</span></td></tr>`).join('')}</table></div>`;
-    const offCount = d.checks.code.filter((c) => !c.enabled).length;
-    box.innerHTML = `
-      <div class="panel">
-        <h2>AI 역할과 공통 지시</h2>
-        <p class="muted small">모든 호출(분석·문제 설계·검토·해설 작성)에서 기본 지시문 <b>앞에</b> 붙습니다. AI가 어떤 선생님을 돕는지, 늘 지킬 말투·표기 같은 것을 적어 주세요. 비워 두면 기본 지시문만 씁니다.</p>
-        <textarea id="ai-persona" rows="5" maxlength="4000" placeholder="예) 당신은 고등학교 화학 선생님의 출제를 돕는 조교입니다. 학생이 읽을 문장은 교과서 말투로 쓰고, 단위는 항상 붙입니다.">${esc(d.persona)}</textarea>
-        <div class="fb-add-bar"><span class="muted small" id="ai-persona-n"></span><span class="spacer"></span><button class="small primary" id="ai-persona-save">저장</button></div>
-      </div>
-
-      <div class="panel">
-        <h2>단계별 지시문</h2>
-        <p class="muted small">기본 지시문(버전 ${esc(d.version)})은 검토 하네스와 맞물려 있어 고정입니다. 단계마다 <b>추가 지시</b>를 쓰면 그 단계의 기본 지시문 <b>뒤에</b> 붙습니다. 문제 하나에만 해당하는 내용은 문제 페이지의 피드백으로 남기는 편이 좋습니다.</p>
-        ${d.stages.map((st) => `<div class="ai-stage" data-stage="${st.key}">
-          <div class="row"><h3 style="margin:0">${esc(st.label)}</h3>${st.addendum ? '<span class="chip ok">추가 지시 있음</span>' : ''}</div>
-          <p class="muted small">${esc(st.about)}</p>
-          <details><summary>기본 지시문 보기 (${st.prompts.length}개)</summary><div class="inner">
-            ${st.prompts.map((p) => `<h4><code>${esc(p.id)}</code> <span class="muted small">${esc(p.purpose)} · ${p.text.length.toLocaleString()}자</span></h4><pre class="values" style="max-height:320px">${esc(p.text)}</pre>`).join('')}
-          </div></details>
-          <textarea rows="3" maxlength="4000" placeholder="${esc(st.label)} 단계에 더할 지시 (비워 두면 없음)">${esc(st.addendum)}</textarea>
-          <div class="fb-add-bar"><span class="spacer"></span><button class="small primary" data-save-stage="${st.key}">저장</button></div>
-        </div>`).join('')}
-      </div>
-
-      <div class="panel">
-        <h2>검토 하네스</h2>
-        <p class="muted small">만든 문제는 아래 검사를 거칩니다. 걸리면 AI에게 다시 고치게 하고(최대 2번), 남으면 교사 검토 필요·확인할 점으로 표시합니다.</p>
-        <h3>코드 검사 <span class="muted small">— 컴퓨터가 규칙으로 확인 · 켜고 끌 수 있음${offCount ? ` · <b>${offCount}개 꺼짐</b>` : ''}</span></h3>
-        <div class="check-list">${d.checks.code.map((c) => `<label class="check-row${c.enabled ? '' : ' off'}">
-          <input type="checkbox" data-check="${c.id}" ${c.enabled ? 'checked' : ''} ${c.hard ? 'disabled' : ''}>
-          <span><b>${esc(c.label)}</b>${c.hard ? ' <span class="chip">항상 켜짐</span>' : ''}<br><span class="muted small">${esc(c.about)}</span></span></label>`).join('')}</div>
-        <p class="muted small">끈 검사는 다음에 만드는 문제부터 적용됩니다. 정답을 지키는 검사는 끌 수 없습니다.</p>
-        <details><summary>AI 검토와 분석 단계 검사 (고정)</summary><div class="inner">
-          <h3>문제 생성 검토</h3>${checkRows(d.checks.generation)}
-          <p class="small muted">${esc(d.checks.repair)}</p>
-          <h3>원본 분석 검사</h3>${checkRows(d.checks.analysis)}
-          <p class="small muted">작업별 한도: 분석 ${d.budget.analyzeCalls}회·${d.budget.analyzeTokens.toLocaleString()}토큰 / 세트 생성 ${d.budget.generateCalls}회·${d.budget.generateTokens.toLocaleString()}토큰 / 한 문제 다시 만들기 ${d.budget.regenerateCalls}회·${d.budget.regenerateTokens.toLocaleString()}토큰</p>
-        </div></details>
+    // The persona and the four stage additions: same rows, 편집 opens the text in place.
+    const paintPrompts = async () => {
+      const d = await api('GET', '/api/llm/prompts');
+      const row = (key, { name, text, empty, base = '', placeholder }) => `<div class="lt-row lt-plain${isOpen(key)}" data-row="${key}">
+        <div class="lt-main">
+          <span class="lt-name">${esc(name)}</span>
+          <span class="lt-sub${text ? ' lt-has' : ''}">${text ? esc(text.replace(/\s+/g, ' ')) : esc(empty)}</span>
+        </div>
+        <button class="small lt-open" data-open>편집</button>
+        <div class="lt-more">
+          <textarea rows="4" maxlength="4000" placeholder="${esc(placeholder)}">${esc(text)}</textarea>
+          <div class="lt-actions">${base}<span class="spacer"></span><button class="small" data-cancel>취소</button><button class="small primary" data-save>저장</button></div>
+        </div>
       </div>`;
-    const count = () => { $('#ai-persona-n').textContent = `${$('#ai-persona').value.trim().length.toLocaleString()} / 4,000자`; };
-    count();
-    $('#ai-persona').addEventListener('input', count);
-    $('#ai-persona-save').addEventListener('click', guard(async () => {
-      await api('PUT', '/api/llm/prompts', { persona: $('#ai-persona').value });
-      toast($('#ai-persona').value.trim() ? '공통 지시를 저장했습니다. 다음 호출부터 적용됩니다.' : '공통 지시를 비웠습니다.');
-      await llmPromptPanels();
-    }));
-    $$('[data-save-stage]').forEach((b) => b.addEventListener('click', guard(async () => {
-      const key = b.dataset.saveStage;
-      const text = b.closest('.ai-stage').querySelector('textarea').value;
-      await api('PUT', '/api/llm/prompts', { addenda: { [key]: text } });
-      toast(text.trim() ? '추가 지시를 저장했습니다. 다음 호출부터 적용됩니다.' : '추가 지시를 지웠습니다.');
-      await llmPromptPanels();
-    })));
-    // A switch is saved as soon as it is flipped.
-    $$('[data-check]').forEach((cb) => cb.addEventListener('change', guard(async () => {
-      const disabled = $$('[data-check]').filter((x) => !x.checked && !x.disabled).map((x) => x.dataset.check);
-      try { await api('PUT', '/api/llm/checks', { disabled }); }
-      catch (e) { cb.checked = !cb.checked; throw e; }
-      toast(cb.checked ? '검사를 켰습니다.' : '검사를 껐습니다. 다음에 만드는 문제부터 적용됩니다.');
-      await llmPromptPanels();
-    })));
+      $('#lt-prompts').innerHTML = [
+        row('persona', { name: '공통 지시', text: d.persona, empty: '없음 · 모든 호출의 맨 앞에 붙습니다',
+          placeholder: '예) 고등학교 화학 선생님의 출제를 돕는 조교로서, 학생이 읽는 문장은 교과서 말투로 쓰고 단위를 빠뜨리지 않는다.' }),
+        ...d.stages.map((st) => row(st.key, { name: st.label, text: st.addendum, empty: `없음 · ${st.about}`,
+          placeholder: `${st.label} 단계에서 기본 지시문 뒤에 붙일 내용`,
+          base: `<details class="lt-base"><summary>기본 지시문 보기</summary>${st.prompts.map((x) => `<h4>${esc(x.purpose)} <span class="muted small">${x.text.length.toLocaleString()}자</span></h4><pre class="values">${esc(x.text)}</pre>`).join('')}</details>` })),
+      ].join('');
+      toggleRows($('#lt-prompts'));
+      $$('#lt-prompts .lt-row').forEach((r) => {
+        const key = r.dataset.row;
+        const original = key === 'persona' ? d.persona : d.stages.find((x) => x.key === key).addendum;
+        $('[data-cancel]', r).addEventListener('click', () => { $('textarea', r).value = original; r.classList.remove('open'); opened.delete(key); });
+        $('[data-save]', r).addEventListener('click', guard(async () => {
+          const text = $('textarea', r).value;
+          await api('PUT', '/api/llm/prompts', key === 'persona' ? { persona: text } : { addenda: { [key]: text } });
+          opened.delete(key);
+          toast(text.trim() ? '저장했습니다. 다음 호출부터 적용됩니다.' : '지웠습니다.');
+          await paintPrompts();
+        }));
+      });
+      // What every made problem is checked for. Fixed: the checks are what keep the answers right.
+      const list = (items) => `<ul>${items.map((x) => `<li><b>${esc(x.label)}</b><span>${esc(x.how)}</span></li>`).join('')}</ul>`;
+      $('#lt-checks').innerHTML = `<p>만든 문제는 저장하기 전에 자동으로 검토합니다. 걸린 곳은 AI가 최대 2번 고치고, 그래도 남으면 <b>교사 검토 필요</b>로 표시합니다.</p>
+        <details><summary>검사 항목 ${d.checks.generation.length + d.checks.analysis.length}개 보기</summary>
+          <div class="lt-check-groups"><div><h3>변형 문제</h3>${list(d.checks.generation)}</div><div><h3>원본 분석</h3>${list(d.checks.analysis)}</div></div>
+        </details>`;
+    };
+
+    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paintModels(true); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
+    await Promise.all([paintModels(false), paintPrompts()]);
   }
 
   // ------------------------------------------------------------------ boot
