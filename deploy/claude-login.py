@@ -76,7 +76,13 @@ code = sys.stdin.readline().strip()
 if not code:
     finish({"ok": False, "error": "코드가 비어 있습니다."})
 mark = len(text())
-os.write(fd, code.encode() + b"\r")
+# A long code arrives as one chunk and the CLI takes it as a paste: an Enter in the same chunk becomes part of the
+# pasted text (a real code then sat in the field with nothing happening). Type it, then press Enter separately.
+os.write(fd, code.encode())
+pump(1.5)
+os.write(fd, b"\r")
+if not pump(10, lambda t: len(t) > mark + len(code) + 40 or "error" in t[mark:].lower()):
+    os.write(fd, b"\r")
 token_re = re.compile(r"sk-ant-oat[0-9A-Za-z_-]+")
 # The token may be wrapped and drawn inside a box: drop whitespace and box-drawing characters before looking.
 squash = lambda t: re.sub(r"[\s─-╿|]", "", t)
@@ -95,4 +101,4 @@ if token:
     os.chmod(TOKEN_FILE, 0o600)
     finish({"ok": True})
 reason = next((" ".join(line.split()) for line in after.splitlines() if "error" in line.lower()), "")
-finish({"ok": False, "error": reason[:200] or "로그인되지 않았습니다. 코드를 다시 확인해 주세요."})
+finish({"ok": False, "error": reason[:200] or "코드를 넣은 뒤 Claude가 응답하지 않았습니다."})
