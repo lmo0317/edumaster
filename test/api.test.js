@@ -340,3 +340,21 @@ test('LLM tab data: calls, tokens and cost per model from the ledger, today and 
     assert.ok(data.usage.deepseek.lastAt);
   } finally { await s.close(); }
 });
+
+test('기본 모델: chosen on the LLM tab, it is what requests without a model use; a malformed DeepSeek key is refused', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    assert.equal((await s.call('GET', '/api/status')).data.defaultProvider, 'deepseek');
+    assert.equal((await s.call('PUT', '/api/llm/default', { provider: 'nope' })).status, 400);
+    assert.equal((await s.call('PUT', '/api/llm/default', { provider: 'gemma' })).data.defaultProvider, 'gemma');
+    assert.equal((await s.call('GET', '/api/status')).data.defaultProvider, 'gemma');
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image })).data;
+    const job = await s.waitJob(a.jobId);
+    assert.equal(job.options.provider, 'gemma', 'no model named → the 기본 모델');
+    const named = (await s.call('POST', '/api/materials', { title: 'B', problemImage: image, provider: 'deepseek' })).data;
+    assert.equal((await s.waitJob(named.jobId)).options.provider, 'deepseek', 'a named model still wins');
+    assert.equal((await s.call('PUT', '/api/llm/deepseek-key', { key: 'not-a-key' })).status, 400);
+    assert.match((await s.call('GET', '/api/llm')).data.deepseek.key, /^$|^…/, 'only the last characters are ever shown');
+  } finally { await s.close(); }
+});

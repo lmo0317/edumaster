@@ -542,7 +542,9 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     throw lastError;
   }
 
-  return { json, mode, gemmaStatus };
+  // The LLM tab can replace the DeepSeek key while the server runs.
+  const setApiKey = (key) => { apiKey = key; };
+  return { json, mode, gemmaStatus, setApiKey };
 }
 
 // The PC provider serves whichever local model is loaded; name it from the model id llama-server reports.

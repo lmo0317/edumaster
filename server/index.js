@@ -24,7 +24,7 @@ function readSecret(file) {
 function createApp(options = {}) {
   const cfg = { ...config, ...options, budget: { ...config.budget, ...options.budget }, deepseek: { ...config.deepseek, ...options.deepseek } };
   const store = openStore(cfg.dataDir);
-  const apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
+  let apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
   const claudeKey = readSecret(path.join(cfg.dataDir, 'anthropic-api-key.txt'));
   let accessCode = readSecret(path.join(cfg.dataDir, 'access-code.txt'));
   if (!accessCode) {
@@ -100,11 +100,24 @@ function createApp(options = {}) {
         ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
       },
       activeJobs: jobs.activeCount(),
+      defaultProvider: defaultProvider(),
     };
   }, { open: true });
 
   // Picks the provider for a new job and refuses Gemma while the PC is off.
+  const DEFAULTABLE = ['deepseek', 'claude-cli', 'gemma'];
+  const defaultProvider = () => {
+    try { const p = JSON.parse(fs.readFileSync(path.join(cfg.dataDir, 'llm-settings.json'), 'utf8')).defaultProvider; return DEFAULTABLE.includes(p) ? p : 'deepseek'; }
+    catch { return 'deepseek'; }
+  };
   const chooseProvider = async (value) => {
+    // No model named: the 기본 모델 chosen on the LLM tab, if it can be used right now; otherwise DeepSeek.
+    if (!value) {
+      const preferred = defaultProvider();
+      if (preferred === 'claude-cli' && claudeCliReady(cfg)) return 'claude-cli';
+      if (preferred === 'gemma' && (await llm.gemmaStatus()).available) return 'gemma';
+      value = 'deepseek';
+    }
     if (value === 'relay') {
       if (!cfg.relay.dir) throw fail(409, '이 서버에는 중계 모델이 설정되어 있지 않습니다.');
       return 'relay';
@@ -183,7 +196,32 @@ function createApp(options = {}) {
         lastAt: mine.map((r) => r.createdAt).sort().pop() || '',
       };
     }
-    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model, limits: claudeLimits(cfg) } };
+    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model, limits: claudeLimits(cfg) }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' } };
+  });
+  // 기본 모델: the model pages preselect and requests without a model use (LLM tab).
+  route('PUT', /^\/api\/llm\/default$/, async (req) => {
+    const body = await readBody(req, 1024);
+    if (!DEFAULTABLE.includes(body.provider)) throw fail(400, '기본 모델로 고를 수 없는 모델입니다.');
+    fs.writeFileSync(path.join(cfg.dataDir, 'llm-settings.json'), JSON.stringify({ defaultProvider: body.provider }));
+    return { defaultProvider: defaultProvider() };
+  });
+  // Replacing the DeepSeek key from the LLM tab: the new key is tried on DeepSeek's balance endpoint first and kept
+  // (data/, mode 600) only if DeepSeek accepts it. The key is never sent back, only its last 4 characters.
+  route('PUT', /^\/api\/llm\/deepseek-key$/, async (req) => {
+    const body = await readBody(req, 4096);
+    const key = String(body.key || '').trim();
+    if (!/^sk-[A-Za-z0-9]{16,}$/.test(key)) throw fail(400, 'DeepSeek API 키 형식이 아닙니다 (sk-로 시작).');
+    let r;
+    try { r = await fetch(cfg.deepseek.baseUrl + '/user/balance', { headers: { Authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(10000) }); }
+    catch { throw fail(502, 'DeepSeek에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'); }
+    if (r.status === 401) throw fail(400, 'DeepSeek이 이 키를 받지 않습니다. 키를 다시 확인해 주세요.');
+    if (!r.ok) throw fail(502, `DeepSeek 확인 오류 (${r.status})`);
+    const file = path.join(cfg.dataDir, 'deepseek-api-key.txt');
+    fs.writeFileSync(file, key + '\n', { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+    apiKey = key;
+    llm.setApiKey(key);
+    return { key: '…' + key.slice(-4) };
   });
 
   // materials

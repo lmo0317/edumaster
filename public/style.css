@@ -393,6 +393,9 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 /* LLM tab */
 .llm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .llm-grid .panel { margin: 0; }
+.llm-card.llm-default { border-color: #22a35a; box-shadow: 0 0 0 1px #22a35a inset; }
+.llm-default-row { display: flex; gap: 8px; align-items: center; margin: 6px 0 4px; min-height: 28px; }
+#ds-key-form input { width: 100%; margin-top: 6px; }
 .limit { margin: 10px 0; }
 .limit-head { display: flex; justify-content: space-between; align-items: baseline; }
 .limit-bar { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }

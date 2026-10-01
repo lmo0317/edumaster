@@ -82,7 +82,8 @@
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
   const loadStatus = async () => (statusCache = await api('GET', '/api/status'));
-  function providerPicker(name, selected) {
+  // Starts on the 기본 모델 chosen on the LLM tab (or DeepSeek when that one cannot be used right now).
+  function providerPicker(name, selected = statusCache?.defaultProvider) {
     const providers = statusCache?.providers || { deepseek: { label: 'DeepSeek V4 Flash', available: true, note: '' } };
     const pick = providers[selected]?.available ? selected : 'deepseek';
     return `<div class="providers">${Object.entries(providers).map(([key, p]) => `
@@ -228,7 +229,7 @@
             <label class="inline"><input type="checkbox" id="same"> 한 이미지에 문제와 해설이 함께 있음</label></div>
         </div>
         <label for="title">제목 (선택)</label><input type="text" id="title" placeholder="예: 몰질량 킬러 02페이지">
-        <label>분석 모델</label>${providerPicker('provider', 'deepseek')}
+        <label>분석 모델</label>${providerPicker('provider')}
         <label for="note">AI에게 알려 줄 점 (선택)</label><textarea id="note" placeholder="예: 표 III의 'B'는 학생 필기입니다. 해설은 STEP 3개입니다."></textarea>
         <div class="row" style="margin-top:12px"><span class="muted small" id="submit-hint">문제 이미지를 넣으면 분석을 시작할 수 있습니다.</span><span class="spacer"></span><button class="primary" id="start" disabled>분석 시작</button></div>
       </div>`;
@@ -372,7 +373,7 @@
     if (m.status === 'failed' || !m.steps) {
       view.innerHTML = `<h1>${esc(m.title)}</h1><div class="grid2"><div class="panel">${originals(m.images)}</div><div class="panel"><h2>분석 실패</h2>
         <div class="note bad">${esc(m.error || '분석 결과가 없습니다.')}</div>
-        <label>분석 모델</label>${providerPicker('provider', m.analyzedWith || 'deepseek')}
+        <label>분석 모델</label>${providerPicker('provider')}
         <label>AI에게 알려 줄 점 (선택)</label><textarea id="note">${esc(m.note || '')}</textarea>
         <div class="row" style="margin-top:10px"><button class="primary" id="again">다시 분석</button><button class="danger" id="del">자료 삭제</button></div></div></div>`;
       $('#again').addEventListener('click', guard(async () => { await api('POST', `/api/materials/${id}/analyze`, { note: $('#note').value, provider: $('[name=provider]:checked')?.value }); route(); }));
@@ -489,7 +490,7 @@
     $('#afb-go').addEventListener('click', guard(async () => {
       const feedback = $('#afb-text').value.trim();
       if (!feedback) throw new Error('분석 피드백을 입력해 주세요.');
-      const again = statusCache?.providers?.[m.analyzedWith]?.available ? m.analyzedWith : 'deepseek';
+      const again = undefined; // the 기본 모델 (LLM tab)
       await api('POST', `/api/materials/${m.id}/analyze`, { feedback, provider: again });
       route();
     }));
@@ -509,7 +510,7 @@
     }));
     $('#reanalyze').addEventListener('click', guard(async () => {
       if (!confirm('원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다. 분석 피드백은 모두 반영됩니다.')) return;
-      const again = statusCache?.providers?.[m.analyzedWith]?.available ? m.analyzedWith : 'deepseek';
+      const again = undefined; // the 기본 모델 (LLM tab)
       await api('POST', `/api/materials/${m.id}/analyze`, { provider: again });
       route();
     }));
@@ -599,7 +600,7 @@
         <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 문제 (STEP 1~${n})</label>
         ${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k}만 연습</label>`).join('')}</div>
       <details class="gen-more" data-k="gen-more"><summary>세부 설정 <span class="muted small" id="gen-summary"></span></summary><div class="inner">
-        <label>생성 모델</label>${providerPicker('genProvider', m.analyzedWith || 'deepseek')}
+        <label>생성 모델</label>${providerPicker('genProvider')}
         <label>최종 문제 방식</label>
         <div><label class="inline"><input type="radio" name="mode" value="integrated" checked> 통합 변형 (권장) — 앞 연습 문제의 아이디어를 엮은 새 구조</label>
           <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
@@ -911,10 +912,8 @@
     if (!el) return;
     const st = await api('GET', '/api/claude-login');
     if (st.loggedIn) {
-      el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip ok">연결됨</span></div>
-        <p class="muted small">문제를 만들 때 <b>Claude Opus 5.5 (구독)</b>을 고를 수 있습니다. 서버의 Claude 구독으로 실행되어 추가 비용이 없고, 구독의 사용 한도를 함께 씁니다.</p>
-        <div class="fb-add-bar"><span class="muted small" id="cl-check-result">연결됨은 로그인 정보가 저장되어 있다는 뜻입니다. 실제로 동작하는지는 <b>연결 확인</b>으로 볼 수 있습니다.</span><span class="spacer"></span>
-          <button id="cl-check">연결 확인</button><button class="danger" id="cl-logout">연결 해제</button></div>`;
+      el.innerHTML = `<div class="fb-add-bar"><span class="muted small" id="cl-check-result"></span><span class="spacer"></span>
+          <button class="small" id="cl-check">연결 확인</button><button class="small danger" id="cl-logout">연결 해제</button></div>`;
       $('#cl-check', el).addEventListener('click', guard(async (e) => {
         e.target.disabled = true; $('#cl-check-result', el).textContent = 'Opus에 짧은 질문을 보내는 중…';
         try {
@@ -925,12 +924,11 @@
       $('#cl-logout', el).addEventListener('click', guard(async () => {
         if (!confirm('Claude 구독 연결을 해제할까요? 서버에 저장된 로그인 정보를 지웁니다. 다시 쓰려면 로그인해야 합니다.')) return;
         await api('POST', '/api/claude-login/logout');
-        toast('연결을 해제했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {});
+        toast('연결을 해제했습니다.'); await loadStatus().catch(() => {}); route();
       }));
       return;
     }
-    el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip warn">연결 안 됨</span></div>
-      <p class="muted small">서버를 선생님의 Claude 구독에 한 번 연결하면 문제 생성에서 <b>Claude Opus 5.5 (구독)</b>을 쓸 수 있습니다 (추가 비용 없음).</p>
+    el.innerHTML = `<p class="muted small">서버를 선생님의 Claude 구독에 한 번 연결하면 <b>Claude Opus 5.5 (구독)</b>을 쓸 수 있습니다 (추가 비용 없음).</p>
       <ol class="small">
         <li><b>로그인 시작</b>을 누르면 로그인 링크가 나옵니다.</li>
         <li>링크를 열어 Claude 계정으로 로그인하고 승인하면 <b>코드</b>가 표시됩니다.</li>
@@ -950,7 +948,7 @@
           for (let i = 0; i < 60; i++) {
             await new Promise((r) => setTimeout(r, 2500));
             const st = await api('GET', '/api/claude-login');
-            if (st.loggedIn) { toast('Claude 구독에 연결했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {}); return; }
+            if (st.loggedIn) { toast('Claude 구독에 연결했습니다.'); await loadStatus().catch(() => {}); route(); return; }
             if (!st.checking && st.result && !st.result.ok) throw new Error('연결되지 않았습니다: ' + (st.result.error || '코드를 다시 확인해 주세요.') + ' 로그인을 다시 시작해 주세요.');
           }
           throw new Error('확인이 너무 오래 걸립니다. 잠시 후 시스템 화면을 다시 열어 확인해 주세요.');
@@ -1062,8 +1060,7 @@
   async function llmView() {
     view.innerHTML = `<div class="row"><h1 style="margin-right:auto">LLM</h1><span class="muted small" id="llm-at"></span><button id="llm-refresh">새로 고침</button></div>
       <p class="muted">문제를 만들 때 쓰는 AI 모델의 연결 상태와 사용량입니다. 잔액과 사용량은 이 화면을 열거나 <b>새로 고침</b>을 누를 때 가져옵니다.</p>
-      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>
-      <div class="panel" id="claude-login"></div>`;
+      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>`;
     const won = (usd) => (usd ? `약 ${Math.round(usd * 1400).toLocaleString()}원` : '0원');
     const month = (u) => `<p>이번 달: 세트 <b>${u.month.sets}개</b>${u.month.usd ? ` · <b>${won(u.month.usd)}</b>` : ''} <span class="muted small">· 마지막 사용 ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</span></p>`;
     // A window's remaining share as a bar: green with room left, amber when low, red when used up.
@@ -1079,24 +1076,45 @@
       if (fresh) await api('POST', '/api/claude-login/check').catch(() => null);
       const [status, llm] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/llm')]);
       const p = status.providers || {};
-      const card = (title, ok, okText, badText, body) => `<div class="panel llm-card"><div class="row"><h2 style="margin:0">${esc(title)}</h2><span class="spacer"></span><span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : badText}</span></div>${body}</div>`;
-      const lim = llm.claude.limits;
+      const def = status.defaultProvider || 'deepseek';
+      // One card per model: its state, what matters for it, managing it, and making it the 기본 모델.
+      const card = (key, title, ok, okText, badText, body) => `<div class="panel llm-card${def === key ? ' llm-default' : ''}">
+        <div class="row"><h2 style="margin:0">${esc(title)}</h2><span class="spacer"></span><span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : badText}</span></div>
+        <div class="llm-default-row">${def === key ? '<span class="chip ok">기본 모델</span><span class="muted small">문제 분석·생성에서 처음 선택되는 모델</span>'
+          : `<button class="small" data-default="${key}" ${ok ? '' : 'disabled'}>기본 모델로 사용</button>`}</div>${body}</div>`;
+      const lim = llm.claude.loggedIn ? llm.claude.limits : null;
       $('#llm-cards').innerHTML = [
-        card('Claude Opus 5.5 (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
-          llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
-            <p class="muted small">${lim ? `${fmtTime(lim.at)} 기준` : '아직 측정한 적 없음 — 새로 고침을 눌러 주세요'} · 구독으로 실행 · 호출당 비용 없음</p>${month(llm.usage['claude-cli'])}`
-            : '<p class="muted small">아래 Claude 구독 연결에서 로그인하면 쓸 수 있습니다.</p>'),
-        card(p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
-          `<p>잔액: <b id="ds-balance">확인 중…</b></p>${month(llm.usage.deepseek)}<p class="muted small">쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p>`),
-        card(p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 켜짐', 'PC 꺼짐',
+        card('claude-cli', 'Claude Opus 5.5 (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
+          `${llm.claude.loggedIn ? `${limitBar('5시간 한도', lim?.fiveHour)}${limitBar('1주일 한도', lim?.sevenDay)}
+            <p class="muted small">${lim ? `${fmtTime(lim.at)} 기준` : '아직 측정한 적 없음 — 새로 고침을 눌러 주세요'} · 구독으로 실행 · 호출당 비용 없음</p>${month(llm.usage['claude-cli'])}` : ''}
+          <div id="claude-login"></div>`),
+        card('deepseek', p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
+          `<p>잔액: <b id="ds-balance">확인 중…</b></p>${month(llm.usage.deepseek)}<p class="muted small">쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p>
+          <div class="fb-add-bar"><span class="muted small">API 키 ${esc(llm.deepseek.key || '없음')}</span><span class="spacer"></span><button class="small" id="ds-key-edit">키 변경</button></div>
+          <div id="ds-key-form" hidden><input type="password" id="ds-key" autocomplete="off" placeholder="새 DeepSeek API 키 (sk-…)">
+            <div class="fb-add-bar"><span class="muted small">저장 전에 DeepSeek에 확인합니다.</span><span class="spacer"></span><button class="small" id="ds-key-cancel">취소</button><button class="small primary" id="ds-key-save">저장</button></div></div>`),
+        card('gemma', p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 켜짐', 'PC 꺼짐',
           `<p class="muted small">선생님 PC에서 실행 · 무료 · PC가 켜져 있을 때만${p.gemma?.model ? ` · ${esc(p.gemma.model)}` : ''}</p>${month(llm.usage.gemma)}`),
       ].join('');
       $('#llm-at').textContent = fmtTime(new Date().toISOString()) + ' 기준';
       api('GET', '/api/balance').then((x) => { if ($('#ds-balance')) $('#ds-balance').textContent = x.balance; }).catch(() => { if ($('#ds-balance')) $('#ds-balance').textContent = '확인 실패'; });
+      $$('[data-default]').forEach((b) => b.addEventListener('click', guard(async () => {
+        await api('PUT', '/api/llm/default', { provider: b.dataset.default });
+        await loadStatus().catch(() => {});
+        toast('기본 모델을 바꿨습니다. 문제 분석·생성에서 이 모델이 처음 선택됩니다.');
+        await paint(false);
+      })));
+      $('#ds-key-edit').addEventListener('click', () => { $('#ds-key-form').hidden = false; $('#ds-key').focus(); });
+      $('#ds-key-cancel').addEventListener('click', () => { $('#ds-key').value = ''; $('#ds-key-form').hidden = true; });
+      $('#ds-key-save').addEventListener('click', guard(async (e) => {
+        e.target.disabled = true;
+        try { await api('PUT', '/api/llm/deepseek-key', { key: $('#ds-key').value }); toast('DeepSeek API 키를 바꿨습니다.'); await paint(false); }
+        finally { if (e.target.isConnected) e.target.disabled = false; }
+      }));
+      claudeLoginPanel().catch(() => {});
     };
-    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paint(true); await claudeLoginPanel(); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
+    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paint(true); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
     await paint(false);
-    claudeLoginPanel().catch(() => { const el = $('#claude-login'); if (el) el.hidden = true; });
   }
 
 
