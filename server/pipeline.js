@@ -220,7 +220,7 @@ async function analyzeMaterial(ctx, material) {
   const { data, shapeFixes: analyzeShape = [] } = await llm.json({
     purpose: 'analyze', jobId: ctx.job.id, budget, signal, vision: true, effort: 'off', maxTokens: 16000,
     system: prompts.ANALYZE_SYSTEM,
-    text: withHint(prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note, feedback: material.analysisFeedback || [] })),
+    text: withHint(prompts.analyzeText({ hasSolution: Boolean(material.images.solution), sameImage: material.images.sameImage, note: material.note, feedback: material.analysisFeedback || [], common: ctx.commonAnalysis || [] })),
     images,
   });
   if (analyzeShape.length) ctx.log(`응답 JSON 구조 보정: ${analyzeShape.join(', ')}를 최상위로 옮김`);

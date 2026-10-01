@@ -26,7 +26,13 @@ const SAMPLE = {
 // The analysis follows the teacher's analysis feedback the way the prompt asks: "STEP을 n개로" splits the last STEP,
 // "쉽게" writes the solution out, and each feedback says how it was applied.
 function followFeedback(text) {
-  const feedback = (text.split('[교사의 분석 피드백')[1] || '').split('\n').slice(1).filter((l) => l.startsWith('- ')).map((l) => l.slice(2));
+  // The lines under the problem's analysis feedback and under 공통 지침's analysis instructions.
+  const feedback = [];
+  let under = false;
+  for (const line of text.split('\n')) {
+    if (line.startsWith('[')) under = /분석 피드백|공통 분석 지침/.test(line);
+    else if (under && line.startsWith('- ')) feedback.push(line.slice(2));
+  }
   if (!feedback.length) return SAMPLE;
   const count = Number(feedback.map((f) => /STEP[을를]?\s*(\d+)\s*개/.exec(f)?.[1]).find(Boolean)) || 0;
   const rewrite = feedback.some((f) => /쉽게/.test(f));

@@ -194,27 +194,6 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .cv2-quote blockquote { margin: 8px 0 4px; padding: 10px 14px; border-left: 3px solid var(--accent); background: #f6f8fd; border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink); }
 
 /* ---- 학습 ---- */
-.learn-intro > p { margin: 0 0 14px; }
-.learn-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.learn-flow > div { background: #f8f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 3px; }
-.learn-flow .num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-.learn-flow span:not(.num) { font-size: 13px; color: var(--muted); }
-.learn-examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.learn-examples .ex { background: var(--accent-soft); border-color: transparent; color: #1b3a99; font-size: 12.5px; text-align: left; }
-.learn-sec { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
-.learn-sec:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
-.learn-sec-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-.learn-sec-head h3 { margin: 0; }
-.learn-when { font-size: 12.5px; color: var(--accent); font-weight: 600; background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; }
-.learn-list { display: grid; gap: 8px; }
-.learn-item { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; }
-.learn-item-main { flex: 1; min-width: 0; }
-.learn-text { font-size: 14.5px; }
-.learn-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
-.learn-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.learn-off { margin-top: 14px; }
-.learn-off > summary { font-size: 13.5px; color: var(--muted); font-weight: 600; cursor: pointer; }
-.learn-off .learn-list { margin-top: 8px; opacity: .75; }
 
 /* ---- 시스템 안내 (teacher-facing) ---- */
 .check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-bottom: 4px; }
@@ -234,18 +213,10 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .meter span.ok { background: var(--ok); } .meter span.warn { background: #d99a1e; } .meter span.bad { background: var(--bad); }
 .meter-num { font-weight: 700; font-size: 13px; text-align: right; }
 .sys-card.learn { background: #f8f9fc; }
-.learn-num { font-size: 30px; font-weight: 800; color: var(--accent); line-height: 1.1; margin-bottom: 6px; }
-.learn-num small { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 4px; }
 .stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .stat { background: #f8f9fc; border-radius: 10px; padding: 12px 14px; }
 .stat-label { display: block; font-size: 13px; color: var(--muted); }
 .stat b { font-size: 20px; }
-.learn-rows { display: grid; gap: 10px; margin: 12px 0 8px; }
-.learn-row { display: grid; grid-template-columns: 170px repeat(3, minmax(0, 1fr)); gap: 10px; background: #f8f9fc; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-.learn-title { display: flex; align-items: flex-start; gap: 8px; font-size: 15px; }
-.learn-title .num { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; }
-.learn-cell { font-size: 13.5px; color: var(--ink); background: #fff; border-radius: 8px; padding: 10px 12px; position: relative; }
-.learn-cell .lbl { display: block; font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
 .sys-card.price .price-big { font-size: 26px; font-weight: 800; margin: 10px 0 2px; color: var(--ink); }
 .sys-card.price .price-big small { font-size: 13px; font-weight: 600; color: var(--muted); }
 .sys-card.price.free .price-big { color: var(--ok); }
@@ -299,8 +270,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .grid2, .cols-3, .cols-title { grid-template-columns: minmax(0, 1fr); }
   .kv { grid-template-columns: 1fr; }
   .kv .k { margin-top: 6px; }
-  .learn-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .learn-row { grid-template-columns: minmax(0, 1fr); }
   .cv2-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cv2-model, .cv2-pdf { grid-column: 1 / -1; }
   .cv2-pdf { justify-content: flex-start; }
@@ -319,9 +288,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
   .mat-thumb { flex-basis: 48px; width: 48px; height: 64px; }
   .mat-open { display: none; }
   .cv2-row { grid-template-columns: minmax(0, 1fr); }
-  .learn-flow { grid-template-columns: minmax(0, 1fr); }
-  .learn-item { flex-direction: column; }
-  .learn-actions { justify-content: flex-start; }
   .cv2-orig img { height: 80px; }
   .mat-card .set-list { padding: 2px 12px; }
   .set-row { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -380,8 +346,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .fb-add-bar select { width: auto; min-width: 96px; }
 
 /* 전체 피드백: problem feedback grouped under each problem */
-.learn-sub { margin: 8px 0 14px; }
-.learn-sub > .row { margin-bottom: 6px; }
 
 /* Header: the 기본 모델 */
 .model-state { color: var(--muted); text-decoration: none; white-space: nowrap; }

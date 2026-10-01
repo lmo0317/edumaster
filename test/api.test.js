@@ -175,39 +175,48 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
   } finally { await s.close(); }
 });
 
-test('LLM tab: persona and stage additions go around the built-in instructions; the checks are listed, fixed', async () => {
+test('공통 지침: the AI role goes before every call, the analysis instructions reach every analysis, the checks are listed', async () => {
   const s = await start();
   try {
-    assert.equal((await s.call('GET', '/api/llm/prompts')).status, 401, 'login required');
+    assert.equal((await s.call('GET', '/api/common')).status, 401, 'login required');
     await s.call('POST', '/api/login', { code: 'test-code' });
-    let { status, data } = await s.call('GET', '/api/llm/prompts');
-    assert.equal(status, 200);
-    assert.match(data.version, /^[0-9a-f]{10}$/);
-    assert.deepEqual(data.stages.map((x) => x.key), ['read', 'design', 'review', 'write']);
-    assert.ok(data.stages.every((x) => x.prompts.length && x.prompts.every((p) => p.text && p.purpose)), 'every stage shows its built-in instructions and what each is for');
-    assert.equal(data.stages.reduce((a, x) => a + x.prompts.length, 0), 13, 'all built-in instructions are shown');
+    let data = (await s.call('GET', '/api/common')).data;
+    assert.deepEqual([data.persona, data.analysis], ['', []]);
     assert.ok(data.checks.generation.length >= 8 && data.checks.analysis.length >= 5);
 
-    data = (await s.call('PUT', '/api/llm/prompts', { persona: '  화학 선생님의 조교  ', addenda: { design: '보기는 다섯 개로' } })).data;
+    data = (await s.call('PUT', '/api/common/persona', { persona: '  화학 선생님의 조교  ' })).data;
     assert.equal(data.persona, '화학 선생님의 조교');
-    assert.equal(data.stages.find((x) => x.key === 'design').addendum, '보기는 다섯 개로');
-    assert.equal((await s.call('PUT', '/api/llm/prompts', { addenda: { nope: 'x' } })).status, 400);
-    assert.equal((await s.call('PUT', '/api/llm/prompts', { persona: 'x'.repeat(4001) })).status, 400);
-    // Changing one stage keeps the others.
-    data = (await s.call('PUT', '/api/llm/prompts', { addenda: { review: '단위를 확인' } })).data;
-    assert.equal(data.stages.find((x) => x.key === 'design').addendum, '보기는 다섯 개로');
-    assert.equal(data.persona, '화학 선생님의 조교');
-
+    assert.equal((await s.call('PUT', '/api/common/persona', { persona: 'x'.repeat(4001) })).status, 400);
     const { withTeacherPrompt } = require('../server/llm');
     const cfg = { dataDir: s.dataDir };
-    const built = withTeacherPrompt(cfg, 'BUILT-IN', 'generate');
-    assert.ok(built.indexOf('화학 선생님의 조교') < built.indexOf('BUILT-IN') && built.indexOf('BUILT-IN') < built.indexOf('보기는 다섯 개로'), 'persona before, addition after');
-    assert.ok(!withTeacherPrompt(cfg, 'BUILT-IN', 'analyze').includes('보기는 다섯 개로'), 'a stage addition stays in its stage');
-    assert.ok(withTeacherPrompt(cfg, 'BUILT-IN', 'solve').includes('단위를 확인'));
-    await s.call('PUT', '/api/llm/prompts', { persona: '', addenda: { design: '', review: '' } });
-    assert.equal(withTeacherPrompt(cfg, 'BUILT-IN', 'generate'), 'BUILT-IN', 'emptied: the built-in instructions alone');
+    const built = withTeacherPrompt(cfg, 'BUILT-IN');
+    assert.ok(built.indexOf('화학 선생님의 조교') < built.indexOf('BUILT-IN'), 'the AI role comes first');
+    await s.call('PUT', '/api/common/persona', { persona: '' });
+    assert.equal(withTeacherPrompt(cfg, 'BUILT-IN'), 'BUILT-IN', 'emptied: the built-in instructions alone');
 
-    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['format'] })).status, 404, 'the checks cannot be switched off');
+    assert.equal((await s.call('POST', '/api/common/analysis', { text: ' ' })).status, 400);
+    data = (await s.call('POST', '/api/common/analysis', { text: '해설은 쉽게 풀어 쓴다' })).data;
+    data = (await s.call('POST', '/api/common/analysis', { text: 'STEP을 4개로 나눈다' })).data;
+    assert.deepEqual(data.analysis.map((a) => a.text), ['해설은 쉽게 풀어 쓴다', 'STEP을 4개로 나눈다']);
+    data = (await s.call('PUT', '/api/common/analysis/0', { text: '설명을 쉽게 풀어 쓴다' })).data;
+    assert.equal(data.analysis[0].text, '설명을 쉽게 풀어 쓴다');
+    assert.equal((await s.call('PUT', '/api/common/analysis/9', { text: '없음' })).status, 404);
+
+    // A new problem's analysis follows them, though the problem has no feedback of its own.
+    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
+    assert.equal(m.steps.length, 4, 'the common STEP count');
+    assert.ok(m.steps.every((x) => x.work.startsWith('(쉽게 풀어 씀)')), 'the common write-up');
+    data = (await s.call('DELETE', '/api/common/analysis/1')).data;
+    await s.call('DELETE', '/api/common/analysis/0');
+    const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
+    await s.waitJob(again.jobId);
+    m = (await s.call('GET', '/api/materials/' + m.id)).data;
+    assert.equal(m.steps.length, 3, 'without them the printed steps decide again');
+    assert.equal((await s.call('GET', '/api/materials')).data.find((x) => x.id === m.id).analysisFeedbackCount, 0);
+
+    assert.equal((await s.call('GET', '/api/llm/prompts')).status, 404, 'the LLM tab no longer holds instructions');
     assert.equal((await s.call('GET', '/api/system')).status, 404, 'the 시스템 page is gone');
   } finally { await s.close(); }
 });

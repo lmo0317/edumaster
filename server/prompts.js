@@ -33,7 +33,7 @@ const ANALYZE_SYSTEM = `너는 고등학교 과학·수학 킬러 문제를 해�
 - 읽기 어려운 글자·수치가 있으면 추측한 값과 함께 uncertainties에 적는다.
 
 [교사의 분석 피드백이 있을 때 — 위 규칙보다 우선한다]
-- 사용자 메시지의 "교사의 분석 피드백"은 위의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다.
+- 사용자 메시지의 "교사의 분석 피드백"과 "교사의 공통 분석 지침"은 위의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다.
 - 피드백이 STEP 수나 나누는 방식을 정하면(예: "STEP을 4개로 분리") 해설의 단계 표시와 달라도 그대로 따른다. 판단이 여러 개 들어 있는 단계를 판단마다 나누고, 각 STEP의 marker는 그 내용이 있던 해설 단계 표시로 둔다.
 - 피드백이 설명을 쉽게·자세히 하라는 등 해설 표현을 바꾸라고 하면 work를 해설 문장 그대로 옮기지 말고 요청대로 풀어 쓴다. 단, 교사의 방법(보조 문자, 가정→모순 판정, 실험 간 비교, 비례식, 계산 순서)과 모든 수치·결론은 그대로 둔다. 방법을 바꾸라는 피드백이 아니면 다른 풀이로 바꾸지 않는다.
 - teacherRequests.stepCount: 피드백이 정한 STEP 수 (정하지 않았으면 0). teacherRequests.rewrite: 피드백 때문에 work를 해설 문장과 다르게 풀어 썼으면 true.
@@ -121,13 +121,17 @@ function proofreadText(fields) {
   return '[옮겨 적은 필드]\n' + JSON.stringify(fields, null, 1) + '\n\n이미지와 대조해 JSON만 반환하라.';
 }
 
-function analyzeText({ hasSolution, sameImage, note, feedback = [] }) {
+function analyzeText({ hasSolution, sameImage, note, feedback = [], common = [] }) {
   const lines = [];
   if (sameImage) lines.push('한 이미지에 문제와 해설이 함께 있다. 문제 영역과 해설 영역을 구분해서 읽어라.');
   else if (hasSolution) lines.push('각 이미지 앞의 라벨로 문제 이미지와 교사 해설 이미지를 구분하라.');
   else lines.push('문제 이미지만 있다. 해설이 없으므로 직접 풀어 STEP을 만들어라 (solutionSource="ai").');
   lines.push('작은 원본을 확대해 위에서 아래로 자른 조각이 올 수 있다. 조각은 위아래가 조금 겹치므로 겹친 줄을 두 번 옮기지 말고 순서대로 이어 읽어라.');
   if (note) lines.push('교사 메모: ' + note);
+  if (common.length) {
+    lines.push('[모든 문제에 적용하는 교사의 공통 분석 지침 — 교사의 분석 피드백과 같이, 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 이 문제의 분석 피드백과 부딪히면 이 문제의 피드백을 따른다]');
+    for (const c of common) lines.push('- ' + c.text);
+  }
   if (feedback.length) {
     lines.push('[교사의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에 교사가 요청한 점. 시스템 지시의 STEP 개수 규칙과 해설을 그대로 옮기는 규칙보다 우선한다. 모두 반영하고, 읽기에 관한 것은 이미지를 다시 확인하며, 반영한 방법을 feedbackApplied에 피드백마다 적는다]');
     for (const f of feedback) lines.push('- ' + f.text);

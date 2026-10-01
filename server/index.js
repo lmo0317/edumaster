@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, PROMPT_STAGES } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -75,7 +75,7 @@ function createApp(options = {}) {
   });
   // The question sentence of a problem (its last line that is not a table row), to tell variants apart in lists.
   const questionLine = (text) => String(text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('|')).pop()?.slice(0, 160) || '';
-  const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
+  const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, analysisFeedbackCount: (m.analysisFeedback || []).length, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
     feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
@@ -530,16 +530,6 @@ function createApp(options = {}) {
   route('GET', /^\/api\/corrections$/, () => store.corrections.all().sort((a, b) => b.count - a.count));
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 
-  route('GET', /^\/api\/prompts$/, () => ({ version: prompts.PROMPT_VERSION, ...prompts.SYSTEMS }));
-  // What each built-in instruction is for (LLM tab).
-  const PROMPT_PURPOSE = {
-    analyze: '원본 문제·해설 이미지를 옮겨 적고 교사 풀이를 STEP으로 정리', proofread: '옮겨 적은 내용을 이미지와 글자 단위로 대조',
-    'reread-question': '발문만 다시 읽기 (2회)', 'reread-problem': '필기 유입이 의심될 때 인쇄 글자만 다시 읽기',
-    'reread-headings': '해설의 단계 제목만 다시 읽기 (2회)', regroup: 'STEP을 해설 단계 수에 맞게 묶기',
-    'fix-verification': '실행되지 않는 원본 검산 프로그램 고치기', generate: '단계별 변형 문제 설계',
-    solve: '정답을 모르는 독립 풀이 검토', 'review-solution': '만든 해설을 선생님 해설과 STEP별로 대조', repair: '검토에서 나온 문제를 고쳐 다시 설계',
-    'write-solution': '출제 모델의 STEP 요지를 선생님 해설 형식으로 풀어 쓰기 (혼합 실행)', adjudicate: '독립 풀이와 정답이 다를 때 출제 모델이 누가 옳은지 재확인 (혼합 실행)',
-  };
   // Cost per problem from real DeepSeek runs of the eval set: tokens of a whole generation job (design, blind
   // solve, repairs) divided by the problems it produced; the analysis of one original counted separately.
   // Opus is priced on the same token amounts (the relay run records no token counts).
@@ -680,46 +670,44 @@ function createApp(options = {}) {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });
-  // LLM tab: the AI's persona, each stage's built-in instructions (read-only) with the teacher's addition, and the
-  // checks every made problem goes through (read-only).
-  function promptSettings() {
+  // 공통 지침 (instructions for every problem): the AI's role before every call, the analysis instructions every analysis
+  // follows (generation's are the global rules), and, read-only, the checks every made problem goes through.
+  function commonSettings() {
     const s = llmSettings(cfg.dataDir);
     return {
-      version: prompts.PROMPT_VERSION,
       persona: s.persona || '',
-      stages: Object.entries(PROMPT_STAGES).map(([key, st]) => ({
-        key, label: st.label, about: st.about, addendum: s.addenda?.[key] || '',
-        prompts: st.purposes.filter((p) => prompts.SYSTEMS[p]).map((p) => ({ id: p, purpose: PROMPT_PURPOSE[p] || '', text: prompts.SYSTEMS[p] })),
-      })),
-      checks: {
-        analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair,
-      },
-      budget: cfg.budget,
+      analysis: s.commonAnalysis || [],
+      checks: { analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair },
     };
   }
   const PERSONA_MAX = 4000;
-  const ADDENDUM_MAX = 4000;
-  route('GET', /^\/api\/llm\/prompts$/, () => promptSettings());
-  route('PUT', /^\/api\/llm\/prompts$/, async (req) => {
-    const body = await readBody(req, 64 * 1024);
-    const patch = {};
-    if (body.persona !== undefined) {
-      const persona = String(body.persona || '').trim();
-      if (persona.length > PERSONA_MAX) throw fail(400, `공통 지시는 ${PERSONA_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
-      patch.persona = persona;
-    }
-    if (body.addenda !== undefined) {
-      const addenda = { ...(llmSettings(cfg.dataDir).addenda || {}) };
-      for (const [key, text] of Object.entries(body.addenda || {})) {
-        if (!PROMPT_STAGES[key]) throw fail(400, '알 수 없는 단계입니다.');
-        const t = String(text || '').trim();
-        if (t.length > ADDENDUM_MAX) throw fail(400, `단계별 추가 지시는 ${ADDENDUM_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
-        if (t) addenda[key] = t; else delete addenda[key];
-      }
-      patch.addenda = addenda;
-    }
-    saveLlmSettings(cfg.dataDir, patch);
-    return promptSettings();
+  route('GET', /^\/api\/common$/, () => commonSettings());
+  route('PUT', /^\/api\/common\/persona$/, async (req) => {
+    const persona = String((await readBody(req, 64 * 1024)).persona || '').trim();
+    if (persona.length > PERSONA_MAX) throw fail(400, `AI 역할은 ${PERSONA_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
+    saveLlmSettings(cfg.dataDir, { persona });
+    return commonSettings();
+  });
+  const commonNote = (body) => {
+    const text = String(body.text || '').trim().slice(0, 1000);
+    if (text.length < 2) throw fail(400, '지침 내용을 입력해 주세요.');
+    return text;
+  };
+  route('POST', /^\/api\/common\/analysis$/, async (req) => {
+    const text = commonNote(await readBody(req, 8192));
+    saveLlmSettings(cfg.dataDir, { commonAnalysis: [...(llmSettings(cfg.dataDir).commonAnalysis || []), { text, at: new Date().toISOString() }].slice(-30) });
+    return commonSettings();
+  });
+  route('PUT', /^\/api\/common\/analysis\/(\d+)$/, async (req, res, [i]) => {
+    const list = [...(llmSettings(cfg.dataDir).commonAnalysis || [])];
+    if (!list[Number(i)]) throw fail(404, '지침을 찾지 못했습니다.');
+    list[Number(i)] = { ...list[Number(i)], text: commonNote(await readBody(req, 8192)) };
+    saveLlmSettings(cfg.dataDir, { commonAnalysis: list });
+    return commonSettings();
+  });
+  route('DELETE', /^\/api\/common\/analysis\/(\d+)$/, (req, res, [i]) => {
+    saveLlmSettings(cfg.dataDir, { commonAnalysis: (llmSettings(cfg.dataDir).commonAnalysis || []).filter((_, k) => k !== Number(i)) });
+    return commonSettings();
   });
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();
