@@ -587,9 +587,9 @@
         <section class="lt-sec">
           <div class="lt-sec-head"><h2>분석 학습</h2><p>이 문제를 분석할 때 AI가 따를 점입니다. 다시 분석하면 반영됩니다.</p></div>
           <div class="fb-wrap">
+            <div class="panel lt-list" id="a-learn"></div>
             <div class="panel fb-new"><textarea id="at-text" rows="2" placeholder="예: STEP을 4개로 나눠 주세요. 설명을 더 쉽게 풀어 써 주세요."></textarea>
               <div class="lt-actions"><span class="spacer"></span><button class="small" id="at-add">추가</button><button class="small primary" id="at-go">다시 분석</button></div></div>
-            <div class="panel lt-list" id="a-learn"></div>
           </div>
         </section>
       </div>
@@ -601,9 +601,9 @@
         <section class="lt-sec">
           <div class="lt-sec-head"><h2>생성 학습</h2><p>이 문제로 변형을 만들 때 AI가 지킬 점입니다. 다음 세트부터 들어갑니다.</p></div>
           <div class="fb-wrap">
+            <div class="panel lt-list" id="g-learn"></div>
             <div class="panel fb-new"><textarea id="gt-text" rows="2" placeholder="예: 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
               <div class="lt-actions"><span class="spacer"></span><button class="small primary" id="gt-add">추가</button></div></div>
-            <div class="panel lt-list" id="g-learn"></div>
           </div>
         </section>
         <section class="lt-sec">
