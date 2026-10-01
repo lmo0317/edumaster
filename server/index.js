@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, PROMPT_STAGES } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -431,7 +431,7 @@ function createApp(options = {}) {
       .map((r) => ({ id: r.id, text: r.text, kind: r.kind, target: r.target, scope: r.scope }));
     return { rules: prompts.rulesBlock(global).trim(), reading: readingHint(store.corrections.all()) };
   });
-  // Claude subscription login for the CLI provider, from the 시스템 page (no SSH session needed): the server runs
+  // Claude subscription login for the CLI provider, from the LLM tab (no SSH session needed): the server runs
   // deploy/claude-login.py, which runs `claude setup-token` in a pseudo-terminal (it needs one; `claude auth login`
   // only waits for a browser callback to the server itself), shows the sign-in link, takes the code the teacher
   // pastes after signing in, and saves the long-lived token in data/ (mode 600). The code and the token are never
@@ -502,7 +502,7 @@ function createApp(options = {}) {
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 
   route('GET', /^\/api\/prompts$/, () => ({ version: prompts.PROMPT_VERSION, ...prompts.SYSTEMS }));
-  // The 시스템 page: the three core parts (prompts, harness, retrieval) with live data, plus usage per model.
+  // What each built-in instruction is for (LLM tab).
   const PROMPT_PURPOSE = {
     analyze: '원본 문제·해설 이미지를 옮겨 적고 교사 풀이를 STEP으로 정리', proofread: '옮겨 적은 내용을 이미지와 글자 단위로 대조',
     'reread-question': '발문만 다시 읽기 (2회)', 'reread-problem': '필기 유입이 의심될 때 인쇄 글자만 다시 읽기',
@@ -511,23 +511,6 @@ function createApp(options = {}) {
     solve: '정답을 모르는 독립 풀이 검토', 'review-solution': '만든 해설을 선생님 해설과 STEP별로 대조', repair: '검토에서 나온 문제를 고쳐 다시 설계',
     'write-solution': '출제 모델의 STEP 요지를 선생님 해설 형식으로 풀어 쓰기 (혼합 실행)', adjudicate: '독립 풀이와 정답이 다를 때 출제 모델이 누가 옳은지 재확인 (혼합 실행)',
   };
-  function evalReports(limit = 4) {
-    const dir = path.join(cfg.root, 'eval', 'reports');
-    if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().reverse().slice(0, limit).map((f) => {
-      try {
-        const raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-        const results = Array.isArray(raw) ? raw : raw.results || [];
-        const score = (list) => (list?.length ? { pass: list.filter((c) => c.pass).length, total: list.length } : null);
-        return {
-          file: f, stamp: raw.stamp || f.slice(0, 15), stage: raw.stage || results[0]?.stage || '', promptVersion: raw.promptVersion || '', learning: raw.learning || null,
-          rows: results.map((r) => ({ case: r.case, provider: r.provider, analysis: score(r.analysis), generation: score(r.generation), minutes: r.minutes, error: r.error || '',
-            failed: [...(r.analysis || []), ...(r.generation || [])].filter((c) => !c.pass)
-              .map((c) => (c.detail ? `${c.name} — ${String(c.detail).replace(/\s+/g, ' ').slice(0, 140)}` : c.name)).slice(0, 12) })),
-        };
-      } catch { return null; }
-    }).filter(Boolean);
-  }
   // Cost per problem from real DeepSeek runs of the eval set: tokens of a whole generation job (design, blind
   // solve, repairs) divided by the problems it produced; the analysis of one original counted separately.
   // Opus is priced on the same token amounts (the relay run records no token counts).
@@ -668,31 +651,59 @@ function createApp(options = {}) {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });
-  route('GET', /^\/api\/system$/, () => {
-    const rules = store.rules.all();
-    const corrections = store.corrections.all().sort((a, b) => b.count - a.count);
-    const byProvider = {};
-    for (const r of store.usage.all()) {
-      const k = r.provider || 'deepseek';
-      const a = byProvider[k] || (byProvider[k] = { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 });
-      a.calls++; a.input += r.input || 0; a.output += r.output || 0; a.reasoning += r.reasoning || 0; a.total += r.total || 0;
-    }
+  // LLM tab: the AI's persona, each stage's built-in instructions (read-only) with the teacher's addition, and the
+  // harness — the model checks (fixed) and the code checks the teacher can switch off (not the ones that guard the answer).
+  function promptSettings() {
+    const s = llmSettings(cfg.dataDir);
+    const off = new Set(s.disabledChecks || []);
     return {
-      prompts: { version: prompts.PROMPT_VERSION, list: Object.entries(prompts.SYSTEMS).map(([id, text]) => ({ id, purpose: PROMPT_PURPOSE[id] || '', chars: text.length })) },
-      checks: pipeline.SYSTEM_CHECKS,
-      rag: {
-        rules: { approved: rules.filter((r) => r.status === 'approved').length, pending: rules.filter((r) => r.status === 'pending').length,
-          global: rules.filter((r) => r.status === 'approved' && r.scope === 'global').length, topic: rules.filter((r) => r.status === 'approved' && r.scope === 'topic').length,
-          applied: rules.reduce((a, r) => a + (r.applied || 0), 0) },
-        corrections: { count: corrections.length, top: corrections.slice(0, 5).map((c) => ({ wrong: c.wrong, right: c.right, count: c.count })) },
-        confusable: harness.CONFUSABLE,
+      version: prompts.PROMPT_VERSION,
+      persona: s.persona || '',
+      stages: Object.entries(PROMPT_STAGES).map(([key, st]) => ({
+        key, label: st.label, about: st.about, addendum: s.addenda?.[key] || '',
+        prompts: st.purposes.filter((p) => prompts.SYSTEMS[p]).map((p) => ({ id: p, purpose: PROMPT_PURPOSE[p] || '', text: prompts.SYSTEMS[p] })),
+      })),
+      checks: {
+        code: harness.CHECK_CATALOG.map((c) => ({ ...c, enabled: c.hard || !off.has(c.id) })),
+        analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair,
       },
       budget: cfg.budget,
-      usage: byProvider,
-      evals: evalReports(),
-      cost: costEstimate(),
-      compare: modelComparison(),
     };
+  }
+  const PERSONA_MAX = 4000;
+  const ADDENDUM_MAX = 4000;
+  route('GET', /^\/api\/llm\/prompts$/, () => promptSettings());
+  route('PUT', /^\/api\/llm\/prompts$/, async (req) => {
+    const body = await readBody(req, 64 * 1024);
+    const patch = {};
+    if (body.persona !== undefined) {
+      const persona = String(body.persona || '').trim();
+      if (persona.length > PERSONA_MAX) throw fail(400, `공통 지시는 ${PERSONA_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
+      patch.persona = persona;
+    }
+    if (body.addenda !== undefined) {
+      const addenda = { ...(llmSettings(cfg.dataDir).addenda || {}) };
+      for (const [key, text] of Object.entries(body.addenda || {})) {
+        if (!PROMPT_STAGES[key]) throw fail(400, '알 수 없는 단계입니다.');
+        const t = String(text || '').trim();
+        if (t.length > ADDENDUM_MAX) throw fail(400, `단계별 추가 지시는 ${ADDENDUM_MAX.toLocaleString()}자까지 쓸 수 있습니다.`);
+        if (t) addenda[key] = t; else delete addenda[key];
+      }
+      patch.addenda = addenda;
+    }
+    saveLlmSettings(cfg.dataDir, patch);
+    return promptSettings();
+  });
+  route('PUT', /^\/api\/llm\/checks$/, async (req) => {
+    const body = await readBody(req, 4096);
+    const known = new Map(harness.CHECK_CATALOG.map((c) => [c.id, c]));
+    const disabled = [...new Set(Array.isArray(body.disabled) ? body.disabled.map(String) : [])];
+    for (const id of disabled) {
+      if (!known.has(id)) throw fail(400, '알 수 없는 검사입니다.');
+      if (known.get(id).hard) throw fail(400, `'${known.get(id).label}' 검사는 정답을 지키는 검사라 끌 수 없습니다.`);
+    }
+    saveLlmSettings(cfg.dataDir, { disabledChecks: disabled });
+    return promptSettings().checks;
   });
   route('GET', /^\/api\/usage$/, () => {
     const rows = store.usage.all();

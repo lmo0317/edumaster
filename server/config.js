@@ -76,7 +76,7 @@ module.exports = {
     regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 10),
     regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 250000),
   },
-  // USD per million tokens, for the cost estimate on the 시스템 page (checked 2026-09-29: DeepSeek's own
+  // USD per million tokens, for the cost estimate on the 모델 비교 page (checked 2026-09-29: DeepSeek's own
   // price list, claude.com/pricing for Opus 5.5). Gemma runs free on the teacher's PC.
   pricing: {
     deepseek: { input: 0.30, output: 1.20 },

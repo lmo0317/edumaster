@@ -154,6 +154,27 @@ function saveLlmSettings(dataDir, patch) {
   fs.writeFileSync(path.join(dataDir, 'llm-settings.json'), JSON.stringify(next, null, 1));
   return next;
 }
+// Stages the teacher can add instructions to on the LLM tab, and which calls belong to each.
+const PROMPT_STAGES = {
+  read: { label: '원본 분석', about: '문제·해설 사진을 옮겨 적고 STEP으로 정리하는 호출', purposes: ['analyze', 'proofread', 'reread-question', 'reread-problem', 'reread-headings', 'regroup', 'fix-verification'] },
+  design: { label: '문제 설계', about: '변형 문제를 만들고, 검토에서 걸린 문제를 고치는 호출', purposes: ['generate', 'repair', 'repair-lean'] },
+  review: { label: '검토', about: '정답을 모른 채 다시 풀기, 해설을 선생님 해설과 대조, 결과가 다를 때 재확인', purposes: ['solve', 'review-solution', 'adjudicate'] },
+  write: { label: '해설 작성', about: '출제 모델의 요지를 선생님 해설 형식으로 풀어 쓰는 호출 (혼합 실행)', purposes: ['write-solution'] },
+};
+const stageOf = (purpose) => Object.keys(PROMPT_STAGES).find((k) => PROMPT_STAGES[k].purposes.includes(purpose)) || '';
+/** The built-in instructions with the teacher's persona before them and the stage's addition after (LLM tab). */
+function withTeacherPrompt(config, system, purpose) {
+  if (!config.dataDir) return system;
+  const s = llmSettings(config.dataDir);
+  const persona = String(s.persona || '').trim();
+  const extra = String(s.addenda?.[stageOf(purpose)] || '').trim();
+  return [
+    persona && `[선생님이 정한 AI의 역할과 공통 지시]\n${persona}`,
+    system,
+    extra && `[선생님 추가 지시 — 위 지시와 함께 지킨다. 반환 JSON 형식은 위 지시를 따른다]\n${extra}`,
+  ].filter(Boolean).join('\n\n');
+}
+
 /** The Claude model and effort the subscription runs: the LLM tab's choice, else the server's default. */
 function claudeCliChoice(config) {
   const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};
@@ -173,7 +194,7 @@ function claudeLimits(config) {
   try { return JSON.parse(fs.readFileSync(path.join(config.dataDir, 'claude-limits.json'), 'utf8')); } catch { return null; }
 }
 
-/** The long-lived token saved by the 시스템 page's login (deploy/claude-login.py), if any. */
+/** The long-lived token saved by the LLM tab's login (deploy/claude-login.py), if any. */
 function claudeCliToken(config) {
   try { return config.dataDir ? fs.readFileSync(path.join(config.dataDir, 'claude-oauth-token.txt'), 'utf8').trim() : ''; } catch { return ''; }
 }
@@ -498,7 +519,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         ])]
       : text;
     const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
-    let messages = [{ role: 'system', content: system }, { role: 'user', content }];
+    // The teacher's persona and per-stage additions (LLM tab) go around the built-in instructions (not in mock mode).
+    let messages = [{ role: 'system', content: mode === 'mock' ? system : withTeacherPrompt(config, system, purpose) }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
       budget.reserve();
@@ -594,4 +616,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, PROMPT_STAGES, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

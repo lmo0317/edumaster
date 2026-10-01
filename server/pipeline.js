@@ -688,7 +688,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     soft.push(...cov.notes);
   }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
-  const codeChecks = harness.inspectItem(material, item, mode);
+  const codeChecks = harness.inspectItem(material, item, mode, ctx.disabledChecks); // minus the ones switched off on the LLM tab
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
     if (lean && solutionOnly(c)) rewriteNotes.push(`${c.label}: ${c.evidence}`);
@@ -857,7 +857,7 @@ function pickRules(store, material) {
     context: r.source?.excerpt ? `${r.source.label || '이전 생성 문제'}: ${r.source.excerpt.replace(/\s+/g, ' ').slice(0, 220)}` : '' }));
 }
 
-// What the pipeline checks and what happens on failure — shown on the 시스템 page. Keep in step with the code above.
+// What the pipeline checks and what happens on failure — shown on the LLM tab. Keep in step with the code above.
 // onFail: 'fix' = the pipeline corrects it itself, 'repair' = the problem goes back to the model once more,
 // 'review' = shown to the teacher as 교사 검토 필요, 'note' = shown as 확인할 점.
 const SYSTEM_CHECKS = {

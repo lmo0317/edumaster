@@ -175,28 +175,66 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
   } finally { await s.close(); }
 });
 
-test('system page data: prompts with version, the check catalog, RAG state, usage per model, eval reports', async () => {
+test('LLM tab: persona and stage additions go around the built-in instructions; code checks switch off, answer checks do not', async () => {
+  const s = await start();
+  try {
+    assert.equal((await s.call('GET', '/api/llm/prompts')).status, 401, 'login required');
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    let { status, data } = await s.call('GET', '/api/llm/prompts');
+    assert.equal(status, 200);
+    assert.match(data.version, /^[0-9a-f]{10}$/);
+    assert.deepEqual(data.stages.map((x) => x.key), ['read', 'design', 'review', 'write']);
+    assert.ok(data.stages.every((x) => x.prompts.length && x.prompts.every((p) => p.text && p.purpose)), 'every stage shows its built-in instructions and what each is for');
+    assert.equal(data.stages.reduce((a, x) => a + x.prompts.length, 0), 13, 'all built-in instructions are shown');
+    assert.ok(data.checks.code.every((c) => c.enabled), 'all code checks start on');
+    assert.ok(data.checks.generation.length >= 8 && data.checks.analysis.length >= 5);
+
+    data = (await s.call('PUT', '/api/llm/prompts', { persona: '  화학 선생님의 조교  ', addenda: { design: '보기는 다섯 개로' } })).data;
+    assert.equal(data.persona, '화학 선생님의 조교');
+    assert.equal(data.stages.find((x) => x.key === 'design').addendum, '보기는 다섯 개로');
+    assert.equal((await s.call('PUT', '/api/llm/prompts', { addenda: { nope: 'x' } })).status, 400);
+    assert.equal((await s.call('PUT', '/api/llm/prompts', { persona: 'x'.repeat(4001) })).status, 400);
+    // Changing one stage keeps the others.
+    data = (await s.call('PUT', '/api/llm/prompts', { addenda: { review: '단위를 확인' } })).data;
+    assert.equal(data.stages.find((x) => x.key === 'design').addendum, '보기는 다섯 개로');
+    assert.equal(data.persona, '화학 선생님의 조교');
+
+    const { withTeacherPrompt } = require('../server/llm');
+    const cfg = { dataDir: s.dataDir };
+    const built = withTeacherPrompt(cfg, 'BUILT-IN', 'generate');
+    assert.ok(built.indexOf('화학 선생님의 조교') < built.indexOf('BUILT-IN') && built.indexOf('BUILT-IN') < built.indexOf('보기는 다섯 개로'), 'persona before, addition after');
+    assert.ok(!withTeacherPrompt(cfg, 'BUILT-IN', 'analyze').includes('보기는 다섯 개로'), 'a stage addition stays in its stage');
+    assert.ok(withTeacherPrompt(cfg, 'BUILT-IN', 'solve').includes('단위를 확인'));
+    await s.call('PUT', '/api/llm/prompts', { persona: '', addenda: { design: '', review: '' } });
+    assert.equal(withTeacherPrompt(cfg, 'BUILT-IN', 'generate'), 'BUILT-IN', 'emptied: the built-in instructions alone');
+
+    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['choices'] })).status, 400, 'the answer checks cannot be switched off');
+    assert.equal((await s.call('PUT', '/api/llm/checks', { disabled: ['nope'] })).status, 400);
+    const checks = (await s.call('PUT', '/api/llm/checks', { disabled: ['format', 'variant-shape'] })).data;
+    assert.deepEqual(checks.code.filter((c) => !c.enabled).map((c) => c.id).sort(), ['format', 'variant-shape']);
+    assert.equal((await s.call('GET', '/api/system')).status, 404, 'the 시스템 page is gone');
+  } finally { await s.close(); }
+});
+
+test('the check catalog names every code check, and a switched-off check is not run', () => {
+  const harness = require('../server/harness');
+  const ids = new Set(harness.CHECK_CATALOG.map((c) => c.id));
+  const material = { problem: { text: '' }, solution: { text: '' }, steps: [] };
+  const item = { problem: { text: '$x', choices: ['1', '1'], answer: '9' }, solution: { text: '' }, stage: { stepIds: [] } };
+  const all = harness.inspectItem(material, item, 'integrated');
+  assert.ok(all.length && all.every((c) => ids.has(c.id)), 'every check the code runs is in the catalog: ' + all.map((c) => c.id).join(','));
+  const off = harness.inspectItem(material, item, 'integrated', new Set(['format']));
+  assert.ok(!off.some((c) => c.id === 'format') && off.length === all.filter((c) => c.id !== 'format').length);
+});
+
+test('model comparison list and one comparison', async () => {
   const s = await start();
   try {
     await s.call('POST', '/api/login', { code: 'test-code' });
-    await s.call('POST', '/api/rules', { text: '불필요한 조건을 넣지 않는다.', kind: 'dont', target: 'problem' });
-    const { status, data } = await s.call('GET', '/api/system');
-    assert.equal(status, 200);
-    assert.match(data.prompts.version, /^[0-9a-f]{10}$/);
-    assert.equal(data.prompts.list.length, 13);
-    assert.ok(data.prompts.list.every((p) => p.purpose), 'every prompt says what it does');
-    assert.ok(data.checks.analysis.length >= 5 && data.checks.generation.length >= 8);
-    assert.ok([...data.checks.analysis, ...data.checks.generation].every((c) => ['fix', 'repair', 'review', 'note'].includes(c.onFail)));
-    assert.equal(data.rag.rules.approved, 1);
-    assert.equal(data.rag.corrections.count, 0);
-    assert.ok(Array.isArray(data.evals));
     const cmpList = (await s.call('GET', '/api/compare')).data;
     assert.ok(Array.isArray(cmpList));
     if (cmpList.length) { const one = (await s.call('GET', '/api/compare/' + cmpList[0].id)).data; assert.ok(one.original.problemImage.startsWith('data:image/') && one.models.length); }
     assert.equal((await s.call('GET', '/api/compare/nope')).status, 404);
-    assert.deepEqual(data.cost.pricing.opus, { input: 4, output: 20 }, 'Opus 5.5 list price');
-    if (data.cost.perProblem) assert.ok(data.cost.perProblem.opus > data.cost.perProblem.deepseek && data.cost.perProblemRange.deepseek[0] <= data.cost.perProblem.deepseek);
-    assert.equal((await s.call('GET', '/api/system').then(() => fetch(s.app.server.address ? `http://127.0.0.1:${s.app.server.address().port}/api/system` : ''))).status, 401, 'login required');
   } finally { await s.close(); }
 });
 

@@ -198,7 +198,7 @@
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
       else if (hash.startsWith('#/rules') || hash.startsWith('#/learn')) { setNav('rules'); await rulesView(); }
-      else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
+      else if (hash.startsWith('#/system')) { location.replace('#/llm'); return; }
       else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView(); }
       else { setNav('home'); await materialsView(); }
     } catch (e) {
@@ -919,7 +919,7 @@
 
   // ------------------------------------------------------------------ rules
   async function rulesView() {
-    const [rules, promptsText, corrections, preview, materials] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/prompts'), api('GET', '/api/corrections'), api('GET', '/api/learning/preview'), api('GET', '/api/materials')]);
+    const [rules, corrections, preview, materials] = await Promise.all([api('GET', '/api/rules'), api('GET', '/api/corrections'), api('GET', '/api/learning/preview'), api('GET', '/api/materials')]);
     const titleOf = new Map(materials.map((x) => [x.id, x.title]));
     const on = rules.filter((r) => r.status === 'approved');
     const off = rules.filter((r) => r.status !== 'approved');
@@ -984,10 +984,7 @@
           <pre class="values">${esc(preview.rules || '(붙일 내용 없음)')}</pre>
           ${preview.reading ? `<p class="muted small">사진을 읽을 때는 이 내용이 붙습니다.</p><pre class="values">${esc(preview.reading)}</pre>` : ''}
         </div></details>
-      </div>
-
-      <div class="panel"><details data-k="prompts"><summary>AI 기본 지시문 (고정 · 버전 ${esc(promptsText.version)}) — 학습 내용은 이 뒤에 덧붙습니다</summary><div class="inner">
-        ${[['analyze', '원본 분석'], ['proofread', '원본 대조 교정'], ['reread-question', '발문 재판독'], ['reread-headings', '해설 단계 제목 재판독'], ['reread-problem', '문제 본문 재판독 (필기 유입 시)'], ['regroup', 'STEP 묶기'], ['fix-verification', '원본 검산 프로그램 수정'], ['generate', '변형 문제 설계'], ['solve', '독립 풀이 검토'], ['review-solution', '해설 대조 검토'], ['repair', '검토 후 수정']].map(([k, t]) => `<h3>${t}</h3><pre class="values" style="max-height:340px">${esc(promptsText[k])}</pre>`).join('')}</div></details></div>`;
+      </div>`;
     $$('.learn-examples .ex').forEach((b) => b.addEventListener('click', () => { $('#ntext').value = b.textContent; $('#ntext').focus(); }));
     $('#add').addEventListener('click', guard(async () => {
       if (!$('#ntext').value.trim()) throw new Error('가르칠 내용을 입력해 주세요.');
@@ -1061,7 +1058,7 @@
             if (st.loggedIn) { toast('Claude 구독에 연결했습니다.'); await loadStatus().catch(() => {}); route(); return; }
             if (!st.checking && st.result && !st.result.ok) throw new Error('연결되지 않았습니다: ' + (st.result.error || '코드를 다시 확인해 주세요.') + ' 로그인을 다시 시작해 주세요.');
           }
-          throw new Error('확인이 너무 오래 걸립니다. 잠시 후 시스템 화면을 다시 열어 확인해 주세요.');
+          throw new Error('확인이 너무 오래 걸립니다. 잠시 후 LLM 탭을 다시 열어 확인해 주세요.');
         } finally {
           if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '연결'; }
           if ($('#claude-login') && !(await api('GET', '/api/claude-login').catch(() => ({}))).pending) claudeLoginPanel();
@@ -1077,101 +1074,16 @@
     }));
   }
 
-  async function systemView() {
-    const [status, sys] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/system')]);
-    const checks = [
-      ['정답이 하나로 정해지는지', '보기 중 정답이 딱 하나인지, 조건끼리 모순은 없는지'],
-      ['계산이 맞는지', '문제의 모든 수를 컴퓨터가 분수로 정확히 다시 계산'],
-      ['처음 보는 사람도 풀리는지', '정답을 모르는 별도의 AI가 문제만 보고 풀어서 정답과 비교'],
-      ['쓰이지 않는 조건이 없는지', '문제의 모든 문장과 수치가 풀이에 실제로 쓰이는지'],
-      ['선생님 풀이 방법 그대로인지', '해설의 STEP 제목, 보조 문자, 가정→모순 판정, 풀이 순서를 유지하는지 — 별도 검토자가 만든 해설을 선생님 해설과 STEP별로 대조해 다른 논리·뒤바뀐 표기·빠진 단계를 찾음'],
-      ['목표한 STEP만 필요한지', 'STEP 1 연습이면 STEP 1만으로, 최종 문제면 모든 STEP이 필요해야 함'],
-      ['핵심 기법을 건너뛸 수 없는지', '가정→모순 같은 STEP의 기법 없이 결론이 나오면 안 됨 (예: 남은 질량이 넣은 질량보다 커서 남은 물질이 바로 보이거나, 표에 남은 물질을 적어 둔 경우)'],
-      ['최종 문제가 숫자만 바꾼 게 아닌지', '실험 수·숨긴 값 위치·판정 방향·묻는 대상 중 둘 이상이 원본과 달라야 함 (표 구조와 숨긴 값 위치가 원본과 같으면 컴퓨터가 잡음)'],
-      ['반응식·조건을 바꿔 쉽게 만들지 않았는지', '원본 반응식의 계수를 바꾸거나 정보 없는 소개 문장을 넣으면 안 됨'],
-      ['선생님 지침을 지켰는지', '저장된 지침마다 어떻게 지켰는지 확인하고, 어기면 고치게 함'],
-    ];
-
-    view.innerHTML = `
-      <section class="sys-hero">
-        <div class="eyebrow">EduMaster 안내</div>
-        <h1>선생님의 풀이로, 단계별 연습 문제를 만듭니다</h1>
-        <p>문제와 해설 사진을 넣으면 선생님 해설의 풀이 순서를 그대로 따라 STEP 1 연습 → STEP 1~2 연습 → 최종 문제를 차례로 만들고, 만든 문제는 자동으로 검토합니다.</p>
-        <div class="hero-points">
-          <div><b>선생님 풀이 그대로</b><span>AI가 자기 방식으로 바꿔 풀지 않도록 해설의 방법을 기준으로 삼습니다.</span></div>
-          <div><b>계산은 컴퓨터가 확인</b><span>AI가 쓴 수치와 정답을 컴퓨터가 다시 계산해 봅니다.</span></div>
-          <div><b>피드백이 쌓일수록 좋아짐</b><span>남겨 주신 피드백과 수정 내용을 다음 문제에 반영합니다.</span></div>
-        </div>
-      </section>
-
-      <div class="panel">
-        <h2>문제는 이렇게 만들어집니다</h2>
-        <div class="sys-steps">
-          <div class="sys-step"><span class="num">1</span><b>원본 읽기</b><p>문제와 해설 사진을 읽어 옮겨 적고, 해설을 STEP으로 나눕니다. 연필·펜 필기는 문제 조건에서 뺍니다.</p></div>
-          <div class="sys-step"><span class="num">2</span><b>선생님 확인</b><p>읽은 내용과 STEP을 보여 드립니다. 잘못 읽은 곳은 바로 고치실 수 있고, 고친 내용이 기준이 됩니다.</p></div>
-          <div class="sys-step"><span class="num">3</span><b>단계별 문제 만들기</b><p>STEP 1만 알면 풀리는 문제, STEP 1~2가 필요한 문제, 모든 STEP이 필요한 최종 문제를 차례로 만듭니다.</p></div>
-          <div class="sys-step"><span class="num">4</span><b>자동 검토</b><p>아래 항목을 검사해 문제가 있으면 AI가 스스로 고칩니다. 그래도 남으면 이유와 함께 '교사 검토 필요'로 표시합니다.</p></div>
-        </div>
-        <p class="muted small">최종 문제는 두 가지 중 고를 수 있습니다: <b>통합 변형</b>(앞 연습 문제의 아이디어를 엮어 새 구조로) 또는 <b>수치 변형</b>(같은 구조에 새 숫자로).</p>
-      </div>
-
-      <div class="panel">
-        <h2>자동 검토에서 확인하는 것</h2>
-        <div class="check-grid">${checks.map(([t, d]) => `<div class="check-item"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
-        <div class="note info small">검사를 통과해도 AI가 판단한 결과이므로, 학생에게 내기 전에 한 번 확인해 주세요. '교사 검토 필요'나 '확인할 점'이 붙은 문제는 그 이유를 문제 카드에서 볼 수 있습니다.</div>
-      </div>
-
-      <div class="panel sys-pointer">
-        <div><h2>생성 모델</h2><p class="muted small">문제를 만들 때 DeepSeek과 Gemma 중에서 고를 수 있고, Claude Opus는 품질 비교용으로 평가했습니다. 문제를 얼마나 잘 만드는지, 한 문제에 얼마가 드는지, 실제로 만든 문제는 모델 비교 화면에 모아 두었습니다.</p></div>
-        <a class="button primary" href="#/compare">모델 비교 보기</a>
-      </div>
-
-      <div class="panel">
-        <h2>학습 — 무엇을 배우고, 어떻게 반영되나요</h2>
-        <p class="muted small">AI 모델 자체를 다시 훈련시키지 않습니다. 선생님이 남긴 내용을 저장해 두었다가, 새 문제를 만들거나 사진을 읽을 때 <b>그 상황에 맞는 것을 찾아 AI에게 함께 전달</b>합니다(RAG). 그래서 저장하는 즉시 다음 작업부터 반영되고, 지우면 바로 빠집니다.</p>
-        <div class="learn-rows">
-          <div class="learn-row">
-            <div class="learn-title"><span class="num">1</span><b>문제에 대한 피드백</b></div>
-            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>만든 문제 카드에 "STEP 1 연습인데 남는 물질을 문제에서 알려 줘서 추론할 게 없어요"처럼 피드백을 남깁니다.</div>
-            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>피드백 문장과 함께, <b>어떤 문제에 대한 피드백이었는지</b>(과목·유형·그 문제 내용)를 저장합니다.</div>
-            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>같은 과목의 비슷한 문제를 만들 때 이 피드백과 당시 문제를 AI에게 보여 주고 같은 실수를 하지 말라고 지시합니다. 다른 과목 문제에는 붙지 않습니다.</div>
-          </div>
-          <div class="learn-row">
-            <div class="learn-title"><span class="num">2</span><b>전체 지침</b></div>
-            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>'해야 할 것 / 하지 말 것'을 적습니다. 예: "풀이에 필요 없는 조건을 넣지 않는다", "최종 문제는 숫자만 바꾸지 않는다".</div>
-            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>지침 문장과 적용 대상(문제·해설·설계)을 저장합니다.</div>
-            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>모든 문제를 만들 때 항상 전달합니다. 만든 문제마다 AI가 지침을 어떻게 지켰는지 적고, 독립 검토가 실제로 지켰는지 다시 판정해 결과 카드에 보여 줍니다.</div>
-          </div>
-          <div class="learn-row">
-            <div class="learn-title"><span class="num">3</span><b>잘못 읽은 글자 수정</b></div>
-            <div class="learn-cell"><span class="lbl">선생님이 하시는 일</span>분석 결과 화면에서 잘못 읽은 단어를 고칩니다. 예: "물질량" → "몰질량".</div>
-            <div class="learn-cell"><span class="lbl">시스템이 기억하는 것</span>고치기 전과 후를 비교해 <b>바뀐 단어 쌍</b>만 뽑아 저장합니다 (숫자처럼 문제마다 다른 값은 저장하지 않음).</div>
-            <div class="learn-cell"><span class="lbl">다음에 달라지는 것</span>다음 사진을 읽을 때 "이 단어를 전에 잘못 읽었다"고 알려 줘 더 주의해서 읽게 하고, 발문에서 맞게 읽힌 단어로 해설의 같은 오독도 함께 고치며, 원본 확인 항목에 올립니다.</div>
-          </div>
-        </div>
-        <p class="small"><a href="#/learn">학습 화면</a>에서 저장된 내용을 보고 끄거나 고치거나 지울 수 있습니다.</p>
-      </div>
-
-      <div class="panel">
-        <h2>알아 두실 점</h2>
-        <ul class="plain-list">
-          <li>그림이 꼭 필요한 문제는 그림 대신 글이나 표로 설명합니다. 그림을 새로 그리지는 않습니다.</li>
-          <li>작은 사진은 잘못 읽을 수 있습니다. 분석 결과의 '원본과 대조해 주세요' 항목을 꼭 확인해 주세요.</li>
-          <li>검토도 AI가 하므로 틀릴 수 있습니다. '검토 통과'는 선생님의 최종 확인을 대신하지 않습니다.</li>
-        </ul>
-      </div>
-
-      <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
-  }
-
   // ------------------------------------------------------------------ LLM
   // Each model problems can be made with: whether it is connected and what it has used (today / 30 days). The
   // DeepSeek balance and the numbers are fetched when the page opens and on 새로 고침, not continuously.
   const EFFORT_TXT = { auto: '자동 (설계·검토는 높게)', low: '낮음 (빠름)', medium: '중간', high: '높음', xhigh: '매우 높음', max: '최대 (느림·한도 많이 씀)' };
+
   async function llmView() {
     view.innerHTML = `<div class="row"><h1 style="margin-right:auto">LLM</h1><span class="muted small" id="llm-at"></span><button id="llm-refresh">새로 고침</button></div>
       <p class="muted">문제를 만들 때 쓰는 AI 모델의 연결 상태와 사용량입니다. 잔액과 사용량은 이 화면을 열거나 <b>새로 고침</b>을 누를 때 가져옵니다.</p>
-      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>`;
+      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>
+      <div id="llm-ai"></div>`;
     const won = (usd) => (usd ? `약 ${Math.round(usd * 1400).toLocaleString()}원` : '0원');
     const month = (u) => `<p>이번 달: 세트 <b>${u.month.sets}개</b>${u.month.usd ? ` · <b>${won(u.month.usd)}</b>` : ''} <span class="muted small">· 마지막 사용 ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</span></p>`;
     // A window's remaining share as a bar: green with room left, amber when low, red when used up.
@@ -1237,28 +1149,82 @@
       }));
       claudeLoginPanel().catch(() => {});
     };
+    llmPromptPanels().catch((e) => { if ($('#llm-ai')) $('#llm-ai').innerHTML = `<div class="panel bad">${esc(e.message)}</div>`; });
     $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paint(true); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));
     await paint(false);
   }
 
 
-  // Technical view of the same system (prompt version, every check, eval runs), folded away for teachers.
-  function devDetails(sys) {
-    const ON_FAIL = { fix: ['ok', '자동 수정'], repair: ['run', '모델에 수정 요청'], review: ['bad', '교사 검토 필요'], note: ['warn', '확인할 점'] };
-    const checkTable = (list) => `<div class="table-wrap"><table class="rules sys"><tr><th>검사</th><th>하는 일</th><th>걸리면</th></tr>${list.map((c) => `<tr><td><b>${esc(c.label)}</b></td><td>${esc(c.how)}</td><td><span class="chip ${ON_FAIL[c.onFail][0]}">${ON_FAIL[c.onFail][1]}</span></td></tr>`).join('')}</table></div>`;
-    const modelName = (p) => PROVIDER_LABEL[p] || p;
-    const score = (s) => (s ? `${s.pass}/${s.total}` : '-');
-    return `
-      <h3>프롬프트 (버전 ${esc(sys.prompts.version)})</h3>
-      <div class="table-wrap"><table class="rules sys"><tr><th>지시문</th><th>하는 일</th><th>길이</th></tr>${sys.prompts.list.map((p) => `<tr><td><code>${esc(p.id)}</code></td><td>${esc(p.purpose)}</td><td class="muted">${p.chars.toLocaleString()}자</td></tr>`).join('')}</table></div>
-      <h3>하네스 — 분석 단계</h3>${checkTable(sys.checks.analysis)}
-      <h3>하네스 — 생성 단계</h3>${checkTable(sys.checks.generation)}
-      <p class="small muted">${esc(sys.checks.repair)}</p>
-      <h3>평가 실행 기록</h3>
-      ${sys.evals.map((e) => `<div class="small"><b>${esc(e.stamp)}</b> · ${e.stage === 'full' ? '분석+생성' : '분석'}${e.promptVersion ? ' · 프롬프트 ' + esc(e.promptVersion) : ''}${e.learning ? ` · ${e.learning.used === 'none' ? '학습 끔' : `지침 ${e.learning.rules}·교정 ${e.learning.corrections}`}` : ''}</div>
-        <div class="table-wrap"><table class="rules sys"><tr><th>사례</th><th>모델</th><th>분석</th><th>생성</th><th>실패한 항목</th></tr>${e.rows.map((x) => `<tr><td>${esc(x.case)}</td><td>${esc(modelName(x.provider))}</td><td>${score(x.analysis)}</td><td>${score(x.generation)}</td><td class="small">${x.error ? esc(x.error) : x.failed.length ? x.failed.map(esc).join('<br>') : '없음'}</td></tr>`).join('')}</table></div>`).join('') || '<p class="muted small">평가 보고서 없음</p>'}
-      <h3>작업별 한도</h3>
-      <p class="small">분석 ${sys.budget.analyzeCalls}회·${sys.budget.analyzeTokens.toLocaleString()}토큰 / 세트 생성 ${sys.budget.generateCalls}회·${sys.budget.generateTokens.toLocaleString()}토큰 / 한 문제 다시 만들기 ${sys.budget.regenerateCalls}회·${sys.budget.regenerateTokens.toLocaleString()}토큰</p>`;
+  // LLM tab, below the model cards: what every call is told. The teacher's persona goes before the built-in
+  // instructions, a stage's addition after them; the built-in ones are shown but fixed. Then the harness:
+  // the model's own checks (fixed) and the code checks, which can be switched off except the ones guarding the answer.
+  async function llmPromptPanels() {
+    const box = $('#llm-ai');
+    if (!box) return;
+    const d = await api('GET', '/api/llm/prompts');
+    const ON_FAIL = { fix: ['ok', '자동 수정'], repair: ['run', '다시 고치게 함'], review: ['bad', '교사 검토 필요'], note: ['warn', '확인할 점'] };
+    const checkRows = (list) => `<div class="table-wrap"><table class="rules sys"><tr><th>검사</th><th>하는 일</th><th>걸리면</th></tr>${list.map((c) => `<tr><td><b>${esc(c.label)}</b></td><td>${esc(c.how)}</td><td><span class="chip ${ON_FAIL[c.onFail][0]}">${ON_FAIL[c.onFail][1]}</span></td></tr>`).join('')}</table></div>`;
+    const offCount = d.checks.code.filter((c) => !c.enabled).length;
+    box.innerHTML = `
+      <div class="panel">
+        <h2>AI 역할과 공통 지시</h2>
+        <p class="muted small">모든 호출(분석·문제 설계·검토·해설 작성)에서 기본 지시문 <b>앞에</b> 붙습니다. AI가 어떤 선생님을 돕는지, 늘 지킬 말투·표기 같은 것을 적어 주세요. 비워 두면 기본 지시문만 씁니다.</p>
+        <textarea id="ai-persona" rows="5" maxlength="4000" placeholder="예) 당신은 고등학교 화학 선생님의 출제를 돕는 조교입니다. 학생이 읽을 문장은 교과서 말투로 쓰고, 단위는 항상 붙입니다.">${esc(d.persona)}</textarea>
+        <div class="fb-add-bar"><span class="muted small" id="ai-persona-n"></span><span class="spacer"></span><button class="small primary" id="ai-persona-save">저장</button></div>
+      </div>
+
+      <div class="panel">
+        <h2>단계별 지시문</h2>
+        <p class="muted small">기본 지시문(버전 ${esc(d.version)})은 검토 하네스와 맞물려 있어 고정입니다. 단계마다 <b>추가 지시</b>를 쓰면 그 단계의 기본 지시문 <b>뒤에</b> 붙습니다. 문제 하나에만 해당하는 내용은 문제 페이지의 피드백으로 남기는 편이 좋습니다.</p>
+        ${d.stages.map((st) => `<div class="ai-stage" data-stage="${st.key}">
+          <div class="row"><h3 style="margin:0">${esc(st.label)}</h3>${st.addendum ? '<span class="chip ok">추가 지시 있음</span>' : ''}</div>
+          <p class="muted small">${esc(st.about)}</p>
+          <details><summary>기본 지시문 보기 (${st.prompts.length}개)</summary><div class="inner">
+            ${st.prompts.map((p) => `<h4><code>${esc(p.id)}</code> <span class="muted small">${esc(p.purpose)} · ${p.text.length.toLocaleString()}자</span></h4><pre class="values" style="max-height:320px">${esc(p.text)}</pre>`).join('')}
+          </div></details>
+          <textarea rows="3" maxlength="4000" placeholder="${esc(st.label)} 단계에 더할 지시 (비워 두면 없음)">${esc(st.addendum)}</textarea>
+          <div class="fb-add-bar"><span class="spacer"></span><button class="small primary" data-save-stage="${st.key}">저장</button></div>
+        </div>`).join('')}
+      </div>
+
+      <div class="panel">
+        <h2>검토 하네스</h2>
+        <p class="muted small">만든 문제는 아래 검사를 거칩니다. 걸리면 AI에게 다시 고치게 하고(최대 2번), 남으면 교사 검토 필요·확인할 점으로 표시합니다.</p>
+        <h3>코드 검사 <span class="muted small">— 컴퓨터가 규칙으로 확인 · 켜고 끌 수 있음${offCount ? ` · <b>${offCount}개 꺼짐</b>` : ''}</span></h3>
+        <div class="check-list">${d.checks.code.map((c) => `<label class="check-row${c.enabled ? '' : ' off'}">
+          <input type="checkbox" data-check="${c.id}" ${c.enabled ? 'checked' : ''} ${c.hard ? 'disabled' : ''}>
+          <span><b>${esc(c.label)}</b>${c.hard ? ' <span class="chip">항상 켜짐</span>' : ''}<br><span class="muted small">${esc(c.about)}</span></span></label>`).join('')}</div>
+        <p class="muted small">끈 검사는 다음에 만드는 문제부터 적용됩니다. 정답을 지키는 검사는 끌 수 없습니다.</p>
+        <details><summary>AI 검토와 분석 단계 검사 (고정)</summary><div class="inner">
+          <h3>문제 생성 검토</h3>${checkRows(d.checks.generation)}
+          <p class="small muted">${esc(d.checks.repair)}</p>
+          <h3>원본 분석 검사</h3>${checkRows(d.checks.analysis)}
+          <p class="small muted">작업별 한도: 분석 ${d.budget.analyzeCalls}회·${d.budget.analyzeTokens.toLocaleString()}토큰 / 세트 생성 ${d.budget.generateCalls}회·${d.budget.generateTokens.toLocaleString()}토큰 / 한 문제 다시 만들기 ${d.budget.regenerateCalls}회·${d.budget.regenerateTokens.toLocaleString()}토큰</p>
+        </div></details>
+      </div>`;
+    const count = () => { $('#ai-persona-n').textContent = `${$('#ai-persona').value.trim().length.toLocaleString()} / 4,000자`; };
+    count();
+    $('#ai-persona').addEventListener('input', count);
+    $('#ai-persona-save').addEventListener('click', guard(async () => {
+      await api('PUT', '/api/llm/prompts', { persona: $('#ai-persona').value });
+      toast($('#ai-persona').value.trim() ? '공통 지시를 저장했습니다. 다음 호출부터 적용됩니다.' : '공통 지시를 비웠습니다.');
+      await llmPromptPanels();
+    }));
+    $$('[data-save-stage]').forEach((b) => b.addEventListener('click', guard(async () => {
+      const key = b.dataset.saveStage;
+      const text = b.closest('.ai-stage').querySelector('textarea').value;
+      await api('PUT', '/api/llm/prompts', { addenda: { [key]: text } });
+      toast(text.trim() ? '추가 지시를 저장했습니다. 다음 호출부터 적용됩니다.' : '추가 지시를 지웠습니다.');
+      await llmPromptPanels();
+    })));
+    // A switch is saved as soon as it is flipped.
+    $$('[data-check]').forEach((cb) => cb.addEventListener('change', guard(async () => {
+      const disabled = $$('[data-check]').filter((x) => !x.checked && !x.disabled).map((x) => x.dataset.check);
+      try { await api('PUT', '/api/llm/checks', { disabled }); }
+      catch (e) { cb.checked = !cb.checked; throw e; }
+      toast(cb.checked ? '검사를 켰습니다.' : '검사를 껐습니다. 다음에 만드는 문제부터 적용됩니다.');
+      await llmPromptPanels();
+    })));
   }
 
   // ------------------------------------------------------------------ boot
