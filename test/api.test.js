@@ -416,3 +416,26 @@ test('learning: an adopted variant is shown as an example to the next set of the
     assert.ok(after.items[1].verification.rules.some((r) => r.id === late.id), 'the regenerated variant was checked against the new feedback');
   } finally { await s.close(); }
 });
+
+test('학습 현황: per set (made, passed, adopted, feedback then, kept/broken) and per feedback (checked on how many variants, kept or broken)', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const set1 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    const fb = (await s.call('POST', '/api/rules', { text: '표에 남는 물질을 적지 않는다', target: 'problem', source: { materialId: a.material.id } })).data;
+    await s.call('PUT', `/api/jobs/${set1.id}/items/0/review`, { adopted: true });
+    await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    const d = (await s.call('GET', `/api/materials/${a.material.id}/learning`)).data;
+    assert.equal(d.sets.length, 2);
+    assert.equal(d.sets[0].feedbackBefore, 0);
+    assert.equal(d.sets[1].feedbackBefore, 1, 'the second set was made with the feedback');
+    assert.equal(d.sets[0].adopted, 1);
+    assert.equal(d.sets[1].examples, 1, 'and with the adopted example');
+    assert.equal(d.adopted, 1);
+    const row = d.feedback.find((f) => f.id === fb.id);
+    assert.equal(row.used, 3, 'checked on the three variants of the second set');
+    assert.equal(row.kept + row.broken <= row.used, true);
+  } finally { await s.close(); }
+});

@@ -397,18 +397,55 @@
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = m.jobs.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    // Top to bottom: the original problem and the teacher's solution side by side, the reading (problem, then each
-    // STEP), this problem's feedback, making variants from it, and the variants made so far.
+    // Three tabs, so nothing sits four screens down: the original and its reading; this problem's feedback and how
+    // the learning is going; making variants and the variants made. The last tab used on this problem is reopened.
+    const adopted = gens.flatMap((j) => j.items || []).filter((i) => i.adopted).length;
     view.innerHTML = `
       <div class="row"><h1 style="margin-right:auto">${esc(m.title)}</h1>${chip(MAT_STATUS, m.status)}</div>
-      <div class="panel"><div class="orig orig-2">${originalsInner(m.images)}</div></div>
-      <div class="panel" id="analysis"></div>
-      <div class="panel" id="feedback"></div>
-      <div class="panel" id="generate"></div>
-      <div class="panel" id="variants"></div>`;
+      <div class="mtabs" role="tablist">
+        <button type="button" data-mtab="read">원본·분석</button>
+        <button type="button" data-mtab="learn">피드백·학습 <span class="count" id="mtab-learn-count"></span></button>
+        <button type="button" data-mtab="make">변형 문제 <span class="count">${gens.length ? `세트 ${gens.length}${adopted ? ` · 채택 ${adopted}` : ''}` : ''}</span></button>
+      </div>
+      <section data-pane="read"><div class="panel"><div class="orig orig-2">${originalsInner(m.images)}</div></div><div class="panel" id="analysis"></div></section>
+      <section data-pane="learn"><div class="panel" id="feedback"></div><div class="panel" id="learning"></div></section>
+      <section data-pane="make"><div class="panel" id="generate"></div><div class="panel" id="variants"></div></section>`;
+    const key = 'em-mtab-' + m.id;
+    let saved = '';
+    try { saved = localStorage.getItem(key) || ''; } catch { /* no storage */ }
+    const show = (tab) => {
+      $$('[data-mtab]').forEach((b) => b.classList.toggle('on', b.dataset.mtab === tab));
+      $$('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== tab; });
+      try { localStorage.setItem(key, tab); } catch { /* no storage */ }
+    };
+    $$('[data-mtab]').forEach((b) => b.addEventListener('click', () => { show(b.dataset.mtab); window.scrollTo({ top: 0 }); }));
+    show(editing ? 'read' : ['read', 'learn', 'make'].includes(saved) ? saved : gens.length ? 'make' : 'read');
     if (editing) editAnalysis(m); else showAnalysis(m);
-    feedbackPanel(m, gens);
+    feedbackPanel(m, gens); // also fills 학습 현황
     generatePanel(m, n);
+  }
+
+  // 학습 현황: whether the variants of this original are getting better as feedback and adopted examples pile up.
+  async function learningPanel(m) {
+    const el = $('#learning');
+    if (!el) return;
+    const d = await api('GET', `/api/materials/${m.id}/learning`);
+    const on = d.feedback.filter((f) => f.status === 'approved');
+    const kept = (k, b) => (k + b ? `<span class="chip ok">지킴 ${k}</span>${b ? ` <span class="chip bad">어김 ${b}</span>` : ''}` : '<span class="muted">-</span>');
+    el.innerHTML = `<h2>학습 현황</h2>
+      <div class="learn-stats">
+        <div><b>${on.length}</b><span>켜진 피드백</span></div>
+        <div><b>${d.adopted}</b><span>좋은 예시 (채택)</span></div>
+        <div><b>${d.sets.length}</b><span>만든 세트</span></div>
+      </div>
+      ${d.sets.length ? `<h3>세트별</h3><p class="muted small">피드백과 채택이 쌓이면서 세트가 나아지는지 봅니다. '그때 피드백'은 그 세트를 만들 때 이미 있던 이 문제의 피드백 수입니다.</p>
+      <div class="table-wrap"><table class="learn-table"><tr><th>세트</th><th>그때 피드백</th><th>검증 통과</th><th>채택</th><th>피드백·지침</th></tr>
+        ${d.sets.map((s) => `<tr><td><a href="#/j/${s.id}">세트 ${s.no}</a><div class="muted small">${fmtTime(s.createdAt)} · ${esc(s.model)}</div></td>
+          <td>${s.feedbackBefore}개${s.examples ? `<div class="muted small">좋은 예시 ${s.examples}개 참고</div>` : ''}</td>
+          <td>${s.passed}/${s.items}</td><td>${s.adopted}/${s.items}</td><td>${kept(s.kept, s.broken)}</td></tr>`).join('')}</table></div>` : '<p class="muted small">아직 만든 세트가 없습니다.</p>'}
+      ${d.feedback.length ? `<h3>피드백별</h3><p class="muted small">각 피드백이 그 뒤에 만든 문제에서 지켜졌는지입니다 (독립 검토 판정).</p>
+      <div class="table-wrap"><table class="learn-table"><tr><th>피드백</th><th>검토된 문제</th><th>결과</th></tr>
+        ${d.feedback.map((f) => `<tr class="${f.status === 'approved' ? '' : 'off'}"><td>${esc(f.text)}${f.status === 'approved' ? '' : ' <span class="chip warn">꺼짐</span>'}</td><td>${f.used}</td><td>${kept(f.kept, f.broken)}</td></tr>`).join('')}</table></div>` : ''}`;
   }
 
   // This problem's own feedback: what the teacher taught about it (on the problem page or on one of its variants).
@@ -454,7 +491,9 @@
       feedbackPanel(m, gens);
       rulesPreview(m);
     })));
+    if ($('#mtab-learn-count')) $('#mtab-learn-count').textContent = on.length ? `피드백 ${on.length}` : '';
     variantsPanel(gens, on);
+    learningPanel(m).catch(() => {});
   }
 
   // The variants made from this problem, set by set, each problem with its state; a set made before later

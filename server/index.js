@@ -262,6 +262,32 @@ function createApp(options = {}) {
     const view = m.status === 'ready' && m.steps ? pipeline.refreshStepCountNote(m) : m;
     return { ...view, jobs: store.jobs.all().filter((j) => j.materialId === id).map(jobSummary) };
   });
+  // 학습 현황 of one original: set by set, how many variants were made, passed the checks and were adopted, and how
+  // the feedback fared; and for each feedback, on how many variants made after it was checked, kept or broken.
+  route('GET', /^\/api\/materials\/([a-f0-9]+)\/learning$/, (req, res, [id]) => {
+    getMaterial(id);
+    const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.materialId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const rules = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId === id);
+    const judged = (list) => ({ kept: list.filter((r) => r.judged?.ok).length, broken: list.filter((r) => r.judged && !r.judged.ok).length });
+    return {
+      sets: sets.map((j, i) => {
+        const made = (j.items || []).filter((it) => it.problem);
+        return {
+          id: j.id, no: i + 1, createdAt: j.createdAt, model: j.modelLabel || PROVIDERS[j.options?.provider]?.label || 'DeepSeek', status: j.status,
+          items: (j.items || []).length, made: made.length, adopted: made.filter((it) => it.adopted).length,
+          passed: made.filter((it) => ['passed', 'warning'].includes(it.status)).length,
+          feedbackBefore: rules.filter((r) => r.status === 'approved' && r.createdAt < j.createdAt).length,
+          examples: made.reduce((n, it) => n + (it.examplesUsed || 0), 0),
+          ...judged(made.flatMap((it) => it.verification?.rules || [])),
+        };
+      }),
+      feedback: rules.map((r) => {
+        const uses = sets.flatMap((j) => j.items || []).flatMap((it) => (it.verification?.rules || []).filter((x) => x.id === r.id));
+        return { id: r.id, text: r.text, target: r.target, status: r.status, createdAt: r.createdAt, used: uses.length, ...judged(uses) };
+      }),
+      adopted: sets.flatMap((j) => j.items || []).filter((it) => it.adopted && it.problem).length,
+    };
+  });
   route('PUT', /^\/api\/materials\/([a-f0-9]+)$/, async (req, res, [id]) => {
     const m = getMaterial(id);
     if (m.status === 'analyzing') throw fail(409, '분석이 끝난 뒤에 수정할 수 있습니다.');
