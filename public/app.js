@@ -953,12 +953,16 @@
     const adopted = items.filter((i) => i.adopted).length;
     const review = items.filter((i) => !i.adopted && i.status === 'needs_review').length;
     const model = esc(job.modelLabel || PROVIDER_LABEL[job.options.provider] || 'DeepSeek');
+    // How long the current step has run, so a slow step (a remake can take minutes) reads as working, not stuck.
+    const lastAt = (job.log || []).slice(-1)[0]?.t;
+    const mins = lastAt ? Math.floor((Date.now() - new Date(lastAt).getTime()) / 60000) : 0;
+    const stepFor = mins >= 1 ? ` · 이 단계 ${mins}분째` : '';
     const line = job.status === 'queued' ? '<i class="spin"></i>순서를 기다리는 중'
-      : busy ? `<i class="spin"></i>${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''} · ${model}`
+      : busy ? `<i class="spin"></i>${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''}${stepFor} · ${model}`
       : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">검토 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
-      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'}</h1>
+      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 수치 변형' : ''}</h1>
         <a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
@@ -966,6 +970,7 @@
       ${busy ? `<div class="jt-bar"><span style="width:${items.length ? Math.round((made / items.length) * 100) : 0}%"></span></div><p class="muted small jt-wait">문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 화면을 닫아도 서버에서 계속되고, 이 화면은 저절로 바뀝니다.</p>` : ''}
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
       ${regenerating.length ? `<div class="note info"><i class="spin"></i> 문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.</div>` : ''}
+      ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 학습지에 들어가고, 이 문제로 다음 세트를 만들 때 같은 단계의 본보기가 됩니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
         <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
@@ -1005,38 +1010,29 @@
       ${blind.solution ? `<details data-k="blind"><summary>독립 풀이 전문</summary><div class="inner rich">${rich(blind.solution)}</div></details>` : ''}`;
   }
 
-  // Quick feedback: one tap per common fault; each becomes this original's feedback in full sentences (the same tag
-  // on another variant switches the same feedback back on instead of adding it twice).
-  const FIX_TAGS = [
-    ['조건 불필요', 'problem', '풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.'],
-    ['단서 노출', 'problem', '학생이 추론해야 할 결론(예: 남는 물질, 앞 STEP의 결과)을 문제에 미리 알려주지 않는다.'],
-    ['STEP 범위', 'problem', '목표한 STEP의 핵심 기법이 꼭 필요하고, 목표 범위 밖 STEP은 필요 없게 만든다.'],
-    ['숫자만 바꿈', 'problem', '최종 문제는 숫자만 바꾸지 말고 앞 연습 문제의 아이디어를 엮어 구조를 바꾼다.'],
-    ['계산 복잡', 'problem', '계산기 없이 풀 수 있게 주어진 값과 중간값, 정답을 작은 정수나 간단한 분수로 만든다.'],
-    ['너무 쉬움', 'problem', '원본 수준의 난도를 유지하고, 최종 문제가 앞 연습 문제보다 쉬워지지 않게 한다.'],
-    ['해설 방식', 'solution', '해설은 선생님 해설의 STEP 제목, 문장 틀, 표 구성, 보조 문자를 그대로 따른다.'],
-    ['표기 오류', 'solution', '수식, 표, 화학식 표기를 정확히 쓴다 (상태 표시는 \\ce 안에, 표의 칸 수를 맞춘다).'],
-  ];
-  // One line under the problem: what still needs a look and how it kept the feedback. Opened at once when something
-  // is wrong (left for the teacher, or a feedback broken), with the broken ones named.
-  function checkLine(item, job) {
+  // Under the problem, what the checks left. 검토 필요: what happened and what to do in one sentence, the remaining
+  // issues once each (a broken learning is not listed again as a problem) in a fold. Otherwise one quiet line.
+  function checkLine(item) {
     const v = item.verification;
-    const problems = [...new Set(item.problems || [])];
-    const warnings = [...new Set(item.warnings || [])];
+    const plain = (x) => String(x).replace(/^(문제 설계|해설): /, '');
     const rules = v?.rules || [];
     const bad = rules.filter((r) => r.judged && !r.judged.ok);
     const ok = rules.filter((r) => r.judged?.ok).length;
-    const parts = [
-      problems.length && `<span class="bad">검토 필요 ${problems.length}</span>`,
-      warnings.length && `<span class="warn">확인할 점 ${warnings.length}</span>`,
-      ok + bad.length && `학습 지킴 ${ok}/${ok + bad.length}${bad.length ? ` · <span class="bad">어김 ${bad.length}</span>` : ''}`,
-    ].filter(Boolean);
+    const problems = [...new Set((item.problems || []).map(plain).filter((x) => !x.startsWith('교사 지침 미준수')))];
+    const warnings = [...new Set((item.warnings || []).map(plain))];
+    const issues = [...problems.map((x) => inlineRich(x)), ...bad.map((r) => `학습을 어김: ${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`)];
+    const list = (xs) => `<ul class="lt-ul">${xs.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+    if (item.status === 'needs_review') {
+      return `<div class="jt-need">
+        <p><b>자동 검토가 두 번 고쳐 봤지만 ${issues.length}가지가 남았습니다.</b> 아래 <b>🔄 다시 만들기</b>를 누르면 이 점들을 고치도록 다시 만듭니다. 따로 적지 않아도 됩니다.</p>
+        <details data-k="check"><summary>남은 문제 ${issues.length}가지 보기</summary>${list(issues)}${warnings.length ? `<p class="muted small">함께 나온 지적</p>${list(warnings.map((x) => inlineRich(x)))}` : ''}</details>
+      </div>`;
+    }
+    const parts = [warnings.length && `확인할 점 ${warnings.length}`, ok + bad.length && `학습 지킴 ${ok}/${ok + bad.length}`].filter(Boolean);
     if (!parts.length) return '';
-    const list = (xs) => `<ul class="lt-ul">${xs.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>`;
-    return `<details class="jt-check${problems.length || bad.length ? ' bad' : ''}" data-k="check" ${problems.length || bad.length ? 'open' : ''}><summary>${parts.join(' · ')}</summary><div class="jt-check-in">
-      ${problems.length ? `<div><b>자동 검토에서 해결되지 않은 점</b>${list(problems)}</div>` : ''}
-      ${warnings.length ? `<div><b>확인할 점</b>${list(warnings)}</div>` : ''}
-      ${bad.length ? `<div><b>어긴 학습</b><ul class="lt-ul">${bad.map((r) => `<li>${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
+    return `<details class="jt-check" data-k="check"><summary>${parts.join(' · ')}</summary><div class="jt-check-in">
+      ${warnings.length ? list(warnings.map((x) => inlineRich(x))) : ''}
+      ${bad.length ? `<div><b>어긴 학습</b>${list(bad.map((r) => `${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`))}</div>` : ''}
     </div></details>`;
   }
 
@@ -1049,7 +1045,6 @@
     const repairs = (item.attempts || []).filter((a) => a.kind === 'repair').length;
     const running = ['generating', 'verifying', 'repairing'].includes(item.status);
     const finished = p && ['passed', 'warning', 'needs_review'].includes(item.status);
-    const canRegen = !busy && ['done', 'failed', 'cancelled', 'interrupted'].includes(job.status);
     const state = item.adopted ? '<span class="chip ok">채택됨</span>'
       : item.status === 'warning' ? `<span class="chip warn">확인할 점 ${new Set(item.warnings || []).size}</span>` : chip(ITEM_STATUS, item.status);
     const made = [
@@ -1066,16 +1061,15 @@
           <div class="rich">${rich(p.text)}</div>
           ${p.figure ? `<div class="note info"><b>그림</b><div class="rich">${rich(p.figure)}</div></div>` : ''}
           ${choicesHtml(p)}
-          ${checkLine(item, job)}`}
+          ${checkLine(item)}`}
       </div>
       ${finished || item.status === 'failed' ? `<div class="review-bar">
         ${finished ? `<button class="rv-adopt${item.adopted ? ' on' : ''}" data-rv="adopt">${item.adopted ? '✓ 채택됨' : '👍 채택'}</button>` : ''}
         <button data-rv="fix">✏️ 고칠 점</button>
-        <button data-rv="regen" ${canRegen ? '' : 'disabled'}>🔄 다시<span class="rv-long"> 만들기</span></button></div>
-      <details class="fix-panel" data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>고칠 점</summary><div class="fix-in">
-        <div class="fix-tags">${FIX_TAGS.map(([name, target, text], i) => `<button type="button" class="fix-tag" data-tag="${i}" title="${esc(text)}">${esc(name)}<small>${target === 'solution' ? '해설' : '문제'}</small></button>`).join('')}</div>
-        <textarea name="fb" rows="2" placeholder="더 구체적으로 (선택). 예: 실험 Ⅲ의 남은 질량이 넣은 A보다 커서 가정 없이 풀립니다."></textarea>
-        <div class="lt-actions"><span class="muted small">누른 항목과 적은 내용은 이 문제의 생성 학습으로 저장되어 다음 세트부터 들어갑니다.</span><span class="spacer"></span><button class="small" name="save">저장</button><button name="regen" class="small primary" ${canRegen ? '' : 'disabled'}>저장하고 다시 만들기</button></div>
+        <button data-rv="regen">🔄 다시<span class="rv-long"> 만들기</span></button></div>
+      <details class="fix-panel" data-k="fb"><summary>고칠 점</summary><div class="fix-in">
+        <textarea name="fb" rows="2" placeholder="이 문제에서 고칠 점. 예: 실험 Ⅲ의 남은 질량이 넣은 A보다 커서 가정 없이 풀립니다."></textarea>
+        <div class="lt-actions"><span class="muted small">이 문제의 생성 학습으로 저장되어 다음 세트부터 들어갑니다.</span><span class="spacer"></span><button class="small" name="save">저장</button><button name="regen" class="small primary">저장하고 다시 만들기</button></div>
       </div></details>` : ''}
       ${p ? `
       <details data-k="sol"><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
@@ -1093,23 +1087,31 @@
 
   function bindItem(job, item, card) {
     const panel = $('.fix-panel', card);
-    $$('.fix-tag', card).forEach((b) => b.addEventListener('click', () => b.classList.toggle('on')));
-    // Saves the picked tags (one feedback each) and the note (with this variant attached), then regenerates if asked.
+    // Saves what the teacher wrote as this problem's generation learning (with this variant attached), then remakes this
+    // problem if asked.
+    const notYet = () => {
+      if (['queued', 'running'].includes(job.status)) {
+        const made = job.items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
+        return `세트를 다 만든 뒤에 다시 만들 수 있습니다 (지금 ${made}/${job.items.length} 완성). 고칠 점은 지금 저장해 둘 수 있습니다.`;
+      }
+      if (card.querySelector('.head .chip.run')) return '이 문제를 다시 만드는 중입니다. 끝나면 다시 만들 수 있습니다.';
+      return '';
+    };
     const save = async (andRegen) => {
-      const tags = $$('.fix-tag.on', card).map((b) => FIX_TAGS[Number(b.dataset.tag)]);
+      if (andRegen && notYet()) throw new Error(notYet());
       const note = $('textarea[name=fb]', card)?.value.trim() || '';
-      if (!tags.length && !note && !andRegen) throw new Error('해당하는 것을 누르거나 내용을 적어 주세요.');
-      for (const [, target, text] of tags) await teach({ text, stage: 'generation', target, jobId: job.id, itemIndex: item.index, from: 'fix' });
+      if (!note && !andRegen) throw new Error('고칠 점을 적어 주세요.');
       if (note) await teach({ text: note, stage: 'generation', jobId: job.id, itemIndex: item.index, from: 'fix' });
-      const said = [...tags.map(([, , text]) => text), note].filter(Boolean).join('\n');
-      if (andRegen) { await api('POST', `/api/jobs/${job.id}/items/${item.index}/regenerate`, { feedback: said }); wake(); }
-      $$('.fix-tag.on', card).forEach((b) => b.classList.remove('on'));
+      if (andRegen) { await api('POST', `/api/jobs/${job.id}/items/${item.index}/regenerate`, { feedback: note }); wake(); }
       if ($('textarea[name=fb]', card)) $('textarea[name=fb]', card).value = '';
-      const n = tags.length + (note ? 1 : 0);
-      toast(andRegen ? `${n ? `생성 학습 ${n}개를 더하고 ` : ''}이 문제를 다시 만드는 중입니다.` : `생성 학습 ${n}개를 더했습니다. 다음 세트부터 들어갑니다.`);
+      toast(andRegen ? `${note ? '생성 학습에 더하고 ' : ''}이 문제를 다시 만드는 중입니다.` : '생성 학습에 더했습니다. 다음 세트부터 들어갑니다.');
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
-    $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
+    $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => {
+      if (notYet()) throw new Error(notYet());
+      e.target.disabled = true;
+      try { await save(true); } finally { if (e.target.isConnected) e.target.disabled = false; }
+    }));
     // The review bar: 채택 toggles at once; 고칠 점 opens or closes the panel right under it; 다시 만들기 uses what is picked in it.
     $('[data-rv="adopt"]', card)?.addEventListener('click', guard(async (e) => {
       const r = await api('PUT', `/api/jobs/${job.id}/items/${item.index}/review`, { adopted: !item.adopted });
@@ -1123,10 +1125,11 @@
     }));
     $('[data-rv="fix"]', card)?.addEventListener('click', () => { if (panel) panel.open = !panel.open; });
     $('[data-rv="regen"]', card)?.addEventListener('click', guard(async (e) => {
-      const picked = $$('.fix-tag.on', card).length || $('textarea[name=fb]', card)?.value.trim();
-      if (!picked && !confirm('고칠 점 없이 이 문제를 다시 만들까요? (이 문제의 피드백은 모두 반영됩니다)')) return;
+      if (notYet()) throw new Error(notYet());
+      const picked = $('textarea[name=fb]', card)?.value.trim();
+      if (!picked && !confirm('고칠 점 없이 이 문제를 다시 만들까요? (이 문제의 생성 학습은 모두 반영됩니다)')) return;
       e.target.disabled = true;
-      await save(true);
+      try { await save(true); } finally { if (e.target.isConnected) e.target.disabled = false; }
     }));
   }
 

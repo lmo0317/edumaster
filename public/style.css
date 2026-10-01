@@ -348,11 +348,6 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .review-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--soft, #f7f8fa); }
 .review-bar button { font-weight: 600; }
 .review-bar .rv-adopt.on { background: #22a35a; border-color: #22a35a; color: #fff; }
-.fix-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
-.fix-tag { border-radius: 999px; padding: 6px 12px; display: inline-flex; gap: 6px; align-items: baseline; }
-.fix-tag small { color: var(--muted); font-size: 11px; }
-.fix-tag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fix-tag.on small { color: rgba(255, 255, 255, .8); }
 .fix-panel textarea { width: 100%; }
 
 /* Problem page tabs and 학습 현황 */
@@ -476,7 +471,6 @@ a.lt-name:hover { color: var(--accent); }
 .fix-panel { border-top: 0; }
 .fix-panel > summary { display: none; }
 .fix-in { padding: 0 16px 14px; display: grid; gap: 8px; }
-.fix-in .fix-tags { margin: 0; }
 @media (max-width: 640px) {
   .lt-thumbs img { width: 40px; height: 40px; }
   .lt-sec-row { align-items: flex-start; }
@@ -597,3 +591,10 @@ a.lt-name:hover { color: var(--accent); }
 .gen-go { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 #estimate { flex: 1; min-width: 180px; font-size: 13.5px; color: var(--muted); }
 @media (max-width: 640px) { .gen-row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+
+.jt-howto { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.jt-howto b { color: var(--ink); font-weight: 600; }
+.jt-need { margin-top: 14px; padding: 12px 14px; border: 1px solid #e7b0b0; background: var(--bad-soft); border-radius: 8px; display: grid; gap: 6px; font-size: 14px; }
+.jt-need p { margin: 0; }
+.jt-need details { border: 0; }
+.jt-need details > summary { padding: 0; font-size: 13.5px; font-weight: 600; color: var(--bad); }

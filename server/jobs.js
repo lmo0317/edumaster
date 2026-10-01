@@ -68,7 +68,9 @@ function createJobs({ store, llm, config }) {
       const parent = store.jobs.get(ctx.job.parentJobId);
       const item = parent?.items?.[ctx.job.itemIndex];
       if (!item) throw new Error('다시 만들 문제를 찾지 못했습니다.');
-      const previous = { problem: item.problem, solution: item.solution, verification: item.verification, status: item.status, designNote: item.designNote, replacedAt: new Date().toISOString(), feedback: ctx.job.feedback };
+      const previous = { problem: item.problem, solution: item.solution, verification: item.verification, status: item.status, designNote: item.designNote, replacedAt: new Date().toISOString(), feedback: ctx.job.feedback,
+      // What the checks could not fix last time: the remake must fix it, with or without a note from the teacher.
+      problems: [...new Set(item.problems || [])], warnings: [...new Set(item.warnings || [])] };
       item.history = [previous, ...(item.history || [])].slice(0, 3);
       item.adopted = false; // a new version is reviewed afresh
       const saveParent = () => store.jobs.put(parent);
