@@ -912,7 +912,21 @@
     const st = await api('GET', '/api/claude-login');
     if (st.loggedIn) {
       el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip ok">연결됨</span></div>
-        <p class="muted small">문제를 만들 때 <b>Claude Opus 5.5 (구독)</b>을 고를 수 있습니다. 서버의 Claude 구독으로 실행되어 추가 비용이 없고, 구독의 사용 한도를 함께 씁니다.</p>`;
+        <p class="muted small">문제를 만들 때 <b>Claude Opus 5.5 (구독)</b>을 고를 수 있습니다. 서버의 Claude 구독으로 실행되어 추가 비용이 없고, 구독의 사용 한도를 함께 씁니다.</p>
+        <div class="fb-add-bar"><span class="muted small" id="cl-check-result">연결됨은 로그인 정보가 저장되어 있다는 뜻입니다. 실제로 동작하는지는 <b>연결 확인</b>으로 볼 수 있습니다.</span><span class="spacer"></span>
+          <button id="cl-check">연결 확인</button><button class="danger" id="cl-logout">연결 해제</button></div>`;
+      $('#cl-check', el).addEventListener('click', guard(async (e) => {
+        e.target.disabled = true; $('#cl-check-result', el).textContent = 'Opus에 짧은 질문을 보내는 중…';
+        try {
+          const r = await api('POST', '/api/claude-login/check');
+          $('#cl-check-result', el).innerHTML = r.ok ? `<span class="chip ok">정상</span> ${esc(r.model)}이 ${r.seconds}초 만에 답했습니다.` : `<span class="chip bad">실패</span> ${esc(r.error || `답이 맞지 않음 (${r.answer})`)}`;
+        } finally { e.target.disabled = false; }
+      }));
+      $('#cl-logout', el).addEventListener('click', guard(async () => {
+        if (!confirm('Claude 구독 연결을 해제할까요? 서버에 저장된 로그인 정보를 지웁니다. 다시 쓰려면 로그인해야 합니다.')) return;
+        await api('POST', '/api/claude-login/logout');
+        toast('연결을 해제했습니다.'); claudeLoginPanel(); loadStatus().catch(() => {});
+      }));
       return;
     }
     el.innerHTML = `<div class="row"><h2 style="margin:0">Claude 구독 연결</h2><span class="spacer"></span><span class="chip warn">연결 안 됨</span></div>

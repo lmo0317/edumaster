@@ -382,6 +382,25 @@ function createApp(options = {}) {
     return { checking: true };
   });
   route('POST', /^\/api\/claude-login\/cancel$/, () => { claudeLogin?.child.kill('SIGTERM'); claudeLogin = null; return { ok: true }; });
+  // Disconnect: the saved token is deleted (the account itself stays signed in elsewhere; the token can also be
+  // revoked on claude.ai).
+  route('POST', /^\/api\/claude-login\/logout$/, () => {
+    fs.rmSync(path.join(cfg.dataDir, 'claude-oauth-token.txt'), { force: true });
+    lastLoginResult = null;
+    return { loggedIn: claudeCliReady(cfg) };
+  });
+  // A short real call, to see that the connection works (and which model and CLI answer), not just that a token is saved.
+  route('POST', /^\/api\/claude-login\/check$/, async () => {
+    if (!claudeCliReady(cfg)) throw fail(409, 'Claude 구독이 연결되어 있지 않습니다.');
+    const started = Date.now();
+    try {
+      const { data } = await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'claude-check', budget: new Budget({ maxCalls: 2, maxTokens: 200000 }), effort: 'off', maxTokens: 2000,
+        system: 'JSON만 출력한다.', text: '12×7의 값을 {"answer": 값} 형식으로만 답하라.' });
+      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: cfg.claudeCli.model };
+    } catch (e) {
+      return { ok: false, error: e.message.slice(0, 300), seconds: Math.round((Date.now() - started) / 100) / 10 };
+    }
+  });
 
   route('GET', /^\/api\/corrections$/, () => store.corrections.all().sort((a, b) => b.count - a.count));
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));

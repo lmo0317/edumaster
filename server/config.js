@@ -1,5 +1,7 @@
 'use strict';
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 
 const root = path.resolve(__dirname, '..');
 const env = process.env;
@@ -40,7 +42,9 @@ module.exports = {
   // Claude through the Claude Code CLI on this server (`claude -p`), on the subscription the teacher logged in with
   // once (`claude` → login). No API key and no API cost; the subscription's usage limits apply. For the teacher's own use.
   claudeCli: {
-    bin: env.EDUMASTER_CLAUDE_CLI || 'claude',
+    // A per-user install (`claude install latest` → ~/.local/bin) is preferred: it can be kept current without sudo,
+    // and new models need a recent CLI (Opus 5.5: 2.1.280 or newer).
+    bin: env.EDUMASTER_CLAUDE_CLI || (fs.existsSync(path.join(os.homedir(), '.local', 'bin', 'claude')) ? path.join(os.homedir(), '.local', 'bin', 'claude') : 'claude'),
     model: env.EDUMASTER_CLAUDE_CLI_MODEL || 'claude-opus-5-5',
     timeoutMs: int('EDUMASTER_CLAUDE_CLI_TIMEOUT_MS', 1800000),
     off: env.EDUMASTER_CLAUDE_CLI === 'off',

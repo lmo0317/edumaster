@@ -84,11 +84,13 @@ os.write(fd, b"\r")
 if not pump(10, lambda t: len(t) > mark + len(code) + 40 or "error" in t[mark:].lower()):
     os.write(fd, b"\r")
 token_re = re.compile(r"sk-ant-oat[0-9A-Za-z_-]+")
-# The token may be wrapped and drawn inside a box: drop whitespace and box-drawing characters before looking.
-squash = lambda t: re.sub(r"[\s─-╿|]", "", t)
-pump(80, lambda t: token_re.search(squash(t[mark:])) or "error" in t[mark:].lower())
+# The terminal is wide enough for the token to stay on its own line ("Your OAuth token (valid for 1 year): …");
+# the next line ("Store this token securely") must not run into it, so look line by line and only inside a line
+# drop the box-drawing characters the CLI may draw around it.
+in_line = lambda t: next((m for m in (token_re.search(re.sub(r"[─-╿|]", "", line).strip()) for line in t.splitlines()) if m), None)
+pump(80, lambda t: in_line(t[mark:]) or "error" in t[mark:].lower())
 after = text()[mark:]
-token = token_re.search(squash(after))
+token = in_line(after)
 # What the CLI said after the code, with the code and any token masked, for diagnosing a failed login.
 log = os.path.join(os.path.dirname(os.path.abspath(TOKEN_FILE)), "claude-login.log")
 masked = re.sub(r"\*{4,}\S*", "[CODE]", token_re.sub("[TOKEN]", after.replace(code, "[CODE]")))  # the CLI echoes the code's tail
