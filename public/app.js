@@ -660,8 +660,10 @@
     const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
     const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
     if (!$('#rules-preview')) return;
-    $('#rules-preview').innerHTML = `<details><summary><b>반영: 이 문제의 피드백 ${own.length}개 · 공통 지침 ${global.length + topic.length}개</b></summary>
+    const adopted = (m.jobs || []).filter((j) => j.type === 'generate').flatMap((j) => j.items || []).filter((i) => i.adopted);
+    $('#rules-preview').innerHTML = `<details><summary><b>반영: 이 문제의 피드백 ${own.length}개 · 좋은 예시 ${adopted.length}개 · 공통 지침 ${global.length + topic.length}개</b></summary>
       ${own.length ? '<div>피드백: 위 목록의 켜진 항목 전부</div>' : '<div>피드백: 아직 없음</div>'}
+      <div>좋은 예시: ${adopted.length ? `채택한 문제 ${adopted.length}개 (${[...new Set(adopted.map((i) => i.label))].map(esc).join(', ')}) — 같은 단계 문제를 만들 때 본보기로 보여 줍니다` : '아직 없음 — 변형 문제에서 👍 채택하면 쌓입니다'}</div>
       ${global.length ? '<div>공통 지침:</div><ul>' + global.slice(0, 8).map((r) => `<li>${esc(r.text)}</li>`).join('') + '</ul>' : ''}
       ${topic.length ? `<div class="muted">예전 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 함께 반영됩니다. <a href="#/learn">전체 피드백</a></div>` : ''}</details>`;
   }
@@ -794,7 +796,7 @@
     const canRegen = !busy && ['done', 'failed', 'cancelled', 'interrupted'].includes(job.status);
     return `<div class="item${item.adopted ? ' adopted' : ''}" data-item="${item.index}" id="item-${item.index}">
       <div class="head"><span class="num">문제 ${item.index + 1}</span><span>${esc(item.label)}</span>${chip(ITEM_STATUS, item.status)}
-        ${item.adopted ? '<span class="chip ok">채택</span>' : ''}${repairs ? `<span class="chip">검토 후 수정 ${repairs}회</span>` : ''}${item.history?.length ? `<span class="chip">피드백 재생성 ${item.history.length}회</span>` : ''}${busy ? '<span class="chip run">다시 만드는 중</span>' : ''}</div>
+        ${item.adopted ? '<span class="chip ok">채택</span>' : ''}${item.examplesUsed ? `<span class="chip" title="선생님이 채택한 같은 단계 문제를 본보기로 만들었습니다">좋은 예시 ${item.examplesUsed}개 참고</span>` : ''}${repairs ? `<span class="chip">검토 후 수정 ${repairs}회</span>` : ''}${item.history?.length ? `<span class="chip">피드백 재생성 ${item.history.length}회</span>` : ''}${busy ? '<span class="chip run">다시 만드는 중</span>' : ''}</div>
       ${finished || item.status === 'failed' ? `<div class="review-bar">
         ${finished ? `<button class="rv-adopt${item.adopted ? ' on' : ''}" data-rv="adopt">${item.adopted ? '✓ 채택됨' : '👍 채택'}</button>` : ''}
         <button data-rv="fix">✏️ 고칠 점</button>

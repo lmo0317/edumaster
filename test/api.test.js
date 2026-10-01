@@ -396,3 +396,23 @@ test('variant review: 채택 is saved and listed; a tag pressed on two variants 
     assert.equal((await s.call('GET', '/api/jobs/' + job.id)).data.items[0].adopted, false);
   } finally { await s.close(); }
 });
+
+test('learning: an adopted variant is shown as an example to the next set of the same stage, and a regenerated variant gets feedback added after its set was made', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const set1 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    assert.equal(set1.items[0].examplesUsed, 0, 'nothing adopted yet');
+    await s.call('PUT', `/api/jobs/${set1.id}/items/0/review`, { adopted: true });
+    const set2 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
+    assert.equal(set2.items[0].examplesUsed, 1, 'STEP 1 practice of the next set sees the adopted STEP 1 practice');
+    assert.equal(set2.items[2].examplesUsed, 0, 'a different stage does not');
+    const late = (await s.call('POST', '/api/rules', { text: '세트를 만든 뒤에 남긴 피드백', target: 'problem', source: { jobId: set2.id, itemIndex: 1 } })).data;
+    const regen = (await s.call('POST', `/api/jobs/${set2.id}/items/1/regenerate`, { feedback: '' })).data;
+    await s.waitJob(regen.jobId);
+    const after = (await s.call('GET', '/api/jobs/' + set2.id)).data;
+    assert.ok(after.items[1].verification.rules.some((r) => r.id === late.id), 'the regenerated variant was checked against the new feedback');
+  } finally { await s.close(); }
+});

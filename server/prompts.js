@@ -243,8 +243,22 @@ function rulesBlock(rules) {
     + (r.context ? `\n    (이 피드백을 받은 문제 — 같은 실수를 반복하지 않는다. 내용·수치를 베끼지 않는다: ${r.context})` : '')).join('\n');
 }
 
-function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [] }) {
-  const parts = [materialBlock(material), stageInstruction(stage, total, mode), priorBlock(prior), rulesBlock(rules)];
+// Variants of this same original and stage that the teacher adopted: a model of what the teacher wants.
+function examplesBlock(examples) {
+  if (!examples.length) return '';
+  return '\n[선생님이 채택한 좋은 예시 — 이 원본으로 만든 같은 단계 문제 중 선생님이 좋다고 고른 것. 문제 구성, 조건을 주는 방식, 해설의 흐름과 표현을 본보기로 삼는다. 수치·질문·선택지는 그대로 쓰지 않고 새로 만든다]\n'
+    + examples.map((e, i) => [
+      `(예시 ${i + 1} · ${e.label})`,
+      e.problem.text,
+      e.problem.choices?.length ? '선택지: ' + e.problem.choices.map((c, k) => `${k + 1}) ${c}`).join('  ') : '',
+      e.problem.answer ? `정답: ${e.problem.answer}번` : '',
+      '해설:',
+      ...(e.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${String(s.work || '').slice(0, 1500)}`),
+    ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [] }) {
+  const parts = [materialBlock(material), stageInstruction(stage, total, mode), priorBlock(prior), rulesBlock(rules), examplesBlock(examples)];
   if (usedRows.length) {
     parts.push('\n[이미 쓴 실험 수치 — 표의 어느 행에서도 이 (반응 전 두 값) 조합을 다시 쓰지 않는다]\n' + usedRows.join(' / '));
   }

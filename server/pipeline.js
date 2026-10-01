@@ -545,8 +545,27 @@ function numbersReused(item, prior, material) {
 }
 
 /** Row signatures the new problem must avoid: the original's, and (for the final problem) earlier problems'. */
-function usedRowsFor(item, prior, material) {
-  const texts = [material.problem.text, ...(item.stage.kind === 'twin' ? prior.filter((p) => p.problem).map((p) => p.problem.text) : [])];
+// ---------------------------------------------------------------- learning from adopted variants
+// A variant the teacher adopted (채택) is a good example for its original: later variants of the same stage are shown
+// it as a model of structure and solution style (not to copy — its numbers join the ones to avoid).
+const stageKey = (s) => `${s?.kind}:${s?.upto || s?.step || ''}`;
+/** Adopted variants of this original across its sets, newest first; `exclude` leaves out the one being replaced. */
+function adoptedExamples(store, materialId, exclude = {}) {
+  const out = [];
+  for (const j of store.jobs.all()) {
+    if (j.type !== 'generate' || j.materialId !== materialId) continue;
+    for (const it of j.items || []) {
+      if (!it.adopted || !it.problem || (j.id === exclude.jobId && it.index === exclude.index)) continue;
+      out.push({ stage: it.stage, label: it.label, problem: it.problem, solution: it.solution, at: it.reviewedAt || j.createdAt });
+    }
+  }
+  return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+/** The examples for one item: adopted variants of the same stage, at most two. */
+const examplesFor = (item, examples = []) => examples.filter((e) => stageKey(e.stage) === stageKey(item.stage)).slice(0, 2);
+
+function usedRowsFor(item, prior, material, examples = []) {
+  const texts = [material.problem.text, ...(item.stage.kind === 'twin' ? prior.filter((p) => p.problem).map((p) => p.problem.text) : []), ...examples.map((e) => e.problem.text)];
   const vocab = readingVocabulary(material);
   return [...new Set(texts.flatMap((t) => designedRows(t, vocab).map((r) => r.sig)))];
 }
@@ -716,7 +735,9 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
 }
 
 /** Generates, checks, and (at most once) repairs one problem. Mutates `item` and saves progress. */
-async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous }) {
+async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
+  const examples = examplesFor(item, allExamples);
+  item.examplesUsed = examples.length;
   const total = material.steps.length;
   const lean = Boolean(ctx.lean);
   item.status = 'generating'; item.error = ''; ctx.save();
@@ -724,7 +745,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   const { data, shapeFixes: generateShape = [] } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
-    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, usedRows: usedRowsFor(item, prior, material) }) + (lean ? prompts.LEAN_DESIGN : ''),
+    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples) }) + (lean ? prompts.LEAN_DESIGN : ''),
   });
   if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
   Object.assign(item, normalizeGenerated(data));
@@ -807,6 +828,8 @@ async function runGeneration(ctx) {
   const { job, store } = ctx;
   const material = job.material;
   const rules = job.rules;
+  // What the teacher adopted from earlier sets of this original (examples for the same stages).
+  const examples = adoptedExamples(store, job.materialId, {});
   for (const item of job.items) {
     if (ctx.signal.aborted) throw new Error('작업이 취소되었습니다.');
     if (['passed', 'warning', 'needs_review'].includes(item.status)) continue; // resume keeps finished work
@@ -815,7 +838,7 @@ async function runGeneration(ctx) {
       // Budget kept for the problems still to come (generate + solve each), so repairs of an early practice
       // problem never starve the final problem.
       ctx.reserveCalls = job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status)).length * 3;
-      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode });
+      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
       ctx.log(`${item.label}: 실패 — ${e.message}`);
@@ -862,4 +885,4 @@ const SYSTEM_CHECKS = {
   repair: '발견된 문제를 모델에 보여 주고 최대 2번 수정한다. 같은 지적이 반복되면 멈추고, 뒤에 만들 문제의 토큰이 부족해질 것 같으면 수정을 건너뛴다. 남은 문제는 교사 검토 필요 또는 확인할 점으로 표시한다.',
 };
 
-module.exports = { reviewSolution, writeSolution, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = { reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

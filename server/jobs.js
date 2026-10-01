@@ -74,8 +74,12 @@ function createJobs({ store, llm, config }) {
       const saveParent = () => store.jobs.put(parent);
       const sub = { ...ctx, save() { ctx.save(); saveParent(); }, log(m) { ctx.log(m); } };
       const prior = parent.items.filter((x) => x.index < item.index && x.problem);
+      // The feedback as it is now (not as it was when the set was made — the teacher has usually just added some),
+      // and the variants adopted so far, except this one.
+      const rules = pipeline.pickRules(store, parent.material);
+      const examples = pipeline.adoptedExamples(store, parent.materialId, { jobId: parent.id, index: item.index });
       try {
-        await pipeline.produceItem(sub, { material: parent.material, item, prior, rules: parent.rules, mode: parent.options.mode, extraFeedback: ctx.job.feedback, previous });
+        await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: ctx.job.feedback, previous, examples });
       } catch (e) {
         item.status = 'failed'; item.error = e.message; saveParent(); throw e;
       }
