@@ -102,7 +102,7 @@
   }
 
   const JOB_STATUS = { queued: ['대기 중', 'run'], running: ['진행 중', 'run'], done: ['완료', 'ok'], failed: ['실패', 'bad'], cancelled: ['취소됨', ''], interrupted: ['중단됨', 'warn'] };
-  const ITEM_STATUS = { pending: ['대기', ''], generating: ['설계 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['수정 중', 'run'], passed: ['검증 통과', 'ok'], warning: ['통과 · 확인할 점', 'warn'], needs_review: ['교사 검토 필요', 'bad'], failed: ['실패', 'bad'] };
+  const ITEM_STATUS = { pending: ['대기', ''], generating: ['설계 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['수정 중', 'run'], passed: ['검증 통과', 'ok'], warning: ['확인할 점', 'warn'], needs_review: ['교사 검토 필요', 'bad'], failed: ['실패', 'bad'] };
   const MAT_STATUS = { analyzing: ['분석 중', 'run'], ready: ['분석 완료', 'ok'], failed: ['분석 실패', 'bad'] };
   const inlineRich = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
   const chip = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
@@ -394,162 +394,245 @@
     renderMaterial(m, false);
   }
 
+  // Rows that open in place (LLM tab, problem page): the row's 관리/보기/편집 button toggles it, and the keys of open rows
+  // are kept in `opened` so a repaint keeps them open.
+  function rowToggles(box, opened) {
+    $$('[data-open]', box).forEach((b) => b.addEventListener('click', () => {
+      const row = b.closest('.lt-row');
+      row.classList.toggle('open');
+      if (row.classList.contains('open')) opened.add(row.dataset.row); else opened.delete(row.dataset.row);
+    }));
+  }
+
+  // The problem page, in the order of the loop: the original and its reading → this problem's feedback → making
+  // variants → the sets made (reviewing them is what teaches the next ones). Same rows as the LLM tab: each item's state
+  // on one line, 보기/편집 opens it in place. Which rows are open is remembered per problem while the app is open.
+  const openRows = new Map();
+  const openSet = (id) => { if (!openRows.has(id)) openRows.set(id, new Set()); return openRows.get(id); };
+  const flat = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
+  // The first line of a text worth showing in a one-line preview (not a table row).
+  const firstLine = (t) => String(t || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|')) || '';
+  function analysisNotes(m) {
+    const uncertain = (m.uncertainties || []).filter((u) => !u.startsWith('해설의 단계 표시는'));
+    return { uncertain, proofread: m.proofread || [], annotations: m.annotations || [], misaligned: m.steps.length > (m.targetSteps || 99) };
+  }
+
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = m.jobs.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    // Three tabs, so nothing sits four screens down: the original and its reading; this problem's feedback and how
-    // the learning is going; making variants and the variants made. The last tab used on this problem is reopened.
-    const adopted = gens.flatMap((j) => j.items || []).filter((i) => i.adopted).length;
-    view.innerHTML = `
-      <div class="row"><h1 style="margin-right:auto">${esc(m.title)}</h1>${chip(MAT_STATUS, m.status)}</div>
-      <div class="mtabs" role="tablist">
-        <button type="button" data-mtab="read">원본·분석</button>
-        <button type="button" data-mtab="learn">피드백·학습 <span class="count" id="mtab-learn-count"></span></button>
-        <button type="button" data-mtab="make">변형 문제 <span class="count">${gens.length ? `세트 ${gens.length}${adopted ? ` · 채택 ${adopted}` : ''}` : ''}</span></button>
-      </div>
-      <section data-pane="read"><div class="panel"><div class="orig orig-2">${originalsInner(m.images)}</div></div><div class="panel" id="analysis"></div></section>
-      <section data-pane="learn"><div class="panel" id="feedback"></div><div class="panel" id="learning"></div></section>
-      <section data-pane="make"><div class="panel" id="generate"></div><div class="panel" id="variants"></div></section>`;
-    const key = 'em-mtab-' + m.id;
-    let saved = '';
-    try { saved = localStorage.getItem(key) || ''; } catch { /* no storage */ }
-    const show = (tab) => {
-      $$('[data-mtab]').forEach((b) => b.classList.toggle('on', b.dataset.mtab === tab));
-      $$('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== tab; });
-      try { localStorage.setItem(key, tab); } catch { /* no storage */ }
-    };
-    $$('[data-mtab]').forEach((b) => b.addEventListener('click', () => { show(b.dataset.mtab); window.scrollTo({ top: 0 }); }));
-    show(editing ? 'read' : ['read', 'learn', 'make'].includes(saved) ? saved : gens.length ? 'make' : 'read');
+    if (!openRows.has(m.id)) {
+      // First visit: open what needs a look — an unsure reading, the newest set; the new-feedback box when there is none yet.
+      const s = openSet(m.id);
+      const notes = analysisNotes(m);
+      if (notes.uncertain.length || notes.misaligned) s.add('a:check');
+      if (gens[0]) s.add('s:' + gens[0].id);
+    }
+    view.innerHTML = `<div class="lt">
+      <div class="lt-title"><h1>${esc(m.title)}</h1><p class="lt-meta" id="m-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · '))}</p></div>
+      <section class="lt-sec">
+        <div class="lt-sec-head lt-sec-row"><div><h2>원본과 분석</h2><p>AI가 원본을 읽고 STEP으로 정리한 내용입니다. 변형 문제는 이 STEP을 기준으로 만듭니다.</p></div><button class="small" id="edit">직접 수정</button></div>
+        <div class="panel lt-list" id="analysis"></div>
+      </section>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>이 문제의 피드백</h2><p>변형 문제를 만들 때 AI가 지킬 점입니다. 켜 둔 것은 이 문제로 만드는 모든 변형에 들어갑니다.</p></div>
+        <div class="panel lt-list" id="feedback"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
+      </section>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>변형 문제 만들기</h2><p>정답은 서버가 계산으로 확인하고, 문제만 보고 다시 풀어 대조합니다.</p></div>
+        <div class="panel" id="generate"></div>
+      </section>
+      <section class="lt-sec">
+        <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 채택하거나 고칠 점을 남기세요. 채택한 문제는 다음 세트의 본보기가 됩니다.</p></div>
+        <div class="panel lt-list" id="variants"></div>
+      </section>
+      <div class="lt-foot"><button class="small danger" id="del">이 문제 삭제</button></div>
+    </div>`;
+    $('#edit').addEventListener('click', () => editAnalysis(m));
+    $('#del').addEventListener('click', guard(async () => { if (confirm('이 문제를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/'; } }));
     if (editing) editAnalysis(m); else showAnalysis(m);
-    feedbackPanel(m, gens); // also fills 학습 현황
     generatePanel(m, n);
+    // Feedback, the sets and what the next set will carry all come from the same two reads; a feedback change repaints them.
+    const side = async () => {
+      const [rules, learning] = await Promise.all([api('GET', '/api/rules'), api('GET', `/api/materials/${m.id}/learning`)]);
+      if (!$('#feedback')) return;
+      const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const on = own.filter((r) => r.status === 'approved');
+      const common = rules.filter((r) => r.status === 'approved' && ['global', 'topic'].includes(r.scope));
+      $('#m-meta').textContent = [m.subject, m.topic, `피드백 ${on.length}개 켜짐`, `세트 ${gens.length}개`, learning.adopted ? `채택 ${learning.adopted}개` : ''].filter(Boolean).join(' · ');
+      feedbackPanel(m, own, learning, side);
+      variantsPanel(m, gens, on, learning);
+      carryLine(m, n, on, common, learning.adopted);
+    };
+    side().catch((e) => { if ($('#feedback')) $('#feedback').innerHTML = `<div class="lt-row lt-plain"><span class="bad">${esc(e.message)}</span></div>`; });
   }
 
-  // 학습 현황: whether the variants of this original are getting better as feedback and adopted examples pile up.
-  async function learningPanel(m) {
-    const el = $('#learning');
-    if (!el) return;
-    const d = await api('GET', `/api/materials/${m.id}/learning`);
-    const on = d.feedback.filter((f) => f.status === 'approved');
-    const kept = (k, b) => (k + b ? `<span class="chip ok">지킴 ${k}</span>${b ? ` <span class="chip bad">어김 ${b}</span>` : ''}` : '<span class="muted">-</span>');
-    el.innerHTML = `<h2>학습 현황</h2>
-      <div class="learn-stats">
-        <div><b>${on.length}</b><span>켜진 피드백</span></div>
-        <div><b>${d.adopted}</b><span>좋은 예시 (채택)</span></div>
-        <div><b>${d.sets.length}</b><span>만든 세트</span></div>
-      </div>
-      ${d.sets.length ? `<h3>세트별</h3><p class="muted small">피드백과 채택이 쌓이면서 세트가 나아지는지 봅니다. '그때 피드백'은 그 세트를 만들 때 이미 있던 이 문제의 피드백 수입니다.</p>
-      <div class="table-wrap"><table class="learn-table"><tr><th>세트</th><th>그때 피드백</th><th>검증 통과</th><th>채택</th><th>피드백·지침</th></tr>
-        ${d.sets.map((s) => `<tr><td><a href="#/j/${s.id}">세트 ${s.no}</a><div class="muted small">${fmtTime(s.createdAt)} · ${esc(s.model)}</div></td>
-          <td>${s.feedbackBefore}개${s.examples ? `<div class="muted small">좋은 예시 ${s.examples}개 참고</div>` : ''}</td>
-          <td>${s.passed}/${s.items}</td><td>${s.adopted}/${s.items}</td><td>${kept(s.kept, s.broken)}</td></tr>`).join('')}</table></div>` : '<p class="muted small">아직 만든 세트가 없습니다.</p>'}
-      ${d.feedback.length ? `<h3>피드백별</h3><p class="muted small">각 피드백이 그 뒤에 만든 문제에서 지켜졌는지입니다 (독립 검토 판정).</p>
-      <div class="table-wrap"><table class="learn-table"><tr><th>피드백</th><th>검토된 문제</th><th>결과</th></tr>
-        ${d.feedback.map((f) => `<tr class="${f.status === 'approved' ? '' : 'off'}"><td>${esc(f.text)}${f.status === 'approved' ? '' : ' <span class="chip warn">꺼짐</span>'}</td><td>${f.used}</td><td>${kept(f.kept, f.broken)}</td></tr>`).join('')}</table></div>` : ''}`;
-  }
-
-  // This problem's own feedback: what the teacher taught about it (on the problem page or on one of its variants).
-  // Every variant made from it gets all of it.
+  // This problem's own feedback: what the teacher taught about it (here or on one of its variants), with how the
+  // variants made since then kept each one. The checkbox switches one on or off; 편집 opens it in place.
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
-  async function feedbackPanel(m, gens) {
+  function feedbackPanel(m, own, learning, refresh) {
     const el = $('#feedback');
     if (!el) return;
-    const rules = await api('GET', '/api/rules');
-    const own = rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const on = own.filter((r) => r.status === 'approved');
-    const entry = (r, i) => `<div class="learn-item" data-rule="${r.id}">
-      <div class="learn-item-main"><div class="learn-text"><b>${i + 1}.</b> ${esc(r.text)}</div>
-        <div class="learn-meta"><span class="chip">${TARGET_TXT[r.target] || '전체'}</span>${r.status === 'approved' ? '' : '<span class="chip warn">꺼짐</span>'}
-          <span class="muted small">${fmtTime(r.createdAt)}${r.source?.jobId ? ` · <a href="#/j/${r.source.jobId}">${esc(r.source.label || '변형 문제')}에서 남김</a>` : ''}</span></div></div>
-      <div class="learn-actions">${r.status === 'approved' ? '<button class="small" data-act="off">끄기</button>' : '<button class="small primary" data-act="on">켜기</button>'}<button class="small" data-act="edit">수정</button><button class="small danger" data-act="del">삭제</button></div></div>`;
-    el.innerHTML = `
-      <h2 style="margin:0">변형 문제 피드백</h2>
-      <p class="muted small" style="margin:4px 0 0">아래 <b>변형 문제 만들기</b>에서 AI가 지킬 점입니다. 켜진 ${on.length}개가 이 문제로 만드는 모든 변형 문제에 반영됩니다. 위 <b>분석 결과</b>(읽은 문제·STEP)가 틀렸다면 여기가 아니라 분석 결과의 <b>수정</b>에서 직접 고쳐 주세요.</p>
-      <div class="learn-list" style="margin-top:8px">${own.map(entry).join('') || '<p class="muted small">아직 없습니다. 변형 문제를 보고 고칠 점이 있으면 적어 주세요.</p>'}</div>
-      <div class="fb-add">
-        <textarea id="fb-text" rows="3" placeholder="변형 문제를 만들 때 지킬 점. 예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
-        <div class="fb-add-bar"><label for="fb-target">대상</label><select id="fb-target"><option value="all">전체</option><option value="problem">문제</option><option value="solution">해설</option></select>
-          <span class="spacer"></span><button class="primary" id="fb-add">피드백 추가</button></div>
+    const opened = openSet(m.id);
+    const o = (key) => (opened.has(key) ? ' open' : '');
+    const record = new Map(learning.feedback.map((f) => [f.id, f]));
+    const targets = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
+    const row = (r) => {
+      const f = record.get(r.id) || {};
+      const judged = (f.kept || 0) + (f.broken || 0);
+      const where = r.source?.jobId ? `<a href="#/j/${r.source.jobId}${r.source.itemIndex !== undefined ? `?item=${r.source.itemIndex}` : ''}">${esc(r.source.label || '변형 문제')}에서</a>` : fmtTime(r.createdAt);
+      const kept = judged ? `변형 ${judged}개에서 지킴 ${f.kept}${f.broken ? ` · <span class="bad">어김 ${f.broken}</span>` : ''}` : '아직 검토 전';
+      return `<div class="lt-row lt-pick${r.status === 'approved' ? '' : ' off'}${o('f:' + r.id)}" data-row="f:${r.id}" data-rule="${r.id}">
+        <input type="checkbox" data-act="toggle" ${r.status === 'approved' ? 'checked' : ''} aria-label="이 피드백 켜기">
+        <div class="lt-main"><span class="lt-name lt-clip">${esc(r.text)}</span><span class="lt-sub">${TARGET_TXT[r.target] || '전체'} · ${where} · ${kept}</span></div>
+        <button class="small lt-open" data-open>편집</button>
+        <div class="lt-more">
+          <textarea data-f="text" rows="3">${esc(r.text)}</textarea>
+          <div class="lt-actions"><select data-f="target" aria-label="대상">${targets(r.target)}</select><button class="small danger" data-act="del">삭제</button><span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div>
+        </div>
       </div>`;
+    };
+    const on = own.filter((r) => r.status === 'approved');
+    const off = own.filter((r) => r.status !== 'approved');
+    const fresh = !own.length || opened.has('f:new');
+    el.innerHTML = `${on.map(row).join('')}
+      <div class="lt-row lt-plain${fresh ? ' open' : ''}" data-row="f:new">
+        <div class="lt-main"><span class="lt-name">새 피드백</span><span class="lt-sub">${own.length ? '변형 문제에서 남긴 고칠 점도 여기로 모입니다' : '아직 없습니다. 변형 문제를 보고 고칠 점이 있으면 적어 주세요'}</span></div>
+        <button class="small lt-open" data-open>추가</button>
+        <div class="lt-more">
+          <textarea id="fb-text" rows="3" placeholder="예: STEP 1 연습에서는 남는 물질을 표에 적지 않는다. 최종 문제는 실험 Ⅱ에서 가정→모순을 판정하게 만든다."></textarea>
+          <div class="lt-actions"><select id="fb-target" aria-label="대상">${targets('all')}</select><span class="spacer"></span><button class="small primary" id="fb-add">추가</button></div>
+        </div>
+      </div>
+      ${off.length ? `<details class="lt-off"><summary>꺼진 피드백 ${off.length}개</summary>${off.map(row).join('')}</details>` : ''}`;
+    rowToggles(el, opened);
     $('#fb-add', el).addEventListener('click', guard(async () => {
       const text = $('#fb-text', el).value.trim();
       if (!text) throw new Error('피드백 내용을 입력해 주세요.');
       await api('POST', '/api/rules', { text, target: $('#fb-target', el).value, kind: 'feedback', scope: 'material', source: { materialId: m.id } });
-      toast('저장했습니다. 다음 변형 생성부터 반영됩니다.');
-      feedbackPanel(m, gens);
-      rulesPreview(m);
+      opened.delete('f:new');
+      toast('저장했습니다. 다음에 만드는 변형부터 들어갑니다.');
+      await refresh();
     }));
-    $$('[data-rule] [data-act]', el).forEach((b) => b.addEventListener('click', guard(async () => {
-      const id = b.closest('[data-rule]').dataset.rule;
-      const act = b.dataset.act;
-      if (act === 'del') { if (!confirm('이 피드백을 삭제할까요?')) return; await api('DELETE', '/api/rules/' + id); }
-      else if (act === 'edit') {
-        const text = prompt('피드백 수정', own.find((r) => r.id === id)?.text || '');
-        if (text === null) return;
-        await api('PUT', '/api/rules/' + id, { text });
-      } else await api('PUT', '/api/rules/' + id, { status: act === 'on' ? 'approved' : 'pending' });
-      feedbackPanel(m, gens);
-      rulesPreview(m);
-    })));
-    if ($('#mtab-learn-count')) $('#mtab-learn-count').textContent = on.length ? `피드백 ${on.length}` : '';
-    variantsPanel(gens, on);
-    learningPanel(m).catch(() => {});
+    $$('[data-rule]', el).forEach((r) => {
+      const id = r.dataset.rule;
+      const rule = own.find((x) => x.id === id);
+      $('[data-act=toggle]', r).addEventListener('change', guard(async (e) => {
+        try { await api('PUT', '/api/rules/' + id, { status: e.target.checked ? 'approved' : 'pending' }); }
+        catch (err) { e.target.checked = !e.target.checked; throw err; }
+        toast(e.target.checked ? '켰습니다. 다음에 만드는 변형부터 들어갑니다.' : '껐습니다. 다음 변형부터 빠집니다.');
+        await refresh();
+      }));
+      $('[data-act=cancel]', r).addEventListener('click', () => {
+        $('[data-f=text]', r).value = rule.text; $('[data-f=target]', r).value = rule.target;
+        r.classList.remove('open'); opened.delete('f:' + id);
+      });
+      $('[data-act=save]', r).addEventListener('click', guard(async () => {
+        await api('PUT', '/api/rules/' + id, { text: $('[data-f=text]', r).value, target: $('[data-f=target]', r).value });
+        opened.delete('f:' + id);
+        toast('저장했습니다.');
+        await refresh();
+      }));
+      $('[data-act=del]', r).addEventListener('click', guard(async () => {
+        if (!confirm('이 피드백을 삭제할까요?')) return;
+        await api('DELETE', '/api/rules/' + id);
+        opened.delete('f:' + id);
+        await refresh();
+      }));
+    });
   }
 
-  // The variants made from this problem, set by set, each problem with its state; a set made before later
-  // feedback says how much of it it does not reflect.
-  function variantsPanel(gens, on) {
+  // The sets made from this problem, newest first: when and with what each was made, how far its review got, and its
+  // problems one line each (opened in place). A set made before later feedback says how much of it is missing.
+  const SET_ITEM = { adopted: ['채택', 'ok'], needs_review: ['검토 필요', 'bad'], warning: ['확인할 점', 'warn'], passed: ['통과', ''], failed: ['못 만듦', 'bad'], generating: ['만드는 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['고치는 중', 'run'], pending: ['대기', ''] };
+  function variantsPanel(m, gens, on, learning) {
     const el = $('#variants');
     if (!el) return;
-    el.innerHTML = `<h2>변형 문제</h2>${gens.length ? gens.map((j, i) => {
-      const st = setStatus(j);
+    if (!gens.length) { el.innerHTML = '<div class="lt-row lt-plain"><span class="muted">아직 만든 세트가 없습니다.</span></div>'; return; }
+    const opened = openSet(m.id);
+    const stats = new Map(learning.sets.map((s) => [s.id, s]));
+    const row = (j, i) => {
+      const s = stats.get(j.id) || { no: gens.length - i, feedbackBefore: 0, examples: 0 };
+      const busy = ['queued', 'running'].includes(j.status);
+      const items = j.items || [];
+      const count = (st) => items.filter((it) => !it.adopted && it.status === st).length;
+      const adopted = items.filter((it) => it.adopted).length;
       const later = on.filter((r) => r.createdAt > j.createdAt).length;
-      return `<div class="variant-set">
-        <a class="variant-head" href="#/j/${j.id}"><b>세트 ${gens.length - i}</b><span class="muted small">${fmtTime(j.createdAt)} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'}</span>
-          <span class="spacer"></span><span class="chip ${st.tone}">${esc(st.label)}</span>${later ? `<span class="chip warn">이후 피드백 ${later}개 미반영</span>` : ''}<span class="mat-open">열기 ›</span></a>
-        <div class="variant-items">${j.items.map((it) => `<a class="variant-item" href="#/j/${j.id}?item=${it.index}"><span><b>${esc(it.label)}</b>${it.preview ? `<span class="preview">${inlineRich(it.preview)}</span>` : ''}</span>${it.adopted ? '<span class="chip ok">채택</span>' : ''}${chip(ITEM_STATUS, it.status)}</a>`).join('')}</div></div>`;
-    }).join('') : '<p class="muted small">아직 없습니다. 위에서 변형 문제를 만들어 주세요.</p>'}`;
+      const made = items.filter((it) => ['passed', 'warning', 'needs_review', 'failed'].includes(it.status)).length;
+      const fact = busy ? `<span class="run">만드는 중 ${made}/${items.length}</span>`
+        : [`채택 ${adopted}/${items.length}`, count('needs_review') && `<span class="bad">검토 필요 ${count('needs_review')}</span>`, count('failed') && `<span class="bad">못 만듦 ${count('failed')}</span>`].filter(Boolean).join(' · ');
+      return `<div class="lt-row lt-set${opened.has('s:' + j.id) ? ' open' : ''}" data-row="s:${j.id}">
+        <div class="lt-main"><a class="lt-name" href="#/j/${j.id}">세트 ${s.no} · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'}</a>
+          <span class="lt-sub lt-wrap">${fmtTime(j.createdAt)} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · 피드백 ${s.feedbackBefore}개${s.examples ? `·본보기 ${s.examples}개` : ''}로 만듦${later ? ` · <span class="warn">그 뒤 남긴 피드백 ${later}개는 빠져 있음</span>` : ''}</span></div>
+        <div class="lt-fact">${fact}</div>
+        <button class="small lt-open" data-open>문제 보기</button>
+        <div class="lt-more"><div class="lt-items">${items.map((it) => {
+          const [t, c] = SET_ITEM[it.adopted ? 'adopted' : it.status] || [it.status, ''];
+          return `<a class="lt-item" href="#/j/${j.id}?item=${it.index}"><b>${esc(it.label)}</b><span class="lt-item-text">${it.preview ? inlineRich(it.preview) : ''}</span><span class="lt-state ${c}">${t}</span></a>`;
+        }).join('')}</div></div>
+      </div>`;
+    };
+    const rows = gens.map(row);
+    el.innerHTML = rows.slice(0, 5).join('') + (rows.length > 5 ? `<details class="lt-off"><summary>이전 세트 ${rows.length - 5}개 더 보기</summary>${rows.slice(5).join('')}</details>` : '');
+    rowToggles(el, opened);
   }
 
   function showAnalysis(m) {
     const el = $('#analysis');
-    el.innerHTML = `
-      <div class="row"><h2 style="margin:0">분석 결과</h2><span class="spacer"></span>
-        <button class="small" id="edit">수정</button><button class="small" id="reanalyze">다시 분석</button><button class="small danger" id="del">삭제</button></div>
-      <p class="muted small" style="margin:4px 0">AI가 원본을 읽고 정리한 내용입니다. 원본과 다른 곳은 <b>수정</b>으로 직접 고치세요 — 고친 내용이 변형 문제의 기준이 되고, 잘못 읽은 단어는 다음 판독 때 주의하도록 학습됩니다.</p>
-      <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${m.solutionSource === 'ai' ? '<span class="chip warn">해설 없음 → AI가 만든 풀이</span>' : '<span class="chip ok">교사 해설 기반</span>'} <span class="chip">분석: ${PROVIDER_LABEL[m.analyzedWith] || 'DeepSeek'}</span> ${m.teacherEditedAt ? '<span class="chip">교사 수정됨</span>' : ''}</p>
-      ${m.steps.length > (m.targetSteps || 99) ? `<div class="note warn row"><span style="flex:1">해설의 단계 표시는 ${m.targetSteps}개인데 정리한 STEP은 ${m.steps.length}개입니다.</span><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : ''}
-      ${m.uncertainties?.filter((u) => !u.startsWith('해설의 단계 표시는')).length ? `<div class="note warn"><b>판독이 불확실한 부분 — 원본과 대조해 주세요</b><ul>${m.uncertainties.filter((u) => !u.startsWith('해설의 단계 표시는')).map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
-      ${m.proofread?.length ? `<details data-k="proof"><summary>원본 대조로 자동 교정한 곳 ${m.proofread.length}건</summary><div class="inner"><ul class="small">${m.proofread.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div></details>` : ''}
-      ${m.annotations?.length ? `<div class="note info"><b>문제 조건에서 뺀 필기·표시</b><ul>${m.annotations.map((u) => `<li>${rich(u).replace(/^<p>|<\/p>$/g, '')}</li>`).join('')}</ul></div>` : ''}
-      <h3>읽은 문제</h3><div class="rich">${rich(m.problem.text)}</div>
-      ${m.problem.figure ? `<div class="note info"><b>그림 설명</b><div class="rich">${rich(m.problem.figure)}</div></div>` : ''}
-      ${choicesHtml(m.problem)}
-      <p class="small muted">정답: ${m.problem.answer ? circled(m.problem.answer) : '없음/서술형'}</p>
-      <h3>풀이 STEP (${m.steps.length}개)</h3>
-      <div class="steps">${m.steps.map(stepHtml).join('')}</div>
-      ${m.techniques?.length ? `<h3>변형 문제에서 재사용할 핵심 기법</h3><div class="rich">${m.techniques.map((t) => `<p class="bullet">• ${rich(t).replace(/^<p>|<\/p>$/g, '')}</p>`).join('')}</div>` : ''}
-      ${m.finalCheck ? `<h3>정답 재확인</h3><div class="rich">${rich(m.finalCheck)}</div>` : ''}
-      <div class="analysis-fb">
-        <h3>분석 피드백</h3>
-        <p class="muted small" style="margin:0 0 6px">읽은 내용이나 STEP 정리가 마음에 들지 않으면 적어 주세요. AI가 원본을 다시 읽을 때 지금까지의 분석 피드백을 모두 반영합니다. 몇 글자만 틀렸다면 위의 <b>수정</b>으로 바로 고치는 편이 빠릅니다.</p>
-        ${(m.analysisFeedback || []).length ? `<ol class="small">${m.analysisFeedback.map((f, i) => `<li>${esc(f.text)} <span class="muted">${fmtTime(f.at)}</span> <button class="small" data-afb-del="${i}">삭제</button></li>`).join('')}</ol>` : ''}
-        <textarea id="afb-text" rows="2" placeholder="예: STEP 2와 STEP 3을 선생님 해설처럼 나눠 주세요. 표 Ⅲ의 'B'는 학생 필기입니다."></textarea>
-        <div class="fb-add-bar"><span class="spacer"></span><button class="primary" id="afb-go">피드백 반영해 다시 분석</button></div>
+    el.classList.remove('editing');
+    if ($('#edit')) $('#edit').hidden = false;
+    const opened = openSet(m.id);
+    const o = (key) => (opened.has(key) ? ' open' : '');
+    const { uncertain, proofread, annotations, misaligned } = analysisNotes(m);
+    const list = (items) => `<ul class="lt-ul">${items.map((u) => `<li>${flat(u)}</li>`).join('')}</ul>`;
+    const row = (key, name, sub, more, label = '보기', dot = '') => `<div class="lt-row lt-plain${o(key)}" data-row="${key}">
+        <div class="lt-main"><span class="lt-name">${dot}${name}</span><span class="lt-sub lt-clip">${sub}</span></div>
+        <button class="small lt-open" data-open>${label}</button>
+        <div class="lt-more">${more}</div>
       </div>`;
+    const src = (id) => 'api/files/' + id;
+    const thumbs = [m.images.problem, !m.images.sameImage && m.images.solution].filter(Boolean).map((id) => `<img data-zoom src="${src(id)}" alt="원본">`).join('');
+    const afb = m.analysisFeedback || [];
+    const checkParts = [uncertain.length && `판독 불확실 ${uncertain.length}`, proofread.length && `자동 교정 ${proofread.length}`, annotations.length && `뺀 필기 ${annotations.length}`, misaligned && `STEP ${m.steps.length}개 → 해설 ${m.targetSteps}단계`].filter(Boolean);
+    el.innerHTML = [
+      `<div class="lt-row lt-plain${o('a:orig')}" data-row="a:orig">
+        <div class="lt-main lt-thumbrow"><span class="lt-thumbs">${thumbs}</span><span class="lt-main"><span class="lt-name">${m.images.sameImage || !m.images.solution ? '원본' : '원본 문제 · 교사 해설'}</span>
+          <span class="lt-sub lt-clip">${m.solutionSource === 'ai' ? '해설 없음 → AI가 만든 풀이' : '교사 해설 기반'} · ${esc(PROVIDER_LABEL[m.analyzedWith] || 'DeepSeek')}로 분석${m.teacherEditedAt ? ' · 직접 고침' : ''}</span></span></div>
+        <button class="small lt-open" data-open>크게 보기</button>
+        <div class="lt-more"><div class="orig orig-2">${originalsInner(m.images)}</div></div>
+      </div>`,
+      checkParts.length ? row('a:check', '확인할 곳', checkParts.join(' · '), `
+        ${misaligned ? `<div class="lt-actions"><span>해설의 단계 표시는 ${m.targetSteps}개인데 정리한 STEP은 ${m.steps.length}개입니다.</span><span class="spacer"></span><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : ''}
+        ${uncertain.length ? `<div><b>판독이 불확실한 곳 — 원본과 대조해 주세요</b>${list(uncertain)}</div>` : ''}
+        ${proofread.length ? `<div><b>원본과 대조해 자동으로 고친 곳</b>${list(proofread)}</div>` : ''}
+        ${annotations.length ? `<div><b>문제 조건에서 뺀 필기·표시</b>${list(annotations)}</div>` : ''}`, '보기', `<i class="lt-dot ${uncertain.length || misaligned ? 'warn' : ''}"></i>`) : '',
+      row('a:problem', '읽은 문제', `${inlineRich(firstLine(m.problem.text))} · 정답 ${m.problem.answer ? circled(m.problem.answer) : '서술형'}`, `
+        <div class="rich">${rich(m.problem.text)}</div>
+        ${m.problem.figure ? `<div><b>그림 설명</b><div class="rich">${rich(m.problem.figure)}</div></div>` : ''}
+        ${choicesHtml(m.problem)}
+        ${m.finalCheck ? `<div><b>정답 재확인</b><div class="rich">${rich(m.finalCheck)}</div></div>` : ''}`),
+      ...m.steps.map((s, i) => row('a:step' + i, `STEP ${i + 1} · ${flat(s.title)}`, flat(s.result || s.purpose || ''), `
+        ${s.purpose ? `<div class="lt-kv"><b>결정하는 것</b><span>${flat(s.purpose)}</span></div>` : ''}
+        ${s.technique ? `<div class="lt-kv"><b>핵심 기법</b><span>${flat(s.technique)}</span></div>` : ''}
+        <div class="rich">${rich(s.work)}</div>
+        ${s.result ? `<div class="lt-kv"><b>결론</b><span>${flat(s.result)}</span></div>` : ''}`)),
+      m.techniques?.length ? row('a:tech', '변형에서 다시 쓸 핵심 기법', m.techniques.map(flat).join(' · '), list(m.techniques)) : '',
+      row('a:again', '다시 분석할 때 알려 줄 점', afb.length ? `${afb.length}개 · 마지막: ${esc(afb[afb.length - 1].text)}` : '없음 · 읽은 내용이나 STEP 정리가 틀렸을 때 적고 다시 분석합니다', `
+        ${afb.length ? `<ol class="lt-ul">${afb.map((f, i) => `<li>${esc(f.text)} <span class="muted small">${fmtTime(f.at)}</span> <button class="small" data-afb-del="${i}">삭제</button></li>`).join('')}</ol>` : ''}
+        <textarea id="afb-text" rows="2" placeholder="예: STEP 2와 STEP 3을 선생님 해설처럼 나눠 주세요. 표 Ⅲ의 'B'는 학생 필기입니다. (몇 글자만 틀렸다면 직접 수정이 빠릅니다)"></textarea>
+        <div class="lt-actions"><button class="small" id="reanalyze">그냥 다시 분석</button><span class="spacer"></span><button class="small primary" id="afb-go">반영해서 다시 분석</button></div>`, '적기'),
+    ].join('');
+    rowToggles(el, opened);
     $('#afb-go').addEventListener('click', guard(async () => {
       const feedback = $('#afb-text').value.trim();
-      if (!feedback) throw new Error('분석 피드백을 입력해 주세요.');
-      const again = undefined; // the 기본 모델 (LLM tab)
-      await api('POST', `/api/materials/${m.id}/analyze`, { feedback, provider: again });
+      if (!feedback) throw new Error('다시 분석할 때 알려 줄 점을 적어 주세요.');
+      await api('POST', `/api/materials/${m.id}/analyze`, { feedback }); // the 기본 모델 (LLM tab)
       route();
     }));
     $$('[data-afb-del]').forEach((b) => b.addEventListener('click', guard(async () => {
-      if (!confirm('이 분석 피드백을 지울까요?')) return;
+      if (!confirm('이 내용을 지울까요?')) return;
       const saved = await api('DELETE', `/api/materials/${m.id}/analysis-feedback/${b.dataset.afbDel}`);
       showAnalysis({ ...m, analysisFeedback: saved.analysisFeedback });
     })));
-    $('#edit').addEventListener('click', () => editAnalysis(m));
     $('#align')?.addEventListener('click', guard(async (e) => {
       e.target.disabled = true; e.target.textContent = '합치는 중…';
       try {
@@ -559,16 +642,16 @@
       } finally { if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '해설 단계에 맞춰 합치기'; } }
     }));
     $('#reanalyze').addEventListener('click', guard(async () => {
-      if (!confirm('원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다. 분석 피드백은 모두 반영됩니다.')) return;
-      const again = undefined; // the 기본 모델 (LLM tab)
-      await api('POST', `/api/materials/${m.id}/analyze`, { provider: again });
+      if (!confirm('원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다. 적어 둔 점은 모두 반영됩니다.')) return;
+      await api('POST', `/api/materials/${m.id}/analyze`, {}); // the 기본 모델 (LLM tab)
       route();
     }));
-    $('#del').addEventListener('click', guard(async () => { if (confirm('이 자료를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/materials'; } }));
   }
 
   function editAnalysis(m) {
     const el = $('#analysis');
+    el.classList.add('editing');
+    if ($('#edit')) $('#edit').hidden = true;
     const steps = m.steps.map((s) => ({ ...s }));
     const draw = () => {
       el.innerHTML = `
@@ -641,16 +724,15 @@
     const upto = Array.from({ length: n - 1 }, (_, i) => i + 1);
     const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
+    if (!$('#generate')) return;
     el.innerHTML = `
-      <h2>변형 문제 만들기</h2>
-      <p class="muted small">위 풀이 STEP ${n}개와 이 문제의 피드백, 공통 지침으로 만듭니다. 정답은 서버가 계산으로 확인하고 다른 풀이로 다시 대조합니다.</p>
-      <div class="note info small" id="rules-preview">반영할 피드백과 지침을 확인하는 중…</div>
-      <label>만들 문제</label>
-      <div class="stage-picks">${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`}</label>`).join('')}
+      <div id="rules-preview" class="lt-carry">${carryText.get(m.id) || '<span class="muted">반영할 내용을 확인하는 중…</span>'}</div>
+      <div class="gen-picks"><span class="gen-label">만들 문제</span>
+        <div class="stage-picks">${upto.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"upto","upto":${k}}' checked> ${k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`}</label>`).join('')}
         <label class="inline"><input type="checkbox" data-stage='{"kind":"twin"}' checked> 최종 문제 (STEP 1~${n})</label>
-        ${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k}만 연습</label>`).join('')}</div>
-      <details class="gen-more" data-k="gen-more"><summary>세부 설정 <span class="muted small" id="gen-summary"></span></summary><div class="inner">
-        <label>생성 모델</label>${providerPicker('genProvider')}
+        ${focus.map((k) => `<label class="inline"><input type="checkbox" data-stage='{"kind":"focus","step":${k}}'> STEP ${k}만 연습</label>`).join('')}</div></div>
+      <details class="gen-more lt-base" data-k="gen-more"><summary>세부 설정 <span class="muted" id="gen-summary"></span></summary><div class="gen-more-in">
+        <label>만들 모델</label>${providerPicker('genProvider')}
         <label>최종 문제 방식</label>
         <div><label class="inline"><input type="radio" name="mode" value="integrated" checked> 통합 변형 (권장) — 앞 연습 문제의 아이디어를 엮은 새 구조</label>
           <label class="inline"><input type="radio" name="mode" value="numeric"> 단순 수치 변형 — 원본과 같은 구조에 숫자만 새로</label></div>
@@ -661,17 +743,16 @@
         </div>
         <p class="muted small">STEP k만 연습: 앞 STEP의 결과를 조건으로 주고 STEP k만 쓰게 하는 문제입니다.</p>
       </div></details>
-      <div class="gen-go"><span class="muted small" id="estimate"></span><button class="primary" id="go">생성 시작</button></div>`;
+      <div class="gen-go"><span class="muted small" id="estimate"></span><button class="primary" id="go">변형 문제 만들기</button></div>`;
     const estimate = () => {
       const chosen = $('[name=genProvider]:checked', el)?.value || 'deepseek';
-      const gemma = chosen === 'gemma';
       // Each model's own reasoning setting: DeepSeek's here, Claude's from the LLM tab, none for the PC model.
       $('#effort-box').hidden = chosen !== 'deepseek';
       $('#claude-effort-note').hidden = chosen !== 'claude-cli';
       if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[statusCache?.providers?.['claude-cli']?.effort] || '자동';
       const count = $$('[data-stage]:checked', el).length * Number($('#per').value);
       $('#estimate').textContent = !count ? '만들 문제를 하나 이상 고르세요.'
-        : `${count}문제 · 모델 호출 약 ${count * 2}~${count * 4}회 예상 (설계 + 독립 풀이, 필요할 때만 수정 1회)` + (gemma ? ' · Gemma는 무료지만 PC에서 돌아가 문제당 몇 분씩 걸릴 수 있습니다' : '');
+        : `${count}문제${chosen === 'gemma' ? ' · PC 모델은 무료지만 문제당 몇 분씩 걸릴 수 있습니다' : ''}`;
       $('#go').disabled = !count;
       const picked = $('[name=genProvider]:checked', el);
       $('#gen-summary').textContent = `— ${picked?.closest('label')?.querySelector('b, strong')?.textContent || PROVIDER_LABEL[picked?.value] || 'DeepSeek'} · ${$('[name=mode]:checked', el).value === 'integrated' ? '통합 변형' : '수치 변형'} · 단계마다 ${$('#per').value}문제`;
@@ -688,23 +769,19 @@
       });
       location.hash = '#/j/' + r.jobId;
     }));
-    await rulesPreview(m);
   }
 
-  // What the next set of this problem will carry: its own feedback and the rules for every problem.
-  async function rulesPreview(m) {
-    if (!$('#rules-preview')) return;
-    const rules = await api('GET', '/api/rules');
-    const own = rules.filter((r) => r.status === 'approved' && r.scope === 'material' && r.source?.materialId === m.id);
-    const global = rules.filter((r) => r.status === 'approved' && r.scope === 'global');
-    const topic = rules.filter((r) => r.status === 'approved' && r.scope === 'topic');
-    if (!$('#rules-preview')) return;
-    const adopted = (m.jobs || []).filter((j) => j.type === 'generate').flatMap((j) => j.items || []).filter((i) => i.adopted);
-    $('#rules-preview').innerHTML = `<details><summary><b>반영: 이 문제의 피드백 ${own.length}개 · 좋은 예시 ${adopted.length}개 · 공통 지침 ${global.length + topic.length}개</b></summary>
-      ${own.length ? '<div>피드백: 위 목록의 켜진 항목 전부</div>' : '<div>피드백: 아직 없음</div>'}
-      <div>좋은 예시: ${adopted.length ? `채택한 문제 ${adopted.length}개 (${[...new Set(adopted.map((i) => i.label))].map(esc).join(', ')}) — 같은 단계 문제를 만들 때 본보기로 보여 줍니다` : '아직 없음 — 변형 문제에서 👍 채택하면 쌓입니다'}</div>
-      ${global.length ? '<div>공통 지침:</div><ul>' + global.slice(0, 8).map((r) => `<li>${esc(r.text)}</li>`).join('') + '</ul>' : ''}
-      ${topic.length ? `<div class="muted">예전 유형별 피드백 ${topic.length}개 중 이 문제와 비슷한 것도 함께 반영됩니다. <a href="#/learn">전체 피드백</a></div>` : ''}</details>`;
+  // What the next set of this problem will carry, in one sentence; 자세히 lists the common rules. Kept per problem so
+  // generatePanel shows it whichever of the two is drawn first.
+  const carryText = new Map();
+  function carryLine(m, n, on, common, adopted) {
+    carryText.set(m.id, `<p>STEP ${n}개, 켜 둔 피드백 ${on.length}개${adopted ? `, 채택한 문제 ${adopted}개(본보기)` : ''}, 공통 지침 ${common.length}개를 반영합니다.</p>
+        <details class="lt-base"><summary>자세히</summary><div class="lt-carry-more">
+          <p>본보기: ${adopted ? `채택한 문제 ${adopted}개 중 같은 단계의 것을 최대 2개 보여 주고, 그 숫자는 피합니다.` : '아직 없습니다. 세트에서 좋은 문제를 👍 채택하면 쌓입니다.'}</p>
+          ${common.length ? `<p>공통 지침 (모든 문제)</p><ul class="lt-ul">${common.slice(0, 8).map((r) => `<li>${esc(r.text)}</li>`).join('')}</ul>${common.length > 8 ? `<p class="muted">외 ${common.length - 8}개</p>` : ''}` : ''}
+          <p><a href="#/learn">전체 피드백에서 공통 지침 관리</a></p>
+        </div></details>`);
+    if ($('#rules-preview')) $('#rules-preview').innerHTML = carryText.get(m.id);
   }
 
   // ------------------------------------------------------------------ job
@@ -716,8 +793,9 @@
     const rendered = new Map();
     view.innerHTML = `<div id="job-head"></div><div id="items"></div>`;
     let regenerating = [];
+    let setNo = 0;
     const draw = () => {
-      $('#job-head').innerHTML = jobHead(job, regenerating);
+      $('#job-head').innerHTML = jobHead(job, regenerating, setNo);
       bindHead(job);
       const box = $('#items');
       job.items.forEach((item) => {
@@ -742,6 +820,7 @@
       job = await api('GET', '/api/jobs/' + id);
       const all = await api('GET', '/api/jobs?materialId=' + job.materialId);
       regenerating = all.filter((j) => j.type === 'regenerate' && j.parentJobId === id && ['queued', 'running'].includes(j.status));
+      setNo = all.filter((j) => j.type === 'generate').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).findIndex((j) => j.id === id) + 1;
     };
     await refresh();
     draw();
@@ -755,30 +834,45 @@
     });
   }
 
-  function jobHead(job, regenerating) {
-    const done = job.items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
-    return `<div class="panel">
-      <div class="row"><h1 style="margin:0 auto 0 0">${esc(job.title)} <span class="muted" style="font-weight:500">— ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} 세트</span></h1>${chip(JOB_STATUS, job.status)}</div>
-      <p class="muted small" style="margin:6px 0">${fmtTime(job.createdAt)} · ${done}/${job.items.length}문제 처리 · ${esc(job.modelLabel || PROVIDER_LABEL[job.options.provider] || 'DeepSeek')} · ${tokens(job.usage, job.options.provider)} (상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰) · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}</p>
+  // The set page head: back to the problem, the set's name, one status line, a strip to jump to each problem, and
+  // the making record (tokens, cost, the rules it carried, the log) folded away.
+  const JUMP = { adopted: 'ok', needs_review: 'bad', failed: 'bad', warning: 'warn', passed: '', generating: 'run', verifying: 'run', repairing: 'run', pending: '' };
+  function jobHead(job, regenerating, no) {
+    const items = job.items;
+    const busy = ['queued', 'running'].includes(job.status);
+    const made = items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
+    const now = items.find((i) => ['generating', 'verifying', 'repairing'].includes(i.status));
+    const adopted = items.filter((i) => i.adopted).length;
+    const review = items.filter((i) => !i.adopted && i.status === 'needs_review').length;
+    const model = esc(job.modelLabel || PROVIDER_LABEL[job.options.provider] || 'DeepSeek');
+    const line = job.status === 'queued' ? '순서를 기다리는 중'
+      : busy ? `${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''} · ${model}`
+      : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">검토 필요 ${review}</span>` : ''} · ${model}`;
+    return `<div class="lt jt-head">
+      <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.title)}</a>
+      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'}</h1>
+        <a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a></div>
+      <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
+        ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
+        ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
-      ${regenerating.length ? `<div class="note info">문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 피드백으로 다시 만드는 중입니다.</div>` : ''}
-      <div class="progress">${job.items.map((i) => `<span class="chip ${(ITEM_STATUS[i.status] || [])[1] || ''}">${i.index + 1}. ${esc(i.label)} · ${(ITEM_STATUS[i.status] || [i.status])[0]}</span>`).join('')}</div>
-      <div class="row">
-        <a href="#/m/${job.materialId}">원본 자료</a>
-        <span class="spacer"></span>
-        ${['queued', 'running'].includes(job.status) ? '<button id="cancel" class="danger">취소</button>' : ''}
-        ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="primary">남은 문제 이어서 만들기</button>' : ''}
-        <a class="btn" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF 보기</a>
-        ${['queued', 'running'].includes(job.status) ? '' : '<button id="delete" class="danger small">세트 삭제</button>'}
-      </div>
-      <details data-k="log"><summary>진행 기록 (${(job.log || []).length})</summary><div class="inner"><div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div></div></details>
-      <details data-k="rules"><summary>이 세트에 붙인 교사 지침 (${job.rules.length})</summary><div class="inner">${job.rules.length ? '<ul>' + job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${KIND[r.kind]}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('') + '</ul>' : '<span class="muted small">없음</span>'}</div></details>
+      ${regenerating.length ? `<div class="note info">문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다.</div>` : ''}
+      <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
+      <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
+        <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
+        <p class="small"><b>붙인 피드백·지침 ${job.rules.length}개</b></p>
+        ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('')}</ul>` : ''}
+        <p class="small"><b>진행 기록</b></p>
+        <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>
+        ${busy ? '' : '<p><button id="delete" class="small danger">세트 삭제</button></p>'}
+      </div></details>
     </div>`;
   }
   function bindHead(job) {
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
     $('#resume')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/resume`); toast('이어서 진행합니다.'); route(); }));
     $('#delete')?.addEventListener('click', guard(async () => { if (confirm('이 세트를 삭제할까요?')) { await api('DELETE', '/api/jobs/' + job.id); location.hash = '#/m/' + job.materialId; } }));
+    $$('[data-jump]').forEach((b) => b.addEventListener('click', () => $(`#item-${b.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
   }
 
   function verificationHtml(v) {
@@ -814,17 +908,31 @@
     ['해설 방식', 'solution', '해설은 선생님 해설의 STEP 제목, 문장 틀, 표 구성, 보조 문자를 그대로 따른다.'],
     ['표기 오류', 'solution', '수식, 표, 화학식 표기를 정확히 쓴다 (상태 표시는 \\ce 안에, 표의 칸 수를 맞춘다).'],
   ];
-  // How this problem kept the feedback and rules it was given: kept / broken / not checkable, the broken ones named.
-  function keptSummary(v) {
+  // One line under the problem: what still needs a look and how it kept the feedback. Opened at once when something
+  // is wrong (left for the teacher, or a feedback broken), with the broken ones named.
+  function checkLine(item) {
+    const v = item.verification;
+    const problems = [...new Set(item.problems || [])];
+    const warnings = [...new Set(item.warnings || [])];
     const rules = v?.rules || [];
-    if (!rules.length) return '';
     const bad = rules.filter((r) => r.judged && !r.judged.ok);
     const ok = rules.filter((r) => r.judged?.ok).length;
-    const open = rules.length - ok - bad.length;
-    return `<div class="kept ${bad.length ? 'bad' : 'ok'}"><b>피드백·지침 ${rules.length}개</b> <span class="chip ok">지킴 ${ok}</span>${bad.length ? ` <span class="chip bad">어김 ${bad.length}</span>` : ''}${open ? ` <span class="chip">확인 안 됨 ${open}</span>` : ''}
-      ${bad.length ? `<ul>${bad.map((r) => `<li>${esc(r.text)} — <span class="muted">${esc(r.judged.note || '')}</span></li>`).join('')}</ul>` : ''}</div>`;
+    const parts = [
+      problems.length && `<span class="bad">검토 필요 ${problems.length}</span>`,
+      warnings.length && `<span class="warn">확인할 점 ${warnings.length}</span>`,
+      ok + bad.length && `피드백 지킴 ${ok}/${ok + bad.length}${bad.length ? ` · <span class="bad">어김 ${bad.length}</span>` : ''}`,
+    ].filter(Boolean);
+    if (!parts.length) return '';
+    const list = (xs) => `<ul class="lt-ul">${xs.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>`;
+    return `<details class="jt-check${problems.length || bad.length ? ' bad' : ''}" data-k="check" ${problems.length || bad.length ? 'open' : ''}><summary>${parts.join(' · ')}</summary><div class="jt-check-in">
+      ${problems.length ? `<div><b>자동 검토에서 해결되지 않은 점</b>${list(problems)}</div>` : ''}
+      ${warnings.length ? `<div><b>확인할 점</b>${list(warnings)}</div>` : ''}
+      ${bad.length ? `<div><b>어긴 피드백</b><ul class="lt-ul">${bad.map((r) => `<li>${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
+    </div></details>`;
   }
 
+  // A problem of the set: its state, the problem itself first, the check line, then the review (채택 / 고칠 점 /
+  // 다시 만들기) with the fix panel right under it; the solution and how it was made are folded below.
   function itemCard(job, item, busy) {
     const p = item.problem;
     const v = item.verification;
@@ -833,38 +941,43 @@
     const running = ['generating', 'verifying', 'repairing'].includes(item.status);
     const finished = p && ['passed', 'warning', 'needs_review'].includes(item.status);
     const canRegen = !busy && ['done', 'failed', 'cancelled', 'interrupted'].includes(job.status);
+    const state = item.adopted ? '<span class="chip ok">채택됨</span>'
+      : item.status === 'warning' ? `<span class="chip warn">확인할 점 ${new Set(item.warnings || []).size}</span>` : chip(ITEM_STATUS, item.status);
+    const made = [
+      item.examplesUsed && `채택한 문제 ${item.examplesUsed}개를 본보기로 참고`,
+      repairs && `검토 후 고친 횟수 ${repairs}회`,
+      item.history?.length && `다시 만든 횟수 ${item.history.length}회`,
+      item.usesSteps?.length && `사용한 원본 STEP ${item.usesSteps.join(', ')}`,
+    ].filter(Boolean);
     return `<div class="item${item.adopted ? ' adopted' : ''}" data-item="${item.index}" id="item-${item.index}">
-      <div class="head"><span class="num">문제 ${item.index + 1}</span><span>${esc(item.label)}</span>${chip(ITEM_STATUS, item.status)}
-        ${item.adopted ? '<span class="chip ok">채택</span>' : ''}${item.examplesUsed ? `<span class="chip" title="선생님이 채택한 같은 단계 문제를 본보기로 만들었습니다">좋은 예시 ${item.examplesUsed}개 참고</span>` : ''}${repairs ? `<span class="chip">검토 후 수정 ${repairs}회</span>` : ''}${item.history?.length ? `<span class="chip">피드백 재생성 ${item.history.length}회</span>` : ''}${busy ? '<span class="chip run">다시 만드는 중</span>' : ''}</div>
+      <div class="head"><span class="num">문제 ${item.index + 1}</span><span>${esc(item.label)}</span><span class="spacer"></span>${busy ? '<span class="chip run">다시 만드는 중</span>' : state}</div>
+      <div class="body">
+        ${item.status === 'failed' ? `<div class="note bad">${esc(item.error || '만들지 못했습니다.')}</div>` : ''}
+        ${!p ? `<p class="muted">${running ? '만드는 중입니다…' : item.status === 'pending' ? '차례를 기다리는 중입니다.' : ''}</p>` : `
+          <div class="rich">${rich(p.text)}</div>
+          ${p.figure ? `<div class="note info"><b>그림</b><div class="rich">${rich(p.figure)}</div></div>` : ''}
+          ${choicesHtml(p)}
+          ${checkLine(item)}`}
+      </div>
       ${finished || item.status === 'failed' ? `<div class="review-bar">
         ${finished ? `<button class="rv-adopt${item.adopted ? ' on' : ''}" data-rv="adopt">${item.adopted ? '✓ 채택됨' : '👍 채택'}</button>` : ''}
         <button data-rv="fix">✏️ 고칠 점</button>
-        <button data-rv="regen" ${canRegen ? '' : 'disabled'}>🔄 다시 만들기</button>
-        <span class="muted small">${finished ? '좋은 문제는 채택, 아쉬운 점은 고칠 점으로 알려 주세요.' : ''}</span></div>` : ''}
-      <div class="body">
-        ${p ? keptSummary(v) : ''}
-        ${item.status === 'failed' ? `<div class="note bad">${esc(item.error || '생성하지 못했습니다.')}</div>` : ''}
-        ${!p ? `<p class="muted">${running ? '만드는 중입니다…' : item.status === 'pending' ? '차례를 기다리는 중입니다.' : ''}</p>` : `
-          ${item.problems?.length ? `<div class="note bad"><b>교사 검토 필요 — 자동 검증에서 해결되지 않은 점</b><ul>${item.problems.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul></div>` : ''}
-          ${item.warnings?.length ? `<div class="note warn"><b>확인할 점</b><ul>${item.warnings.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul></div>` : ''}
-          <div class="rich">${rich(p.text)}</div>
-          ${p.figure ? `<div class="note info"><b>그림</b><div class="rich">${rich(p.figure)}</div></div>` : ''}
-          ${choicesHtml(p)}`}
-      </div>
-      ${p ? `
-      <details data-k="sol" open><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
-        ${(item.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${rich(s.title).replace(/^<p>|<\/p>$/g, '')}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
-        ${item.solution?.summary ? `<p><b>정리</b> ${rich(item.solution.summary).replace(/^<p>|<\/p>$/g, '')}</p>` : ''}</div></details>
-      <details data-k="design"><summary>설계 의도</summary><div class="inner"><div class="rich">${rich(item.designNote || '')}</div><p class="small muted">사용한 원본 STEP: ${(item.usesSteps || []).join(', ')}</p></div></details>
-      <details data-k="verify"><summary>검증 상세</summary><div class="inner">${verificationHtml(v)}</div></details>
-      <details data-k="rules"><summary>교사 지침 적용 (${v?.rules?.length || 0})</summary><div class="inner">${v?.rules?.length ? `<table class="rules"><tr><th>지침</th><th>생성 모델이 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${esc(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table>` : '<span class="muted small">붙인 지침이 없습니다.</span>'}</div></details>` : ''}
-      ${item.history?.length ? `<details data-k="hist"><summary>이전 버전 (${item.history.length})</summary><div class="inner">${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 피드백: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}</div></details>` : ''}
-      ${['passed', 'warning', 'needs_review', 'failed'].includes(item.status) ? `
-      <details class="fix-panel" data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>✏️ 고칠 점 알려 주기</summary><div class="inner">
-        <p class="muted small">해당하는 것을 누르고, 더 할 말이 있으면 적어 주세요. <a href="#/m/${job.materialId}">원본 문제</a>의 피드백으로 저장되어 이 문제로 만드는 모든 변형에 반영됩니다.</p>
+        <button data-rv="regen" ${canRegen ? '' : 'disabled'}>🔄 다시<span class="rv-long"> 만들기</span></button></div>
+      <details class="fix-panel" data-k="fb" ${item.status === 'needs_review' || item.status === 'failed' ? 'open' : ''}><summary>고칠 점</summary><div class="fix-in">
         <div class="fix-tags">${FIX_TAGS.map(([name, target, text], i) => `<button type="button" class="fix-tag" data-tag="${i}" title="${esc(text)}">${esc(name)}<small>${target === 'solution' ? '해설' : '문제'}</small></button>`).join('')}</div>
         <textarea name="fb" rows="2" placeholder="더 구체적으로 (선택). 예: 실험 Ⅲ의 남은 질량이 넣은 A보다 커서 가정 없이 풀립니다."></textarea>
-        <div class="fb-add-bar"><span class="spacer"></span><button name="save">피드백만 저장</button><button name="regen" class="primary" ${canRegen ? '' : 'disabled'}>저장하고 이 문제 다시 만들기</button></div>
+        <div class="lt-actions"><span class="muted small">누른 항목과 적은 내용은 이 문제의 피드백으로 저장되어 앞으로 만드는 변형에 모두 들어갑니다.</span><span class="spacer"></span><button class="small" name="save">저장</button><button name="regen" class="small primary" ${canRegen ? '' : 'disabled'}>저장하고 다시 만들기</button></div>
+      </div></details>` : ''}
+      ${p ? `
+      <details data-k="sol"><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
+        ${(item.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${flat(s.title)}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
+        ${item.solution?.summary ? `<p><b>정리</b> ${flat(item.solution.summary)}</p>` : ''}</div></details>
+      <details data-k="more"><summary>만든 과정</summary><div class="inner">
+        ${made.length ? `<p class="small muted">${made.join(' · ')}</p>` : ''}
+        ${item.designNote ? `<h3>설계 의도</h3><div class="rich">${rich(item.designNote)}</div>` : ''}
+        <h3>자동 검토</h3>${verificationHtml(v)}
+        <h3>피드백을 지켰는지 (${v?.rules?.length || 0})</h3>${v?.rules?.length ? `<div class="table-wrap"><table class="rules"><tr><th>피드백·지침</th><th>AI가 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${esc(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table></div>` : '<p class="muted small">붙인 피드백이 없습니다.</p>'}
+        ${item.history?.length ? `<h3>이전 버전 (${item.history.length})</h3>${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 남긴 점: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}` : ''}
       </div></details>` : ''}
     </div>`;
   }
@@ -885,20 +998,22 @@
       $$('.fix-tag.on', card).forEach((b) => b.classList.remove('on'));
       if ($('textarea[name=fb]', card)) $('textarea[name=fb]', card).value = '';
       const n = tags.length + (note ? 1 : 0);
-      toast(andRegen ? `피드백${n ? ` ${n}개를 저장하고` : '을 반영해'} 이 문제를 다시 만드는 중입니다.` : `피드백 ${n}개를 저장했습니다. 다음 생성부터 반영됩니다.`);
+      toast(andRegen ? `피드백${n ? ` ${n}개를 저장하고` : '을 반영해'} 이 문제를 다시 만드는 중입니다.` : `피드백 ${n}개를 저장했습니다. 다음에 만드는 변형부터 들어갑니다.`);
     };
     $('button[name=save]', card)?.addEventListener('click', guard(() => save(false)));
     $('button[name=regen]', card)?.addEventListener('click', guard(async (e) => { e.target.disabled = true; await save(true); }));
-    // The review bar: 채택 toggles at once; 고칠 점 opens the panel; 다시 만들기 uses what is picked in it.
+    // The review bar: 채택 toggles at once; 고칠 점 opens or closes the panel right under it; 다시 만들기 uses what is picked in it.
     $('[data-rv="adopt"]', card)?.addEventListener('click', guard(async (e) => {
       const r = await api('PUT', `/api/jobs/${job.id}/items/${item.index}/review`, { adopted: !item.adopted });
       item.adopted = r.adopted;
       card.classList.toggle('adopted', r.adopted);
       e.target.classList.toggle('on', r.adopted);
       e.target.textContent = r.adopted ? '✓ 채택됨' : '👍 채택';
-      toast(r.adopted ? '채택했습니다. 이 문제는 학습지에 들어가고, 좋은 예시로 남습니다.' : '채택을 취소했습니다.');
+      const state = $('.head .chip', card);
+      if (state && !item.status.match(/ing$/)) state.outerHTML = r.adopted ? '<span class="chip ok">채택됨</span>' : chip(ITEM_STATUS, item.status);
+      toast(r.adopted ? '채택했습니다. 학습지에 들어가고, 다음 세트의 본보기가 됩니다.' : '채택을 취소했습니다.');
     }));
-    $('[data-rv="fix"]', card)?.addEventListener('click', () => { if (panel) { panel.open = true; panel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } });
+    $('[data-rv="fix"]', card)?.addEventListener('click', () => { if (panel) panel.open = !panel.open; });
     $('[data-rv="regen"]', card)?.addEventListener('click', guard(async (e) => {
       const picked = $$('.fix-tag.on', card).length || $('textarea[name=fb]', card)?.value.trim();
       if (!picked && !confirm('고칠 점 없이 이 문제를 다시 만들까요? (이 문제의 피드백은 모두 반영됩니다)')) return;
@@ -1096,11 +1211,7 @@
       </section>
     </div>`;
     const opened = new Set(); // rows left open survive a repaint
-    const toggleRows = (box) => $$('[data-open]', box).forEach((b) => b.addEventListener('click', () => {
-      const row = b.closest('.lt-row');
-      row.classList.toggle('open');
-      if (row.classList.contains('open')) opened.add(row.dataset.row); else opened.delete(row.dataset.row);
-    }));
+    const toggleRows = (box) => rowToggles(box, opened);
     const isOpen = (key) => (opened.has(key) ? ' open' : '');
 
     const won = (usd) => `약 ${Math.round(usd * 1400).toLocaleString()}원`;

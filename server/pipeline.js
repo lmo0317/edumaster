@@ -814,11 +814,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   // What the repairs could not fix goes to the teacher: a wrong answer, a problem that skips or overshoots its
   // STEPs, an unused condition, a numbers-only final, a broken rule. Only light notes leave it usable.
   const unresolved = repairReasons(check);
-  item.problems = unresolved;
-  item.warnings = [
+  item.problems = [...new Set(unresolved)];
+  // The same note can come from two checks; the teacher reads it once.
+  item.warnings = [...new Set([
     ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w)),
     ...(lean ? [...check.rewriteNotes.map((n) => '해설: ' + n), ...writeNotes] : []),
-  ];
+  ])];
   item.status = unresolved.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
   ctx.log(`${item.label}: ${{ passed: '검증 통과', warning: '통과 (확인할 점 있음)', needs_review: '교사 검토 필요' }[item.status]}`);
   ctx.save();
