@@ -390,6 +390,12 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .conn { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 40; background: var(--warn-soft); color: #5c3b00; border: 1px solid #f0d49a; border-radius: 8px; padding: 8px 14px; font-size: 13.5px; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); max-width: calc(100% - 24px); }
 
 /* Problem page: feedback input on one line, variant sets with their problems */
+/* LLM tab */
+.llm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.llm-grid .panel { margin: 0; }
+.llm-usage { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
+.llm-usage th, .llm-usage td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+.llm-usage th { color: var(--muted); font-weight: 600; }
 .analysis-fb { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 4px; }
 .analysis-fb textarea { width: 100%; }
 .analysis-fb ol { padding-left: 20px; margin: 4px 0 8px; }

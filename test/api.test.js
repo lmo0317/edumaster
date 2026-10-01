@@ -324,3 +324,19 @@ test('analysis feedback accumulates on the problem and every re-analysis gets al
     assert.deepEqual(m.analysisFeedback.map((f) => f.text), ['표 Ⅲ의 B는 필기']);
   } finally { await s.close(); }
 });
+
+test('LLM tab data: calls, tokens and cost per model from the ledger, today and over 30 days', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const { status, data } = await s.call('GET', '/api/llm');
+    assert.equal(status, 200);
+    assert.ok(data.usage.deepseek.today.calls >= 6, 'the analysis calls are counted');
+    assert.equal(data.usage.deepseek.today.calls, data.usage.deepseek.days30.calls);
+    assert.equal(data.usage.gemma.today.calls, 0);
+    assert.equal(typeof data.claude.loggedIn, 'boolean');
+    assert.ok(data.usage.deepseek.lastAt);
+  } finally { await s.close(); }
+});

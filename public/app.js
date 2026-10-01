@@ -187,6 +187,7 @@
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
       else if (hash.startsWith('#/rules') || hash.startsWith('#/learn')) { setNav('rules'); await rulesView(); }
       else if (hash.startsWith('#/system')) { setNav('system'); await systemView(); }
+      else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView(); }
       else { setNav('home'); await materialsView(); }
     } catch (e) {
       if (alive() && e.message !== '로그인이 필요합니다.') {
@@ -970,7 +971,6 @@
     ];
 
     view.innerHTML = `
-      <div class="panel" id="claude-login"></div>
       <section class="sys-hero">
         <div class="eyebrow">EduMaster 안내</div>
         <h1>선생님의 풀이로, 단계별 연습 문제를 만듭니다</h1>
@@ -1040,6 +1040,38 @@
       </div>
 
       <details class="panel dev-details" data-k="dev"><summary>개발자용 세부 정보</summary><div class="inner">${devDetails(sys)}</div></details>`;
+  }
+
+  // ------------------------------------------------------------------ LLM
+  // Each model problems can be made with: whether it is connected and what it has used (today / 30 days). The
+  // DeepSeek balance and the numbers are fetched when the page opens and on 새로 고침, not continuously.
+  async function llmView() {
+    view.innerHTML = `<div class="row"><h1 style="margin-right:auto">LLM</h1><span class="muted small" id="llm-at"></span><button id="llm-refresh">새로 고침</button></div>
+      <p class="muted">문제를 만들 때 쓰는 AI 모델의 연결 상태와 사용량입니다. 잔액과 사용량은 이 화면을 열거나 <b>새로 고침</b>을 누를 때 가져옵니다.</p>
+      <div class="llm-grid" id="llm-cards"><div class="panel muted">불러오는 중…</div></div>
+      <div class="panel" id="claude-login"></div>`;
+    const won = (usd) => (usd ? `약 ${Math.round(usd * 1400).toLocaleString()}원` : '0원');
+    const usageRows = (u, paid) => `<table class="llm-usage"><tr><th></th><th>호출</th><th>토큰 (입력/출력)</th>${paid ? '<th>예상 비용</th>' : ''}</tr>
+      ${[['오늘', u.today], ['최근 30일', u.days30]].map(([t, x]) => `<tr><td>${t}</td><td>${x.calls}${x.errors ? ` <span class="muted small">(오류 ${x.errors})</span>` : ''}</td><td>${x.input.toLocaleString()} / ${x.output.toLocaleString()}</td>${paid ? `<td>${won(x.usd)}</td>` : ''}</tr>`).join('')}</table>
+      <p class="muted small">마지막 사용: ${u.lastAt ? fmtTime(u.lastAt) : '없음'}</p>`;
+    const paint = async () => {
+      const [status, llm] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/llm')]);
+      const p = status.providers || {};
+      const card = (title, ok, okText, badText, body) => `<div class="panel llm-card"><div class="row"><h2 style="margin:0">${esc(title)}</h2><span class="spacer"></span><span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : badText}</span></div>${body}</div>`;
+      $('#llm-cards').innerHTML = [
+        card(p.deepseek?.label || 'DeepSeek', p.deepseek?.available, '사용 가능', '키 없음',
+          `<p class="muted small">인터넷 API · 쓴 만큼 결제 · 평일 한국 시간 10–13시, 15–19시는 단가 2배</p><p>잔액: <b id="ds-balance">확인 중…</b></p>${usageRows(llm.usage.deepseek, true)}`),
+        card(p.gemma?.label || 'PC 모델', p.gemma?.available, 'PC 연결됨', 'PC 꺼짐',
+          `<p class="muted small">선생님 PC(RTX 5080)에서 실행 · 무료 · PC가 켜져 있을 때만${p.gemma?.model ? ` · ${esc(p.gemma.model)}` : ''}</p>${usageRows(llm.usage.gemma, false)}`),
+        card('Claude Opus 5.5 (구독)', llm.claude.loggedIn, '연결됨', '연결 안 됨',
+          `<p class="muted small">서버의 Claude Code로 실행 · 구독 사용량 사용 · 호출당 비용 없음</p>${usageRows(llm.usage['claude-cli'], false)}
+           <p class="muted small">구독 한도(5시간·주간 사용률)는 연결된 뒤 추가할 예정입니다.</p>`),
+      ].join('');
+      $('#llm-at').textContent = fmtTime(new Date().toISOString()) + ' 기준';
+      api('GET', '/api/balance').then((x) => { if ($('#ds-balance')) $('#ds-balance').textContent = x.balance; }).catch(() => { if ($('#ds-balance')) $('#ds-balance').textContent = '확인 실패'; });
+    };
+    $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; try { await paint(); await claudeLoginPanel(); } finally { e.target.disabled = false; } }));
+    await paint();
     claudeLoginPanel().catch(() => { const el = $('#claude-login'); if (el) el.hidden = true; });
   }
 

@@ -190,7 +190,7 @@ test('a letter coefficient no question or solution uses is an unused condition',
 });
 
 test('run cost: list prices per provider, DeepSeek peak hours double, cached input at the cache price', () => {
-  const { runCost } = require('../eval/cost');
+  const { runCost } = require('../server/cost');
   const records = [
     // Sunday: off-peak. 1M input of which 0.5M cached, 1M output.
     { jobId: 'a', provider: 'deepseek', createdAt: '2026-09-27T02:00:00Z', input: 1e6, cached: 5e5, output: 1e6, outcome: 'stop' },

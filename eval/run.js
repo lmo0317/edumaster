@@ -22,7 +22,7 @@ const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir)
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
 const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
-const { runCost } = require('./cost');
+const { runCost } = require('../server/cost');
 // Mixed runs: --analyze-with <p> reads the scans with another model, --design-with <p> writes the problems and their
 // repairs, --repair-with <p> only the repairs; the --providers model does the rest (independent solve, review, checks).
 const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'], lean: args.lean === 'true' || undefined };

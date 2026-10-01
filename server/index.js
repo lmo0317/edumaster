@@ -160,6 +160,25 @@ function createApp(options = {}) {
     const info = data.balance_infos?.[0];
     return { available: Boolean(data.is_available), balance: info ? `${info.total_balance} ${info.currency}` : '알 수 없음' };
   });
+  // LLM tab: what each model has used, from the call ledger — today (server time) and over the last 30 days, with
+  // the list-price cost where the model has one (the subscription and PC models cost nothing per call).
+  route('GET', /^\/api\/llm$/, () => {
+    const { callCost } = require('./cost');
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const since30 = Date.now() - 30 * 86400000;
+    const rows = store.usage.all().filter((r) => r.outcome && r.outcome !== 'started');
+    const sum = (list) => {
+      const t = list.reduce((acc, r) => { acc.calls++; acc.input += r.input || 0; acc.output += r.output || 0; acc.usd += callCost(r) || 0; acc.errors += r.outcome === 'error' ? 1 : 0; return acc; }, { calls: 0, input: 0, output: 0, usd: 0, errors: 0 });
+      return { ...t, usd: Math.round(t.usd * 1000) / 1000 };
+    };
+    const usage = {};
+    for (const p of ['deepseek', 'gemma', 'claude-cli', 'claude']) {
+      const mine = rows.filter((r) => r.provider === p);
+      const at = (r) => new Date(r.createdAt).getTime();
+      usage[p] = { today: sum(mine.filter((r) => at(r) >= start.getTime())), days30: sum(mine.filter((r) => at(r) >= since30)), lastAt: mine.map((r) => r.createdAt).sort().pop() || '' };
+    }
+    return { usage, claude: { loggedIn: claudeCliReady(cfg), model: cfg.claudeCli.model } };
+  });
 
   // materials
   route('GET', /^\/api\/materials$/, () => { const rules = store.rules.all(); return store.materials.all().map((m) => materialSummary(m, rules)); });
