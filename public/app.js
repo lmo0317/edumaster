@@ -845,32 +845,26 @@
   const carryCounts = new Map();
   async function generatePanel(m, n) {
     const el = $('#generate');
-    const upto = Array.from({ length: n - 1 }, (_, i) => i + 1);
-    const focus = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2);
+    // A set is always the whole staircase: STEP 1 연습, STEP 1~2 연습, …, and the final problem using every STEP,
+    // made as a new structure (never numbers only).
+    const stages = [...Array.from({ length: n - 1 }, (_, i) => ({ kind: 'upto', upto: i + 1 })), { kind: 'twin' }];
+    const stageName = (s) => (s.kind === 'twin' ? `최종 문제 (STEP 1~${n})` : s.upto === 1 ? 'STEP 1 연습' : `STEP 1~${s.upto} 연습`);
     try { await loadStatus(); } catch { /* the choices fall back to DeepSeek only */ }
     if (!$('#generate')) return;
     const providers = statusCache?.providers || { deepseek: { label: 'DeepSeek V4 Flash', available: true, note: '' } };
     const def = providers[statusCache?.defaultProvider]?.available ? statusCache.defaultProvider : 'deepseek';
-    const opt = (type, name, value, label, on, attrs = '') => `<label class="opt"><input type="${type}" ${name ? `name="${name}"` : ''} value="${value}" ${on ? 'checked' : ''} ${attrs}><span>${label}</span></label>`;
-    const stage = (json, label, on) => `<label class="opt"><input type="checkbox" data-stage='${json}' ${on ? 'checked' : ''}><span>${label}</span></label>`;
+    const opt = (name, value, label, on, attrs = '') => `<label class="opt"><input type="radio" name="${name}" value="${value}" ${on ? 'checked' : ''} ${attrs}><span>${label}</span></label>`;
     el.innerHTML = `
       <div class="gen-form">
-        <div class="gen-row"><span class="gen-k">만들 문제</span><div class="opts">
-          ${upto.map((k) => stage(`{"kind":"upto","upto":${k}}`, k === 1 ? 'STEP 1 연습' : `STEP 1~${k} 연습`, true)).join('')}
-          ${stage('{"kind":"twin"}', '최종 문제', true)}
-          ${focus.map((k) => stage(`{"kind":"focus","step":${k}}`, `STEP ${k}만`, false)).join('')}</div></div>
+        <div class="gen-row"><span class="gen-k">세트 구성</span><div class="gen-v">${stages.map(stageName).join(' → ')}</div></div>
         <div class="gen-row"><span class="gen-k">모델</span><div class="opts">
-          ${Object.entries(providers).map(([key, p]) => opt('radio', 'genProvider', key, esc(p.label), key === def, p.available ? '' : 'disabled')).join('')}</div></div>
-        <div class="gen-row"><span class="gen-k">최종 문제</span><div class="opts">
-          ${opt('radio', 'mode', 'integrated', '새 구조로 (권장)', true)}${opt('radio', 'mode', 'numeric', '숫자만 바꾸기', false)}</div></div>
-        <div class="gen-row"><span class="gen-k">단계마다</span><div class="opts">
-          ${[1, 2, 3].map((k) => opt('radio', 'per', k, `${k}문제`, k === 1)).join('')}</div></div>
+          ${Object.entries(providers).map(([key, p]) => opt('genProvider', key, esc(p.label), key === def, p.available ? '' : 'disabled')).join('')}</div></div>
         <div class="gen-row" id="effort-box"><span class="gen-k">사고 강도</span><div class="opts">
-          ${opt('radio', 'effort', 'low', '기본', true)}${opt('radio', 'effort', 'high', '정밀 (토큰 더 씀)', false)}</div></div>
+          ${opt('effort', 'low', '기본', true)}${opt('effort', 'high', '정밀 (토큰 더 씀)', false)}</div></div>
         <div class="gen-row" id="claude-effort-note" hidden><span class="gen-k">추론 강도</span><div class="gen-v"><b id="claude-effort-name"></b> <a class="muted small" href="#/llm">LLM 탭에서 변경</a></div></div>
         <p class="gen-hint" id="gen-hint"></p>
       </div>
-      <div class="gen-go"><span id="estimate"></span><button class="primary" id="go">만들기</button></div>`;
+      <div class="gen-go"><span id="estimate"></span><button class="primary" id="go">세트 만들기</button></div>`;
     const value = (name) => $(`[name=${name}]:checked`, el)?.value;
     const summary = () => {
       const chosen = value('genProvider') || 'deepseek';
@@ -878,25 +872,16 @@
       $('#effort-box').hidden = chosen !== 'deepseek';
       $('#claude-effort-note').hidden = chosen !== 'claude-cli';
       if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[providers['claude-cli']?.effort] || '자동';
-      const focusPicked = $$('[data-stage*="focus"]:checked', el).length;
-      $('#gen-hint').textContent = [providers[chosen]?.note, focusPicked ? 'STEP k만: 앞 STEP의 결과를 조건으로 주고 그 STEP만 쓰게 하는 문제입니다.' : ''].filter(Boolean).join(' · ');
-      const count = $$('[data-stage]:checked', el).length * Number(value('per'));
+      $('#gen-hint').textContent = providers[chosen]?.note || '';
       const c = carryCounts.get(m.id);
-      $('#estimate').textContent = !count ? '만들 문제를 하나 이상 고르세요.'
-        : [`${count}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', esc(providers[chosen]?.label || '')].filter(Boolean).join(' · ');
-      $('#go').disabled = !count;
-      $('#go').textContent = count ? `${count}문제 만들기` : '만들기';
+      $('#estimate').textContent = [`${stages.length}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', providers[chosen]?.label || ''].filter(Boolean).join(' · ');
     };
     el.summary = summary;
     $$('input', el).forEach((x) => x.addEventListener('change', summary));
     summary();
     $('#go').addEventListener('click', guard(async () => {
       $('#go').disabled = true;
-      const r = await api('POST', '/api/generations', {
-        materialId: m.id,
-        stages: $$('[data-stage]:checked', el).map((x) => JSON.parse(x.dataset.stage)),
-        mode: value('mode'), perStage: Number(value('per')), effort: value('effort'), provider: value('genProvider'),
-      });
+      const r = await api('POST', '/api/generations', { materialId: m.id, stages, mode: 'integrated', perStage: 1, effort: value('effort'), provider: value('genProvider') });
       location.hash = '#/j/' + r.jobId;
     }));
   }

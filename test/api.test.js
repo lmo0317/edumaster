@@ -65,7 +65,7 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
     assert.equal(gen.status, 200, JSON.stringify(gen.data));
     const job = await s.waitJob(gen.data.jobId);
     assert.equal(job.status, 'done', job.error);
-    assert.deepEqual(job.items.map((i) => i.label), ['STEP 1 연습', 'STEP 1~2 누적 연습', '최종 쌍둥이 문제']);
+    assert.deepEqual(job.items.map((i) => i.label), ['STEP 1 연습', 'STEP 1~2 연습', '최종 문제']);
     for (const item of job.items) {
       assert.ok(['passed', 'warning'].includes(item.status), `${item.label}: ${item.status} ${JSON.stringify(item.problems)}`);
       assert.equal(item.verification.code.status, 'pass');

@@ -32,7 +32,7 @@ test('stage plan follows the STEP count of the source solution', () => {
   const stages = normalizeStages(undefined, 4);
   assert.deepEqual(stages.map((s) => s.kind + (s.upto || '')), ['upto1', 'upto2', 'upto3', 'twin']);
   const items = buildItems(normalizeStages([{ kind: 'twin' }, { kind: 'focus', step: 2 }, { kind: 'upto', upto: 1 }], 2), 2, 2);
-  assert.deepEqual(items.map((i) => i.label), ['STEP 1 연습 (1)', 'STEP 1 연습 (2)', 'STEP 2 집중 연습 (앞 단계 결과 제공) (1)', 'STEP 2 집중 연습 (앞 단계 결과 제공) (2)', '최종 쌍둥이 문제 (1)', '최종 쌍둥이 문제 (2)']);
+  assert.deepEqual(items.map((i) => i.label), ['STEP 1 연습 (1)', 'STEP 1 연습 (2)', 'STEP 2 집중 연습 (앞 단계 결과 제공) (1)', 'STEP 2 집중 연습 (앞 단계 결과 제공) (2)', '최종 문제 (1)', '최종 문제 (2)']);
   assert.throws(() => normalizeStages([{ kind: 'upto', upto: 5 }], 3));
 });
 

@@ -3,12 +3,12 @@
 // never from a fixed template.
 
 function stageLabel(stage, total) {
-  if (stage.kind === 'upto') return stage.upto === total ? '전체 STEP 연습' : stage.upto === 1 ? 'STEP 1 연습' : `STEP 1~${stage.upto} 누적 연습`;
+  if (stage.kind === 'upto') return stage.upto === total ? '전체 STEP 연습' : stage.upto === 1 ? 'STEP 1 연습' : `STEP 1~${stage.upto} 연습`;
   if (stage.kind === 'focus') return `STEP ${stage.step} 집중 연습 (앞 단계 결과 제공)`;
-  return '최종 쌍둥이 문제';
+  return '최종 문제';
 }
 
-/** Default set: STEP 1, STEP 1~2, … STEP 1~(n-1), then the final twin. */
+/** Default set: STEP 1, STEP 1~2, … STEP 1~(n-1), then the final problem. */
 function defaultStages(stepCount) {
   const stages = [];
   for (let k = 1; k < stepCount; k++) stages.push({ kind: 'upto', upto: k });
