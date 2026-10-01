@@ -269,7 +269,9 @@ async function analyzeMaterial(ctx, material) {
   if (!result.teacherStepCount && result.stepHeadings.length && result.stepHeadings.length === result.steps.length) {
     result.steps.forEach((s, i) => {
       const heading = result.stepHeadings[i];
-      if (heading && harness.plain(heading).replace(/\s/g, '') !== harness.plain(s.title).replace(/\s/g, '')) {
+      // Only a change of words counts: a title that differs by a final period or spacing is the same title.
+      const words = (t) => harness.plain(t).replace(/[\s.,·:;!?。'"“”‘’]/g, '');
+      if (heading && words(heading) !== words(s.title)) {
         result.proofread.push(`STEP ${i + 1} 제목을 해설에 인쇄된 제목으로: "${s.title}" → "${heading}"`);
         s.title = heading;
       }

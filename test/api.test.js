@@ -361,48 +361,6 @@ test('a problem\'s analysis learning: typed with 다시 분석 or added alone, k
     assert.deepEqual(l.analysis.items.find((x) => x.id === added.id) && [l.analysis.items.find((x) => x.id === added.id).text, l.analysis.items.find((x) => x.id === added.id).status], ['STEP을 4개로 나눠 한 단계 더 생각하게', 'pending'], 'switched off, still listed to switch back on');
   } finally { await s.close(); }
 });
-test('확인할 곳: a verdict on each note is kept by its text, also through a re-analysis that says the same', async () => {
-  const s = await start();
-  try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
-    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
-    await s.waitJob(a.jobId);
-    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
-    const note = m.annotations[0];
-    assert.ok(note, 'the mock analysis leaves out a handwritten mark');
-    assert.equal((await s.call('PUT', `/api/materials/${m.id}/checks`, { note: '', state: 'ok' })).status, 400);
-    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note, state: 'ok' })).data;
-    assert.equal(m.noteStates[note], 'ok');
-    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note: m.proofread[0], state: 'feedback' })).data;
-    const again = (await s.call('POST', `/api/materials/${m.id}/analyze`, {})).data;
-    await s.waitJob(again.jobId);
-    m = (await s.call('GET', '/api/materials/' + m.id)).data;
-    assert.equal(m.noteStates[note], 'ok', 'the same note after a re-analysis is still checked');
-    m = (await s.call('PUT', `/api/materials/${m.id}/checks`, { note, state: null })).data;
-    assert.equal(m.noteStates[note], undefined, 'undone');
-  } finally { await s.close(); }
-});
-
-test('단어 확인: a confused word is asked plainly, and 아니요 replaces it everywhere and is remembered', async () => {
-  const s = await start();
-  try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
-    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
-    await s.waitJob(a.jobId);
-    let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
-    const note = m.uncertainties.find((u) => u.startsWith('단어 확인:'));
-    assert.match(note, /^단어 확인: 읽은 내용에 "몰질량"이\(가\) \d+번 나옵니다\. AI가 "몰질량"과\(와\) "물질량"을\(를\) 헷갈린 적이 있어서 묻습니다\. 원본 사진에도 "몰질량"으로 인쇄되어 있나요\?$/);
-    const before = JSON.stringify([m.problem, m.steps]).split('몰질량').length - 1;
-    assert.equal((await s.call('POST', `/api/materials/${m.id}/replace-word`, { from: '없는말', to: '물질량' })).status, 400);
-    const r = (await s.call('POST', `/api/materials/${m.id}/replace-word`, { from: '몰질량', to: '물질량', note })).data;
-    assert.equal(r.replaced, before);
-    assert.ok(!JSON.stringify([r.problem, r.steps]).includes('몰질량'), 'replaced in the reading and the STEPs');
-    assert.equal(r.noteStates[note], 'fixed');
-    const corrections = (await s.call('GET', '/api/corrections')).data;
-    assert.ok(corrections.some((c) => c.wrong === '몰질량' && c.right === '물질량'), 'the misreading is remembered for later analyses');
-  } finally { await s.close(); }
-});
-
 test('a problem\'s generation learning: 지침, this problem, 전체 학습 in that order, with how each fared; moving up 문제 → 전체 학습 → 지침', async () => {
   const s = await start();
   try {

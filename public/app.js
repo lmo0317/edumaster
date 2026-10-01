@@ -369,18 +369,15 @@
   // ------------------------------------------------------------------ the problem's progress
   // The whole way a problem goes, across the top of its page: each step done, running, waiting for the teacher or not
   // reached yet, and one line on what is happening now (with a spinner while the server works) or what to do next.
-  const FLOW = [['upload', '원본'], ['read', '분석'], ['check', '확인'], ['make', '변형 생성'], ['review', '검토·채택']];
+  const FLOW = [['upload', '원본'], ['read', '분석'], ['make', '변형 생성'], ['review', '검토·채택']];
   const isBusy = (j) => ['queued', 'running'].includes(j.status);
   const setsOf = (m) => (m.jobs || []).filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   function flowState(m) {
     const gens = setsOf(m);
     const making = gens.find(isBusy);
     const regen = (m.jobs || []).find((j) => j.type === 'regenerate' && isBusy(j));
-    const ready = m.status === 'ready' && m.steps;
-    const open = ready ? analysisNotes(m).open : 0;
     const st = { upload: { state: 'done', note: '' } };
     st.read = m.status === 'analyzing' ? { state: 'run', note: '분석 중' } : m.status === 'failed' || !m.steps ? { state: 'bad', note: '분석 실패' } : { state: 'done', note: `STEP ${m.steps.length}개` };
-    st.check = !ready ? { state: 'todo', note: '' } : open ? { state: 'warn', note: `남은 확인 ${open}개` } : { state: 'done', note: '확인 완료' };
     if (making) {
       const items = making.items || [];
       const made = items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
@@ -401,8 +398,7 @@
     else if (st.read.state === 'bad') now = { tone: 'bad', text: '분석하지 못했습니다. 다시 분석하거나 더 선명한 사진을 넣어 주세요.' };
     else if (making) now = { tone: 'run', text: `변형 문제를 만드는 중입니다 (${making.status === 'queued' ? '순서 기다리는 중' : st.make.done}). 문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 끝나면 저절로 바뀝니다.`, href: '#/j/' + making.id, action: '진행 보기' };
     else if (regen) now = { tone: 'run', text: '세트의 문제 하나를 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.', href: '#/j/' + regen.parentJobId, action: '진행 보기' };
-    else if (open) now = { tone: 'warn', text: `분석 결과에 확인할 곳이 ${open}개 있습니다. 원본과 비교해 맞음·틀림을 눌러 주세요.`, go: 'check', action: '확인하러 가기' };
-    else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 이제 변형 문제를 만들 수 있습니다.', go: 'make', action: '변형 문제 만들러 가기' };
+    else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 분석 결과를 보고, 틀린 곳은 고치거나 분석 학습에 적은 뒤 변형 문제를 만드세요.', go: 'make', action: '변형 문제 만들러 가기' };
     else if (st.review.state === 'warn') now = { tone: 'warn', text: `세트 ${no}의 문제를 검토해 주세요 (${st.review.note}). 좋은 문제는 채택, 아쉬운 점은 고칠 점으로 남기면 다음 세트에 반영됩니다.`, href: '#/j/' + latest.id, action: '세트 열기' };
     else now = { tone: 'ok', text: '여기까지 끝났습니다. 생성 피드백을 더 남기고 새 세트를 만들면 더 나아집니다.', go: 'make', action: '새 세트 만들러 가기' };
     return { st, now };
@@ -422,13 +418,8 @@
     el.innerHTML = flowHtml(m);
     $('[data-flow-go]', el)?.addEventListener('click', (e) => {
       const go = e.target.dataset.flowGo;
-      $(`[data-stage-tab="${go === 'check' ? 'read' : 'make'}"]`)?.click();
-      if (go === 'check') {
-        openSet(m.id).add('a:check');
-        const row = $('[data-row="a:check"]');
-        row?.classList.add('open');
-        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else $('#generate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('[data-stage-tab="make"]')?.click();
+      $('#generate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
   // The problem page being shown, so the poll can repaint its progress and sets without redrawing the page.
@@ -495,52 +486,9 @@
   const flat = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
   // The first line of a text worth showing in a one-line preview (not a table row).
   const firstLine = (t) => String(t || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|')) || '';
-  // 확인할 곳: what the analysis was unsure of, corrected by itself, or left out as handwriting — each for the teacher
-  // to call right (✓ 맞음) or wrong (✏️ 틀림: what is right becomes analysis feedback). Verdicts are kept by the note's text.
-  const NOTE_KIND = { word: '단어 확인', uncertain: '판독이 불확실한 곳', proofread: 'AI가 원본과 대조해 스스로 고친 곳', annotation: '필기로 보고 문제 조건에서 뺀 것' };
-  // A word the reading has confused before (몰질량↔물질량): from the current note, or the older one-line note.
-  function wordNote(text) {
-    const now = /^단어 확인: 읽은 내용에 "(.+?)"이\(가\) \d+번 나옵니다\. AI가 "(.+?)"과\(와\) "(.+?)"을\(를\)/.exec(text);
-    if (now) return [{ word: now[1], other: now[2] === now[1] ? now[3] : now[2] }];
-    const old = /^"(.+)"은\(는\) 판독에서 뒤바뀐 적이 있는 단어입니다\((.+)\)/.exec(text);
-    if (!old) return null;
-    const pairs = old[2].split(', ').map((p) => p.split('↔'));
-    return old[1].split('", "').map((word) => ({ word, other: pairs.find((p) => p.includes(word))?.find((w) => w !== word) })).filter((x) => x.other);
-  }
-  // Where a word appears in the reading: how often, and a short piece of text around its first appearance.
-  function wordUse(m, word) {
-    const texts = [m.problem?.text, m.problem?.figure, ...(m.problem?.choices || []), ...(m.steps || []).flatMap((x) => [x.title, x.purpose, x.technique, x.work, x.result])].filter(Boolean);
-    const count = texts.reduce((n, t) => n + t.split(word).length - 1, 0);
-    const t = texts.find((x) => x.includes(word)) || '';
-    const i = t.indexOf(word);
-    const piece = i < 0 ? '' : t.slice(Math.max(0, i - 18), i + word.length + 18).replace(/\$+|\\[a-zA-Z]+|\\.|[{}^_]/g, ' ').replace(/\s+/g, ' ').trim();
-    return { count, piece };
-  }
-  const noteKey = (t) => String(t).trim().slice(0, 600);
-  function analysisNotes(m) {
-    const states = m.noteStates || {};
-    const items = [
-      ...(m.uncertainties || []).filter((u) => !/^(해설의 단계 표시는|선생님 피드백의 STEP 수는)/.test(u))
-        .flatMap((text) => wordNote(text)?.map((w) => ({ kind: 'word', text, ...w })) || [{ kind: 'uncertain', text }]),
-      ...(m.proofread || []).filter((t) => !t.startsWith('과거 교사 교정')).map((text) => ({ kind: 'proofread', text })),
-      ...(m.annotations || []).map((text) => ({ kind: 'annotation', text })),
-    ].map((x) => ({ ...x, state: states[noteKey(x.text)] || '' }));
-    return { items, open: items.filter((x) => !x.state).length, misaligned: m.steps.length > (m.targetSteps || 99) };
-  }
-  // What to start the 틀림 box with, by kind of note.
-  function noteFixDraft(x) {
-    if (x.kind === 'proofread') {
-      const pair = [...x.text.matchAll(/"([^"]+)"\s*→\s*"([^"]+)"/g)].pop();
-      return pair ? `"${pair[2]}"가 아니라 원래대로 "${pair[1]}"가 맞다.` : '';
-    }
-    if (x.kind === 'annotation') return `필기로 뺀 "${x.text.replace(/\s+/g, ' ').slice(0, 80)}"은(는) 인쇄된 문제 조건이니 문제에 넣는다.`;
-    return '';
-  }
+  // The STEPs outnumber the steps printed in the solution: offered as one merge.
+  const misalignedSteps = (m) => m.steps.length > (m.targetSteps || 99);
 
-  // The problem page is two stages, each the same loop: what the AI made → what the teacher teaches about it → do it
-  // again. ① 원본 분석: the reading and its STEPs, analysis feedback, 다시 분석. ② 변형 문제: the sets made, generation
-  // feedback and the adopted models, a new set. Feedback sits right under what it is about, so there is no choosing
-  // which kind it is. The stage last opened on this problem is opened again.
   // ------------------------------------------------------------------ learning (docs/learning.md)
   // A learning item as a row: the text, when it was taught, what it did (분석: 반영 / 생성: 지킴·어김); the checkbox
   // switches it off, 편집 opens the text with 삭제.
@@ -607,10 +555,8 @@
     const n = m.steps.length;
     const gens = setsOf(m);
     if (!openRows.has(m.id)) {
-      // First visit: open what needs a look — an unsure reading, the newest set.
+      // First visit: open the newest set.
       const s = openSet(m.id);
-      const notes = analysisNotes(m);
-      if (notes.open || notes.misaligned) s.add('a:check');
       if (gens[0]) s.add('s:' + gens[0].id);
     }
     const key = 'em-stage-' + m.id;
@@ -782,7 +728,7 @@
     $$('.lt-sec-btns button').forEach((b) => { b.hidden = false; });
     const opened = openSet(m.id);
     const o = (key) => (opened.has(key) ? ' open' : '');
-    const { items, open, misaligned } = analysisNotes(m);
+    const misaligned = misalignedSteps(m);
     const list = (items) => `<ul class="lt-ul">${items.map((u) => `<li>${flat(u)}</li>`).join('')}</ul>`;
     const row = (key, name, sub, more, label = '보기', dot = '') => `<div class="lt-row lt-plain${o(key)}" data-row="${key}">
         <div class="lt-main"><span class="lt-name">${dot}${name}</span><span class="lt-sub lt-clip">${sub}</span></div>
@@ -791,28 +737,6 @@
       </div>`;
     const src = (id) => 'api/files/' + id;
     const thumbs = [m.images.problem, !m.images.sameImage && m.images.solution].filter(Boolean).map((id) => `<img data-zoom src="${src(id)}" alt="원본">`).join('');
-    const count = (k) => items.filter((x) => x.kind === k).length;
-    const checkParts = [count('word') && `단어 확인 ${count('word')}`, count('uncertain') && `판독 불확실 ${count('uncertain')}`, count('proofread') && `자동 교정 ${count('proofread')}`, count('annotation') && `뺀 필기 ${count('annotation')}`, misaligned && `STEP ${m.steps.length}개 → 해설 ${m.targetSteps}단계`].filter(Boolean);
-    const wordItem = (x, i) => {
-      const { count: n, piece } = wordUse(m, x.word);
-      const done = x.state === 'fixed' ? `<span class="chk-state ok">✓ "${esc(x.other)}"(으)로 바꿈</span>`
-        : x.state ? `<span class="chk-state ok">✓ "${esc(x.word)}"이(가) 맞음</span><button class="small chk-link" data-undo>되돌리기</button>` : '';
-      return `<li class="chk${x.state ? ' done' : ''}" data-note="${i}">
-        <div class="chk-text">AI가 읽은 내용에 <b>"${esc(x.word)}"</b>이(가) ${n}번 나옵니다${piece ? ` (예: "…${esc(piece)}…")` : ''}.
-          AI가 이 단어를 <b>"${esc(x.other)}"</b>과(와) 헷갈린 적이 있습니다. <b>원본 사진에도 "${esc(x.word)}"(으)로 인쇄되어 있나요?</b></div>
-        <div class="chk-act">${done || `<button class="small" data-word-ok>✓ 네, "${esc(x.word)}"이(가) 맞아요</button><button class="small" data-word-swap>아니요, "${esc(x.other)}"(으)로 바꾸기</button>`}</div>
-      </li>`;
-    };
-    const noteItem = (x, i) => x.kind === 'word' ? wordItem(x, i) : `<li class="chk${x.state ? ' done' : ''}" data-note="${i}">
-        <div class="chk-line"><span class="chk-text">${flat(x.text)}</span><span class="chk-act">${x.state
-          ? `<span class="chk-state ${x.state === 'ok' ? 'ok' : ''}">${x.state === 'ok' ? '✓ 맞음' : '✏️ 피드백 남김'}</span><button class="small chk-link" data-undo>되돌리기</button>`
-          : '<button class="small" data-ok>✓ 맞음</button><button class="small" data-wrong>✏️ 틀림</button>'}</span></div>
-        <div class="chk-fix" hidden><textarea rows="2" placeholder="원본에서 무엇이 맞는지 적어 주세요. 예: ①은 학생 필기라 무시한다.">${esc(noteFixDraft(x))}</textarea>
-          <div class="lt-actions"><button class="small chk-link" data-edit>분석 결과 수정에서 직접 고치기</button><span class="spacer"></span><button class="small" data-cancel>취소</button><button class="small" data-save>피드백으로 저장</button><button class="small primary" data-go>저장하고 다시 분석</button></div></div>
-      </li>`;
-    const checkBody = `<p class="chk-help">AI가 확신하지 못했거나 스스로 판단한 곳입니다. 원본 사진과 비교해 맞으면 <b>✓ 맞음</b>, 틀리면 <b>✏️ 틀림</b>을 누르고 무엇이 맞는지 적어 주세요. 적은 내용은 분석 피드백으로 저장되고, 다시 분석할 때 반영됩니다.</p>
-        ${misaligned ? `<div class="lt-actions"><span>해설의 단계 표시는 ${m.targetSteps}개인데 정리한 STEP은 ${m.steps.length}개입니다.</span><span class="spacer"></span><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : ''}
-        ${Object.keys(NOTE_KIND).filter((k) => count(k)).map((k) => `<div class="chk-group"><b>${NOTE_KIND[k]}</b><ul class="chk-list">${items.map((x, i) => (x.kind === k ? noteItem(x, i) : '')).join('')}</ul></div>`).join('')}`;
     el.innerHTML = [
       `<div class="lt-row lt-plain${o('a:orig')}" data-row="a:orig">
         <div class="lt-main lt-thumbrow"><span class="lt-thumbs">${thumbs}</span><span class="lt-main"><span class="lt-name">${m.images.sameImage || !m.images.solution ? '원본' : '원본 문제 · 교사 해설'}</span>
@@ -820,7 +744,7 @@
         <button class="small lt-open" data-open>크게 보기</button>
         <div class="lt-more"><div class="orig orig-2">${originalsInner(m.images)}</div></div>
       </div>`,
-      checkParts.length ? row('a:check', '확인할 곳', `${open ? `<span class="warn">남은 확인 ${open}개</span>` : '모두 확인함'} · ${checkParts.join(' · ')}`, checkBody, '보기', `<i class="lt-dot ${open || misaligned ? 'warn' : 'ok'}"></i>`) : '',
+      misaligned ? `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">STEP ${m.steps.length}개 · 해설의 단계 표시는 ${m.targetSteps}개</span><span class="lt-sub">해설 단계에 맞추려면 이웃한 STEP을 합칩니다.</span></div><button class="small primary" id="align">해설 단계에 맞춰 합치기</button></div>` : '',
       row('a:problem', '읽은 문제', `${inlineRich(firstLine(m.problem.text))} · 정답 ${m.problem.answer ? circled(m.problem.answer) : '서술형'}`, `
         <div class="rich">${rich(m.problem.text)}</div>
         ${m.problem.figure ? `<div><b>그림 설명</b><div class="rich">${rich(m.problem.figure)}</div></div>` : ''}
@@ -834,50 +758,6 @@
       m.techniques?.length ? row('a:tech', '변형에서 다시 쓸 핵심 기법', m.techniques.map(flat).join(' · '), list(m.techniques)) : '',
     ].join('');
     rowToggles(el, opened);
-    const setNote = async (x, state) => {
-      const saved = await api('PUT', `/api/materials/${m.id}/checks`, { note: noteKey(x.text), state });
-      m.noteStates = saved.noteStates;
-      return saved;
-    };
-    $$('#analysis [data-note]').forEach((li) => {
-      const x = items[Number(li.dataset.note)];
-      const fix = $('.chk-fix', li);
-      const wrote = () => {
-        const t = $('textarea', fix).value.trim();
-        if (!t) throw new Error('무엇이 맞는지 적어 주세요.');
-        return `${t} (확인할 곳: ${x.text.replace(/\s+/g, ' ').slice(0, 80)})`;
-      };
-      $('[data-word-ok]', li)?.addEventListener('click', guard(async () => { await setNote(x, 'ok'); showAnalysis(m); paintFlow(m); }));
-      $('[data-word-swap]', li)?.addEventListener('click', guard(async () => {
-        const { count: n } = wordUse(m, x.word);
-        if (!confirm(`분석 결과의 "${x.word}" ${n}곳을 모두 "${x.other}"(으)로 바꿀까요? 이 착오는 기억해 두고 다음 분석부터 주의합니다.`)) return;
-        const saved = await api('POST', `/api/materials/${m.id}/replace-word`, { from: x.word, to: x.other, note: noteKey(x.text) });
-        toast(`"${x.word}" ${saved.replaced}곳을 "${x.other}"(으)로 바꿨습니다.`);
-        renderMaterial({ ...saved, jobs: m.jobs }, false);
-      }));
-      $('[data-ok]', li)?.addEventListener('click', guard(async () => { await setNote(x, 'ok'); showAnalysis(m); paintFlow(m); }));
-      $('[data-undo]', li)?.addEventListener('click', guard(async () => { await setNote(x, null); showAnalysis(m); paintFlow(m); }));
-      if (x.kind === 'word') return; // the rest is the 틀림 box of the ordinary notes
-      $('[data-wrong]', li)?.addEventListener('click', () => { fix.hidden = false; $('textarea', fix).focus(); });
-      $('[data-cancel]', li).addEventListener('click', () => { fix.hidden = true; });
-      $('[data-edit]', li).addEventListener('click', () => editAnalysis(m));
-      $('[data-save]', li).addEventListener('click', guard(async () => {
-        const text = wrote();
-        await teach({ text, stage: 'analysis', materialId: m.id, from: 'check' });
-        await setNote(x, 'feedback');
-        showAnalysis(m);
-        paintFlow(m);
-        toast('분석 학습에 추가했습니다. 다시 분석하면 반영됩니다.');
-        await liveMaterial?.side();
-      }));
-      $('[data-go]', li).addEventListener('click', guard(async () => {
-        const text = wrote();
-        if (!confirm('이 내용을 분석 학습에 더해 원본을 다시 분석할까요? 지금 분석 결과(직접 고친 내용 포함)는 새 결과로 바뀝니다.')) return;
-        await setNote(x, 'feedback');
-        await api('POST', `/api/materials/${m.id}/analyze`, { feedback: text, from: 'check' }); // the 기본 모델 (LLM tab)
-        route();
-      }));
-    });
     $('#align')?.addEventListener('click', guard(async (e) => {
       e.target.disabled = true; e.target.textContent = '합치는 중…';
       try {
