@@ -37,6 +37,14 @@ module.exports = {
     // ~2.5 minutes per call and 88 minutes per set.
     thinkingBudget: { low: int('EDUMASTER_GEMMA_THINKING_LOW', 3072), high: int('EDUMASTER_GEMMA_THINKING_HIGH', 8192) },
   },
+  // Claude through the Claude Code CLI on this server (`claude -p`), on the subscription the teacher logged in with
+  // once (`claude` → login). No API key and no API cost; the subscription's usage limits apply. For the teacher's own use.
+  claudeCli: {
+    bin: env.EDUMASTER_CLAUDE_CLI || 'claude',
+    model: env.EDUMASTER_CLAUDE_CLI_MODEL || 'claude-opus-5-5',
+    timeoutMs: int('EDUMASTER_CLAUDE_CLI_TIMEOUT_MS', 1800000),
+    off: env.EDUMASTER_CLAUDE_CLI === 'off',
+  },
   // Claude over the Anthropic API (key in data/anthropic-api-key.txt, never in the repo).
   claude: {
     baseUrl: env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',

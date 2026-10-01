@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -96,6 +96,7 @@ function createApp(options = {}) {
         deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
         gemma: { label: pcModelLabel(gemma.model), available: gemma.available, model: gemma.model, note: gemma.available ? 'PC 연결됨 · 무료 · 느림' : 'PC가 꺼져 있어 지금은 사용할 수 없음' },
         ...(claudeKey && cfg.claude.selectable ? { claude: { label: PROVIDERS.claude.label, available: true, note: '유료 · 품질 가장 높음 · DeepSeek보다 비쌈' } } : {}),
+        ...(claudeCliReady(cfg) ? { 'claude-cli': { label: PROVIDERS['claude-cli'].label, available: true, note: '서버의 Claude 구독으로 실행 · 추가 비용 없음 · 품질 가장 높음 · 느릴 수 있음' } } : {}),
         ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
       },
       activeJobs: jobs.activeCount(),
@@ -107,6 +108,10 @@ function createApp(options = {}) {
     if (value === 'relay') {
       if (!cfg.relay.dir) throw fail(409, '이 서버에는 중계 모델이 설정되어 있지 않습니다.');
       return 'relay';
+    }
+    if (value === 'claude-cli') {
+      if (!claudeCliReady(cfg)) throw fail(409, '이 서버의 Claude Code에 로그인되어 있지 않습니다. 서버에서 claude를 실행해 한 번 로그인해 주세요.');
+      return 'claude-cli';
     }
     if (value === 'claude') {
       if (!claudeKey) throw fail(409, '이 서버에는 Claude(Anthropic) API 키가 설정되어 있지 않습니다.');

@@ -3,6 +3,8 @@ const http = require('node:http');
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { spawn } = require('node:child_process');
 const { jsonrepair } = require('jsonrepair');
 // DeepSeek chat client with a per-job budget and a usage ledger.
 // Every paid call is recorded (tokens only — never prompts, images or keys).
@@ -128,7 +130,14 @@ const PROVIDERS = {
   gemma: { label: 'PC 모델' },
   relay: { label: 'Claude Opus 5.5 (세션 중계)' },
   claude: { label: 'Claude Opus 5.5' },
+  'claude-cli': { label: 'Claude Opus 5.5 (구독)' },
 };
+
+/** The Claude Code CLI is installed and someone has logged in to it on this machine (the file holds the login). */
+function claudeCliReady(config) {
+  if (config.claudeCli?.off) return false;
+  return fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
+}
 
 // POST JSON with our own timeout and the job's cancel signal.
 // Uses node:http(s) rather than fetch: fetch (undici) silently gives up when response headers take
@@ -299,6 +308,60 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     return envelope;
   }
 
+  // Claude Code CLI on this server (`claude -p`): the same system prompt and user message; images go to a temporary
+  // folder and are opened with the Read tool where they stood in the message; the answer and the token counts come
+  // from its JSON result. Runs on the logged-in subscription, so nothing is billed per call.
+  async function sendClaudeCli({ messages, effort, signal }) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-claude-'));
+    try {
+      const user = messages[1].content;
+      const texts = [];
+      let images = 0;
+      (typeof user === 'string' ? [{ type: 'text', text: user }] : user).forEach((part, i) => {
+        if (part.type === 'text') { texts.push(part.text); return; }
+        const m = /^data:image\/(\w+);base64,(.*)$/s.exec(part.image_url.url);
+        const file = path.join(dir, `image${i}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
+        fs.writeFileSync(file, Buffer.from(m[2], 'base64'));
+        texts.push(`[이미지: ${file}]`);
+        images++;
+      });
+      for (const turn of messages.slice(2)) texts.push(`[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}`);
+      const prompt = (images ? '[이미지: 경로]가 있는 자리마다 그 이미지 파일을 Read 도구로 열어 자세히 본 뒤 답한다. 다른 파일은 열지 않는다.\n\n' : '') + texts.join('\n');
+      const args = ['-p', '--output-format', 'json', '--model', config.claudeCli.model, '--system-prompt', messages[0].content, '--no-session-persistence',
+        '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
+        ...(effort === 'high' ? ['--effort', 'high'] : effort === 'off' ? ['--effort', 'low'] : [])];
+      const { code, stdout, stderr } = await new Promise((resolve, reject) => {
+        const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env: process.env });
+        let out = ''; let err = '';
+        const timer = setTimeout(() => { child.kill('SIGTERM'); reject(Object.assign(new Error('Claude(구독) 응답 시간이 초과되었습니다.'), { status: 504 })); }, config.claudeCli.timeoutMs);
+        const abort = () => child.kill('SIGTERM');
+        signal?.addEventListener('abort', abort, { once: true });
+        child.stdout.on('data', (d) => { out += d; });
+        child.stderr.on('data', (d) => { err += d; });
+        child.on('error', (e) => { clearTimeout(timer); reject(Object.assign(new Error(`Claude CLI를 실행하지 못했습니다: ${e.message}`), { status: 503 })); });
+        child.on('close', (c) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolve({ code: c, stdout: out, stderr: err }); });
+        child.stdin.end(prompt);
+      });
+      if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
+      let result;
+      try { result = JSON.parse(stdout); } catch {
+        throw Object.assign(new Error(`Claude(구독) 실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`), { status: 502 });
+      }
+      // A usage limit, an expired login and the like come back as an error result with the reason in `result`.
+      if (result.is_error || result.subtype !== 'success') {
+        throw Object.assign(new Error(`Claude(구독) 오류: ${String(result.result || result.subtype || '').slice(0, 300)}`), { status: 502 });
+      }
+      const u = result.usage || {};
+      const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      return {
+        choices: [{ finish_reason: 'stop', message: { content: String(result.result || '') } }],
+        usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   // Relay: write the exact request (system prompt, user text, images in order) to a file and wait for an
   // answer file. Same prompts and same pipeline as the API providers; only who answers differs.
   // Claude over the Anthropic Messages API. Our messages are OpenAI-style (system first, image_url data URLs),
@@ -388,7 +451,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? config.claudeCli.model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     let messages = [{ role: 'system', content: system }, { role: 'user', content }];
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -403,6 +466,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
+          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
         store.usage.put({ ...record, durationMs: Date.now() - started, outcome: 'error' });
@@ -482,4 +546,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
