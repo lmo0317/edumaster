@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel, claudeCliChoice, harnessSettings } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits } = require('./llm');
 const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
@@ -49,6 +49,27 @@ function createJobs({ store, llm, config }) {
     return ctx;
   }
 
+  // A subscription's remaining limits as of now, for the set report (how much of them a set used). Gemini's are read off
+  // agy's /usage screen (no model call). Claude's and GPT's come with every call: a reading from the last ten minutes
+  // is used, else (at the start of a set only) one tiny call outside the set's budget. Never fails the set.
+  const QUOTA = {
+    'claude-cli': () => claudeLimits(config),
+    'codex-cli': () => cliModels.codexLimits(config),
+  };
+  async function limitsNow(provider, { start }) {
+    try {
+      if (provider === 'agy-cli') return await cliModels.refreshAgyLimits(config);
+      const read = QUOTA[provider];
+      if (!read) return null;
+      const last = read();
+      if (!start || (last && Date.now() - new Date(last.at).getTime() < 600000)) return last;
+      await llm.json({ provider, purpose: 'solve', jobId: 'quota', budget: new Budget({ maxCalls: 2, maxTokens: 400000 }), effort: 'off', maxTokens: 2000,
+        system: 'JSON만 출력한다.', text: '12×7의 값을 {"answer": 값} 형식으로만 답하라.' });
+      return read();
+    } catch { return null; }
+  }
+  const snap = (l) => (l ? { at: l.at, fiveHour: l.fiveHour || null, sevenDay: l.sevenDay || null } : null);
+
   const workers = {
     async analyze(ctx) {
       const material = store.materials.get(ctx.job.materialId);
@@ -64,7 +85,16 @@ function createJobs({ store, llm, config }) {
         throw e;
       }
     },
-    async generate(ctx) { await pipeline.runGeneration(ctx); },
+    async generate(ctx) {
+      // How much of the subscription's limits the set used: read before (kept when a set is resumed) and after.
+      const quota = ['claude-cli', 'codex-cli', 'agy-cli'].includes(ctx.provider);
+      if (quota && !ctx.job.quota?.before) { ctx.job.quota = { provider: ctx.provider, before: snap(await limitsNow(ctx.provider, { start: true })) }; ctx.save(); }
+      try {
+        await pipeline.runGeneration(ctx);
+      } finally {
+        if (quota && ctx.job.quota) { ctx.job.quota.after = snap(await limitsNow(ctx.provider, { start: false })); ctx.save(); }
+      }
+    },
     async regenerate(ctx) {
       const parent = store.jobs.get(ctx.job.parentJobId);
       const item = parent?.items?.[ctx.job.itemIndex];

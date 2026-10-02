@@ -1045,9 +1045,21 @@
     const unsure = items.filter((i) => i.status === 'needs_review');
     const fixes = [count('rewrite') && `해설 다시 쓰기 ${count('rewrite')}번`, count('repair') && `문제 수정 ${count('repair')}번`, count('redesign') && `새로 설계 ${count('redesign')}번`].filter(Boolean);
     const learned = job.learned;
+    // How much of the subscription's 1-week and 5-hour limits the set used (read before and after it).
+    const q = job.quota;
+    const usedOf = (k) => {
+      const b = q?.before?.[k]; const e = q?.after?.[k];
+      if (!b || !e) return '';
+      const name = k === 'sevenDay' ? '1주일' : '5시간';
+      // The window refilled while the set ran: only the part after the refill is known.
+      if (b.resetsAt && e.resetsAt && Math.abs(new Date(e.resetsAt) - new Date(b.resetsAt)) > 15 * 60000) return `${name} 한도는 중간에 다시 채워져 ${(e.used * 100).toFixed(1)}%p 이상`;
+      return `${name} 한도 <b>${Math.max(0, (e.used - b.used) * 100).toFixed(1)}%p</b> (${(b.used * 100).toFixed(1)}% → ${(e.used * 100).toFixed(1)}% 사용)`;
+    };
+    const quotaLine = q?.after ? [usedOf('sevenDay'), usedOf('fiveHour')].filter(Boolean).join(' · ') : '';
     return `<section class="jt-report">
       <h2>세트 리포트</h2>
       <p><b>${done.length === job.items.length ? `${done.length}문제 모두 완성` : `${job.items.length}문제 중 ${done.length}문제 완성`}</b>${first.length ? ` · 첫 설계로 통과 ${first.length}` : ''}${left.length ? ` · 남은 점이 있는 문제 ${left.length}` : ''}${unsure.length ? ` · <span class="bad">정답 확인 필요 ${unsure.length}</span>` : ''}</p>
+      ${quotaLine ? `<p class="muted">이 세트가 쓴 구독 한도: ${quotaLine}. 같은 시간에 이 구독을 쓴 다른 작업이 있었다면 그 몫도 들어 있습니다.</p>` : ''}
       ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 문제마다 아래 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
       ${learned ? (learned.length ? `<div class="jt-learned"><b>이번 세트에서 배운 학습 ${learned.length}개</b> — 다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.
         <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${esc(l.text)}${l.why ? ` <span class="muted">— ${esc(l.why)}</span>` : ''} <a href="#/learn/${l.scope === 'common' ? 'common' : 'problems'}">보기</a></li>`).join('')}</ul></div>`

@@ -97,3 +97,27 @@ test('Gemini\'s remaining limits come from agy\'s /usage screen, kept like Claud
   assert.ok(resets >= 152 * 60000 - 1000 && resets <= 152 * 60000 + 5000);
   assert.deepEqual(cli.agyLimits(config), limits, 'kept for the LLM tab');
 });
+
+test('a set on a subscription keeps its limits before and after, for the set report', async () => {
+  const { createJobs } = require('../server/jobs');
+  // A Gemini set: the limits are read off /usage before and after (a fake reader: 10% then 12% of the week used).
+  const reads = [{ ok: true, fiveHour: { left: 90, resetsInMin: 100 }, sevenDay: { left: 90, resetsInMin: 1000 } }, { ok: true, fiveHour: { left: 80, resetsInMin: 80 }, sevenDay: { left: 88, resetsInMin: 980 } }];
+  const fake = path.join(dir, 'fake-quota-seq.js');
+  const counter = path.join(dir, 'quota-count.txt');
+  fs.writeFileSync(fake, `const fs = require('fs'); const n = fs.existsSync(${JSON.stringify(counter)}) ? Number(fs.readFileSync(${JSON.stringify(counter)}, 'utf8')) : 0; fs.writeFileSync(${JSON.stringify(counter)}, String(n + 1)); console.log(JSON.stringify(${JSON.stringify(reads)}[Math.min(n, 1)]));`);
+  const quotaConfig = { ...config, budget: {}, agyCli: { ...config.agyCli, python: process.execPath, quotaScript: fake } };
+  const jobs = [];
+  const store = { jobs: { all: () => jobs, get: (id) => jobs.find((j) => j.id === id), put: (j) => { const i = jobs.findIndex((x) => x.id === j.id); if (i >= 0) jobs[i] = j; else jobs.push(j); return j; } } };
+  const pipeline = require('../server/pipeline');
+  const real = pipeline.runGeneration;
+  pipeline.runGeneration = async () => {};
+  try {
+    const manager = createJobs({ store, llm: { json: async () => ({ data: {} }) }, config: { ...quotaConfig, budget: { generateCalls: 10, generateTokens: 1000 } } });
+    const job = manager.generate({ material: { id: 'm', title: 't' }, items: [], rules: [], options: { provider: 'agy-cli' } });
+    for (let i = 0; i < 100 && !['done', 'failed'].includes(store.jobs.get(job.id).status); i++) await new Promise((r) => setTimeout(r, 50));
+    const q = store.jobs.get(job.id).quota;
+    assert.equal(q.provider, 'agy-cli');
+    assert.ok(Math.abs(q.before.sevenDay.used - 0.10) < 1e-9 && Math.abs(q.after.sevenDay.used - 0.12) < 1e-9, JSON.stringify(q));
+    assert.ok(Math.abs(q.after.fiveHour.used - 0.20) < 1e-9);
+  } finally { pipeline.runGeneration = real; }
+});
