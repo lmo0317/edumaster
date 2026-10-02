@@ -108,8 +108,29 @@ function writeRequest(dir, messages) {
   return { text: texts.join('\n'), images };
 }
 
+// agy's settings (shared by every agy run on this account): its answer may be written in the request folders, nothing
+// else, and no command may run; the /usage reader's folder is trusted. Other keys in the file are kept.
+function ensureAgySettings(config) {
+  const c = config.agyCli;
+  if (!c?.settings || !c.workRoot) return;
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(c.settings, 'utf8')) || {}; } catch { /* none yet */ }
+  const before = JSON.stringify(s);
+  const write = `write_file(${c.workRoot}/)`;
+  const quotaDir = path.dirname(c.workRoot);
+  s.trustedWorkspaces = [...new Set([...(s.trustedWorkspaces || []).filter((w) => w !== '/tmp'), quotaDir])];
+  s.permissions = s.permissions || {};
+  s.permissions.allow = [...new Set([...(s.permissions.allow || []), write])];
+  s.permissions.deny = [...new Set([...(s.permissions.deny || []), 'command(*)'])];
+  if (JSON.stringify(s) === before) return;
+  fs.mkdirSync(path.dirname(c.settings), { recursive: true });
+  fs.writeFileSync(c.settings, JSON.stringify(s, null, 2));
+}
+
 async function sendCli(config, cli, { messages, effort, signal }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `em-${KEY[cli]}-`));
+  // agy works in a folder of its own under workRoot (where it may write its answer); codex in a temporary one.
+  if (cli === 'agy-cli') { fs.mkdirSync(config.agyCli.workRoot, { recursive: true }); ensureAgySettings(config); }
+  const dir = fs.mkdtempSync(cli === 'agy-cli' ? path.join(config.agyCli.workRoot, 'em-') : path.join(os.tmpdir(), `em-${KEY[cli]}-`));
   const fail = (msg, status = 502) => Object.assign(new Error(`${NAME[cli]}(구독) ${msg}`), { status });
   try {
     const { text, images } = writeRequest(dir, messages);
@@ -117,21 +138,24 @@ async function sendCli(config, cli, { messages, effort, signal }) {
     if (cli === 'agy-cli') {
       const request = `[시스템 지시]\n${messages[0].content}\n\n[요청]\n${images.length ? '[이미지: 파일]이 있는 자리마다 이 폴더의 그 이미지 파일을 열어 자세히 본 뒤 답한다.\n\n' : ''}${text}`;
       fs.writeFileSync(path.join(dir, 'request.md'), request);
-      const ask = '같은 폴더의 request.md 파일을 처음부터 끝까지 모두 읽고, 그 안의 [시스템 지시]와 [요청]을 그대로 따라 답한다. 파일을 고치거나 새로 만들지 않고, 명령을 실행하지 않는다. 답만 출력한다.';
+      // A printed answer is cut at agy's output limit (a problem design with its solution and checks did not fit,
+      // 2026-10-02), so the answer is written to answer.txt; the printed one is kept only if that file is missing.
+      const ask = '같은 폴더의 request.md 파일을 처음부터 끝까지 모두 읽고, 그 안의 [시스템 지시]와 [요청]을 그대로 따라 답한다. 답 전체를 이 폴더의 answer.txt 파일에 파일 쓰기 도구로 그대로 쓴다. 다른 파일은 고치거나 만들지 않고, 명령은 실행하지 않는다. 화면에는 완료라고만 출력한다.';
       const { code, stdout, stderr } = await run(config.agyCli, ['-p', ask, '--output-format', 'json', '--model', choice.model, '--sandbox'],
         { cwd: dir, timeoutMs: config.agyCli.timeoutMs, signal });
       if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
       let result;
       try { result = JSON.parse(stdout.trim().split('\n').filter((l) => l.startsWith('{')).pop() || ''); } catch { result = null; }
-      if (!result) throw fail(`실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`);
-      if (result.status !== 'SUCCESS') throw fail(`오류: ${String(result.error || result.response || result.status).slice(0, 300)}`);
+      const written = fs.existsSync(path.join(dir, 'answer.txt')) ? fs.readFileSync(path.join(dir, 'answer.txt'), 'utf8').trim() : '';
+      if (!result && !written) throw fail(`실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`);
+      if (result?.status !== 'SUCCESS' && !written) throw fail(`오류: ${String(result?.error || result?.response || result?.status).slice(0, 300)}`);
       const last = agyLimits(config);
       if (!last || Date.now() - new Date(last.at).getTime() > 120000) refreshAgyLimits(config).catch(() => {});
-      const u = result.usage || {};
+      const u = result?.usage || {};
       const input = (u.input_tokens || 0) + (u.cache_read_tokens || 0);
       const output = (u.output_tokens || 0);
       return {
-        choices: [{ finish_reason: 'stop', message: { content: String(result.response || '') } }],
+        choices: [{ finish_reason: 'stop', message: { content: written || String(result.response || '') } }],
         usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_tokens || 0, completion_tokens: output, completion_tokens_details: { reasoning_tokens: u.thinking_tokens || 0 }, total_tokens: input + output },
       };
     }
@@ -170,6 +194,7 @@ function refreshAgyLimits(config) {
   if (limitsRun) return limitsRun;
   const c = config.agyCli;
   if (!c?.python || !fs.existsSync(c.python) || !cliReady(config, 'agy-cli')) return Promise.resolve(agyLimits(config));
+  try { ensureAgySettings(config); } catch { /* the reader reports what it sees */ }
   const script = c.quotaScript || path.join(config.root || path.join(__dirname, '..'), 'deploy', 'agy-quota.py');
   limitsRun = run({ bin: c.python }, [script], { cwd: os.tmpdir(), timeoutMs: 90000, env: { AGY_BIN: c.bin } }).then(({ stdout }) => {
     let r = null;
@@ -259,4 +284,4 @@ async function logout(config, cli) {
   else fs.rmSync(agyMarker(config), { force: true });
 }
 
-module.exports = { agyLimits, agyLimitsFresh, refreshAgyLimits, CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };
+module.exports = { ensureAgySettings, agyLimits, agyLimitsFresh, refreshAgyLimits, CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };

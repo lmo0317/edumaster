@@ -16,7 +16,9 @@ const args = process.argv.slice(2);
 if (args[0] === 'models') { console.log('gemini-3.1-pro-high\\tGemini 3.1 Pro (High)\\nclaude-x\\tNot Gemini'); process.exit(0); }
 const request = fs.readFileSync('request.md', 'utf8');
 const answer = { system: request.includes('[시스템 지시]\\nJSON만'), sawImage: fs.existsSync('image1.png') && request.includes('[이미지: image1.png]'), model: args[args.indexOf('--model') + 1], sandbox: args.includes('--sandbox') };
-console.log(JSON.stringify({ status: 'SUCCESS', response: '\\u0060\\u0060\\u0060json\\n' + JSON.stringify(answer) + '\\n\\u0060\\u0060\\u0060', usage: { input_tokens: 100, output_tokens: 20, thinking_tokens: 15, cache_read_tokens: 50 } }));
+// Like agy with a long answer: written to answer.txt, a short line printed.
+fs.writeFileSync('answer.txt', '\\u0060\\u0060\\u0060json\\n' + JSON.stringify(answer) + '\\n\\u0060\\u0060\\u0060');
+console.log(JSON.stringify({ status: 'SUCCESS', response: '완료', usage: { input_tokens: 100, output_tokens: 20, thinking_tokens: 15, cache_read_tokens: 50 } }));
 `);
 const fakeCodex = path.join(dir, 'fake-codex.js');
 fs.writeFileSync(fakeCodex, `
@@ -31,7 +33,7 @@ process.stdin.on('data', (d) => { input += d; }).on('end', () => {
 });
 `);
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-cli-data-'));
-const config = { dataDir, agyCli: { bin: process.execPath, binArgs: [fakeAgy], timeoutMs: 30000 }, codexCli: { bin: process.execPath, binArgs: [fakeCodex], timeoutMs: 30000 } };
+const config = { dataDir, agyCli: { bin: process.execPath, binArgs: [fakeAgy], timeoutMs: 30000, workRoot: path.join(dataDir, 'agy-requests'), settings: path.join(dataDir, 'agy-settings.json') }, codexCli: { bin: process.execPath, binArgs: [fakeCodex], timeoutMs: 30000 } };
 const png = 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 const messages = [{ role: 'system', content: 'JSON만 출력한다.' }, { role: 'user', content: [{ type: 'text', text: '문제 사진' }, { type: 'image_url', image_url: { url: png } }] }];
 
@@ -53,9 +55,15 @@ test('models come from each CLI: Gemini models only from agy, listed models and 
   assert.equal(cli.cliChoice(config, 'codex-cli').label, 'GPT · Codex 기본 모델 (구독)', 'no pick: the CLI\'s own default');
 });
 
-test('agy reads the request and the image from a file; the answer and tokens come from its JSON', async () => {
+test('agy reads the request and the image from files and writes its answer to one; tokens come from its JSON', async () => {
   const r = await cli.sendCli(config, 'agy-cli', { messages, effort: 'low' });
   assert.deepEqual(JSON.parse(r.choices[0].message.content.replace(/```json|```/g, '')), { system: true, sawImage: true, model: 'gemini-3.1-pro-high', sandbox: true });
+  // agy may write in the request folders and nothing else, and may run no command; the rules are added once.
+  const permissions = () => JSON.parse(fs.readFileSync(config.agyCli.settings, 'utf8')).permissions;
+  assert.deepEqual(permissions(), { allow: [`write_file(${config.agyCli.workRoot}/)`], deny: ['command(*)'] });
+  await cli.sendCli(config, 'agy-cli', { messages, effort: 'low' });
+  assert.equal(permissions().allow.length, 1);
+  assert.deepEqual(fs.readdirSync(config.agyCli.workRoot), [], 'each request folder is removed');
   assert.deepEqual(r.usage, { prompt_tokens: 150, prompt_cache_hit_tokens: 50, completion_tokens: 20, completion_tokens_details: { reasoning_tokens: 15 }, total_tokens: 170 });
 });
 

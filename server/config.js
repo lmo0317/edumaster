@@ -57,6 +57,10 @@ module.exports = {
     off: env.EDUMASTER_AGY_CLI === 'off',
     // The python with pyte that reads the remaining limits from agy's /usage screen (deploy/agy-quota.py).
     python: env.EDUMASTER_AGY_PYTHON || path.join(os.homedir(), '.local', 'share', 'edumaster-py', 'bin', 'python'),
+    // Each request runs in a folder under workRoot, the only place agy may write (its answer); agy's own settings file
+    // gets that rule (and no commands) from server/cli-models.js.
+    workRoot: env.EDUMASTER_AGY_WORK || path.join(os.homedir(), '.local', 'share', 'edumaster-agy', 'requests'),
+    settings: env.EDUMASTER_AGY_SETTINGS || path.join(os.homedir(), '.gemini', 'antigravity-cli', 'settings.json'),
   },
   codexCli: {
     bin: env.EDUMASTER_CODEX_CLI || path.join(os.homedir(), '.local', 'bin', 'codex'),
