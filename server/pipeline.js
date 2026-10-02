@@ -672,7 +672,24 @@ async function adjudicate(ctx, item, blind, issues) {
   }
 }
 
+// A practice problem's solution has the STEPs of its range only. A model that writes the final calculation as one more
+// STEP ("STEP 3 선택지 분석" in a STEP 1~2 practice, 2026-10-02) set two checks against each other: the title check
+// wanted the original STEP 3 title, the solution review wanted no STEP 3. Such a STEP is folded into the last STEP of
+// the range, where the teacher's solution puts its 선택지 분석 too.
+function fitSolutionToStage(item) {
+  const last = item.stage?.kind === 'upto' ? item.stage.upto : item.stage?.kind === 'focus' ? item.stage.step : 0;
+  const steps = item.solution?.steps || [];
+  if (!last || !steps.some((x) => x.step > last)) return false;
+  const inside = steps.filter((x) => x.step <= last);
+  if (!inside.length) return false;
+  const end = inside[inside.length - 1];
+  const extra = steps.filter((x) => x.step > last).map((x) => x.work).filter(Boolean).join('\n\n');
+  item.solution = { ...item.solution, steps: inside.map((x) => (x === end ? { ...x, work: [x.work, extra].filter(Boolean).join('\n\n') } : x)) };
+  return true;
+}
+
 async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = null) {
+  if (fitSolutionToStage(item)) ctx.log(`${item.label}: 범위 밖 STEP으로 쓴 정답 계산을 마지막 STEP에 합침`);
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
@@ -1009,4 +1026,4 @@ const SYSTEM_CHECKS = {
 };
 
 module.exports = {
-  learnFromSet, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+  learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

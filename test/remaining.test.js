@@ -135,3 +135,14 @@ test('the solution reviewer compares only the STEPs of the problem\'s range', ()
   assert.match(text, /STEP 3은 이 문제에 필요 없고/);
   assert.ok(text.includes('STEP 2. S2') && !text.includes('STEP 3. S3'));
 });
+
+// 2026-10-02 (Opus): a STEP 1~2 practice whose solution wrote the final calculation as "STEP 3 선택지 분석"; the title
+// check and the solution review then contradicted each other through two rewrites.
+test('a STEP beyond the practice range is folded into the range\'s last STEP', () => {
+  const { fitSolutionToStage } = require('../server/pipeline');
+  const item = { stage: { kind: 'upto', upto: 2 }, solution: { steps: [{ step: 1, title: 'a', work: 'w1' }, { step: 2, title: 'b', work: 'w2' }, { step: 3, title: '선택지 분석', work: '정답은 ③' }], summary: 's' } };
+  assert.equal(fitSolutionToStage(item), true);
+  assert.deepEqual(item.solution.steps.map((x) => [x.step, x.work]), [[1, 'w1'], [2, 'w2\n\n정답은 ③']]);
+  const final = { stage: { kind: 'twin' }, solution: { steps: [{ step: 1, work: 'a' }, { step: 3, work: 'b' }] } };
+  assert.equal(fitSolutionToStage(final), false, 'a final problem keeps every STEP');
+});
