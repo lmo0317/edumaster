@@ -352,9 +352,15 @@ function createApp(options = {}) {
   });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
     getMaterial(id);
-    if (store.jobs.all().some((j) => j.materialId === id && !FINISHED.has(j.status))) throw fail(409, '진행 중인 작업이 있어 삭제할 수 없습니다.');
+    const jobs = store.jobs.all().filter((j) => j.materialId === id);
+    if (jobs.some((j) => !FINISHED.has(j.status))) throw fail(409, '진행 중인 작업이 있어 삭제할 수 없습니다.');
+    // Everything that belongs to the problem goes with it: its sets (and analyses) and its own learning. Learning
+    // moved up to 공통 학습 or 지침 stays.
+    const own = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId === id);
+    for (const j of jobs) store.jobs.remove(j.id);
+    for (const r of own) store.rules.remove(r.id);
     store.materials.remove(id);
-    return { ok: true };
+    return { ok: true, sets: jobs.filter((j) => j.type === 'generate').length, learning: own.length };
   });
   route('POST', /^\/api\/materials\/([a-f0-9]+)\/analyze$/, async (req, res, [id]) => {
     const m = getMaterial(id);

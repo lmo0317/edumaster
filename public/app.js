@@ -567,7 +567,7 @@
     if (!['read', 'make', 'list'].includes(stage)) stage = gens.length ? 'list' : 'read';
     view.innerHTML = `<div class="lt">
       <div class="lt-title" id="m-name">
-        <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><button class="small" id="name-edit">✏️ 제목 수정</button></div>
+        <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><div class="name-btns"><button class="small" id="name-edit">✏️ 제목 수정</button><button class="small danger" id="del">원본 문제 삭제</button></div></div>
         <form class="name-form panel" hidden>
           <div><label for="name-title">제목</label><input type="text" id="name-title" maxlength="120" value="${esc(m.title)}" required></div>
           <div class="name-row"><div><label for="name-subject">과목</label><input type="text" id="name-subject" maxlength="40" value="${esc(m.subject || '')}" placeholder="예: 화학"></div>
@@ -615,7 +615,6 @@
           <div id="variants"></div>
         </section>
       </div>
-      <div class="lt-foot"><button class="small danger" id="del">이 문제 삭제</button></div>
     </div>`;
     const show = (tab) => {
       $$('[data-stage-tab]').forEach((b) => { b.classList.toggle('on', b.dataset.stageTab === tab); b.setAttribute('aria-selected', String(b.dataset.stageTab === tab)); });
@@ -639,7 +638,14 @@
       naming(false);
       toast('제목을 바꿨습니다.');
     }));
-    $('#del').addEventListener('click', guard(async () => { if (confirm('이 문제를 삭제할까요? (만든 세트 기록은 남습니다)')) { await api('DELETE', '/api/materials/' + m.id); location.hash = '#/'; } }));
+    // Deleting the problem takes everything of it: says exactly what goes and what stays.
+    $('#del').addEventListener('click', guard(async () => {
+      const sets = setsOf(m).length;
+      if (!confirm(`원본 문제 「${m.title}」를 삭제할까요?\n\n함께 지워집니다: 분석 결과${sets ? `, 만든 세트 ${sets}개` : ''}, 이 문제의 분석·생성 학습\n남습니다: 공통 학습, 지침\n\n되돌릴 수 없습니다.`)) return;
+      await api('DELETE', '/api/materials/' + m.id);
+      toast('원본 문제를 삭제했습니다.');
+      location.hash = '#/';
+    }));
     if (editing) editAnalysis(m); else showAnalysis(m);
     generatePanel(m, n);
 

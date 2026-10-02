@@ -417,6 +417,29 @@ test('renaming a problem: the new name stays through a re-analysis and shows on 
   } finally { await s.close(); }
 });
 
+test('deleting a problem takes its sets and its own learning; learning moved up to 공통 학습 stays', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { code: 'test-code' });
+    const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(a.jobId);
+    const id = a.material.id;
+    const own = (await s.call('POST', '/api/rules', { text: '이 문제만', stage: 'generation', scope: 'material', source: { materialId: id } })).data;
+    const moved = (await s.call('POST', '/api/rules', { text: '올린 것', stage: 'generation', scope: 'material', source: { materialId: id } })).data;
+    await s.call('PUT', '/api/rules/' + moved.id, { scope: 'global', layer: 'lesson' });
+    const gen = (await s.call('POST', '/api/generations', { materialId: id, stages: [{ kind: 'upto', upto: 1 }], mode: 'integrated', perStage: 1 })).data;
+    await s.waitJob(gen.jobId);
+    const del = await s.call('DELETE', '/api/materials/' + id);
+    assert.equal(del.status, 200);
+    assert.deepEqual([del.data.sets, del.data.learning], [1, 1]);
+    assert.equal((await s.call('GET', '/api/jobs/' + gen.jobId)).status, 404);
+    assert.equal((await s.call('GET', '/api/jobs/' + a.jobId)).status, 404, 'its analysis goes too');
+    const texts = (await s.call('GET', '/api/rules')).data.map((r) => r.text);
+    assert.ok(!texts.includes(own.text));
+    assert.ok(texts.includes('올린 것'));
+  } finally { await s.close(); }
+});
+
 test('analysis feedback beats the printed steps: a STEP count and an easier write-up survive merging, proofreading and printed titles', async () => {
   const s = await start();
   try {

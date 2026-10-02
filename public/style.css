@@ -449,8 +449,6 @@ a.lt-name:hover { color: var(--accent); }
 .lt-item-text { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt-state { font-size: 12.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .lt-state.ok { color: var(--ok); } .lt-state.warn { color: var(--warn); } .lt-state.bad { color: var(--bad); } .lt-state.run { color: var(--accent); }
-.lt-foot { display: flex; justify-content: flex-end; }
-.lt-foot .danger { border-color: transparent; background: none; }
 
 /* Set page: the problem first, one check line, the review right under it */
 .jt-head { gap: 10px; margin-bottom: 18px; }
@@ -649,3 +647,6 @@ a.lt-name:hover { color: var(--accent); }
 .lp-group h3 { margin: 0; padding: 10px 18px 0; font-size: 13px; color: var(--muted); font-weight: 700; }
 .lp-group h3 .muted { font-weight: 600; margin-left: 2px; }
 @media (max-width: 640px) { .lp-head { padding: 12px 14px; } .lp-group h3 { padding: 10px 14px 0; } }
+.name-btns { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.name-btns .danger { border-color: transparent; background: none; }
+.name-btns .danger:hover { background: var(--bad-soft); }
