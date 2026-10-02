@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
+const cliModels = require('./cli-models');
 const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, HARNESS_LIMITS, harnessSettings } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
@@ -105,6 +106,7 @@ function createApp(options = {}) {
         ...(claudeKey && cfg.claude.selectable ? { claude: { label: PROVIDERS.claude.label, available: true, note: '유료 · 품질 가장 높음 · DeepSeek보다 비쌈' } } : {}),
         ...(claudeCliReady(cfg) ? { 'claude-cli': { label: claudeCliChoice(cfg).label, effort: claudeCliChoice(cfg).effort, available: true, note: '서버의 Claude 구독으로 실행 · 추가 비용 없음 · 품질 가장 높음 · 느릴 수 있음' } } : {}),
         ...(cfg.relay.dir ? { relay: { label: cfg.relay.label, available: true, note: '요청마다 외부 에이전트가 응답 (비교 실험용)' } } : {}),
+        ...Object.fromEntries(cliModels.CLIS.filter((c) => cliModels.cliReady(cfg, c)).map((c) => [c, { label: cliModels.cliChoice(cfg, c).label, available: true, note: `서버의 ${cliModels.NAME[c]} 구독으로 실행 · 추가 비용 없음 · 느릴 수 있음` }])),
       },
       activeJobs: jobs.activeCount(),
       defaultProvider: defaultProvider(),
@@ -112,7 +114,7 @@ function createApp(options = {}) {
   }, { open: true });
 
   // Picks the provider for a new job and refuses Gemma while the PC is off.
-  const DEFAULTABLE = ['deepseek', 'claude-cli', 'gemma'];
+  const DEFAULTABLE = ['deepseek', 'claude-cli', 'agy-cli', 'codex-cli', 'gemma'];
   const defaultProvider = () => {
     const p = llmSettings(cfg.dataDir).defaultProvider;
     return DEFAULTABLE.includes(p) ? p : 'deepseek';
@@ -122,6 +124,7 @@ function createApp(options = {}) {
     if (!value) {
       const preferred = defaultProvider();
       if (preferred === 'claude-cli' && claudeCliReady(cfg)) return 'claude-cli';
+      if (cliModels.CLIS.includes(preferred) && cliModels.cliReady(cfg, preferred)) return preferred;
       if (preferred === 'gemma' && (await llm.gemmaStatus()).available) return 'gemma';
       value = 'deepseek';
     }
@@ -132,6 +135,10 @@ function createApp(options = {}) {
     if (value === 'claude-cli') {
       if (!claudeCliReady(cfg)) throw fail(409, '이 서버의 Claude Code에 로그인되어 있지 않습니다. 서버에서 claude를 실행해 한 번 로그인해 주세요.');
       return 'claude-cli';
+    }
+    if (cliModels.CLIS.includes(value)) {
+      if (!cliModels.cliReady(cfg, value)) throw fail(409, `${cliModels.NAME[value]} 구독이 연결되어 있지 않습니다. LLM 탭에서 연결해 주세요.`);
+      return value;
     }
     if (value === 'claude') {
       if (!claudeKey) throw fail(409, '이 서버에는 Claude(Anthropic) API 키가 설정되어 있지 않습니다.');
@@ -194,7 +201,7 @@ function createApp(options = {}) {
     const usage = {};
     const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
     const sets = store.jobs.all().filter((j) => j.type === 'generate' && new Date(j.createdAt) >= month);
-    for (const p of ['deepseek', 'gemma', 'claude-cli', 'claude']) {
+    for (const p of ['deepseek', 'gemma', 'claude-cli', 'agy-cli', 'codex-cli', 'claude']) {
       const mine = rows.filter((r) => r.provider === p);
       const at = (r) => new Date(r.createdAt).getTime();
       usage[p] = {
@@ -203,7 +210,38 @@ function createApp(options = {}) {
         lastAt: mine.map((r) => r.createdAt).sort().pop() || '',
       };
     }
-    return { usage, claude: { loggedIn: claudeCliReady(cfg), ...claudeCliChoice(cfg), limits: claudeLimits(cfg), models: CLAUDE_MODELS, efforts: CLAUDE_EFFORTS }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' } };
+    const cliInfo = (c) => ({ installed: fs.existsSync(c === 'agy-cli' ? cfg.agyCli.bin : cfg.codexCli.bin), loggedIn: cliModels.cliReady(cfg, c), ...cliModels.cliChoice(cfg, c), models: cliModels.cliModels(cfg, c), login: cliModels.loginState(c) });
+    return { usage, claude: { loggedIn: claudeCliReady(cfg), ...claudeCliChoice(cfg), limits: claudeLimits(cfg), models: CLAUDE_MODELS, efforts: CLAUDE_EFFORTS }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' },
+      'agy-cli': cliInfo('agy-cli'), 'codex-cli': { ...cliInfo('codex-cli'), efforts: cliModels.CODEX_EFFORTS } };
+  });
+  // Gemini (agy) and GPT (Codex) on the LLM tab: the model (and GPT's reasoning effort), sign-in, a check, sign-out.
+  const CLI_RE = '(agy-cli|codex-cli)';
+  route('PUT', new RegExp(`^/api/llm/cli/${CLI_RE}$`), async (req, res, [c]) => {
+    const body = await readBody(req, 1024);
+    const list = cliModels.cliModels(cfg, c);
+    if (body.model && !list.some((m) => m.id === body.model)) throw fail(400, '고를 수 없는 모델입니다.');
+    if (c === 'codex-cli' && body.effort && !cliModels.CODEX_EFFORTS.includes(body.effort)) throw fail(400, '추론 강도 값이 올바르지 않습니다.');
+    saveLlmSettings(cfg.dataDir, { [c === 'agy-cli' ? 'agy' : 'codex']: { model: body.model || '', ...(c === 'codex-cli' ? { effort: body.effort || 'high' } : {}) } });
+    return cliModels.cliChoice(cfg, c);
+  });
+  route('GET', new RegExp(`^/api/cli-login/${CLI_RE}$`), (req, res, [c]) => ({ loggedIn: cliModels.cliReady(cfg, c), ...cliModels.loginState(c) }));
+  route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/start$`), async (req, res, [c]) => {
+    if (!fs.existsSync(c === 'agy-cli' ? cfg.agyCli.bin : cfg.codexCli.bin)) throw fail(409, '서버에 이 CLI가 설치되어 있지 않습니다.');
+    return cliModels.loginStart(cfg, c, cfg.root);
+  });
+  route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/code$`), async (req, res, [c]) => cliModels.loginCode(c, String((await readBody(req, 4096)).code || '').trim()));
+  route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/cancel$`), (req, res, [c]) => { cliModels.loginCancel(c); return { ok: true }; });
+  route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/logout$`), async (req, res, [c]) => { await cliModels.logout(cfg, c); return { loggedIn: cliModels.cliReady(cfg, c) }; });
+  route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/check$`), async (req, res, [c]) => {
+    if (!cliModels.cliReady(cfg, c)) throw fail(409, `${cliModels.NAME[c]} 구독이 연결되어 있지 않습니다.`);
+    const started = Date.now();
+    try {
+      const { data } = await llm.json({ provider: c, purpose: 'solve', jobId: c + '-check', budget: new Budget({ maxCalls: 2, maxTokens: 400000 }), effort: 'off', maxTokens: 2000,
+        system: 'JSON만 출력한다.', text: '12×7의 값을 {"answer": 값} 형식으로만 답하라.' });
+      return { ok: Number(data.answer) === 84, answer: data.answer, seconds: Math.round((Date.now() - started) / 100) / 10, model: cliModels.cliChoice(cfg, c).label };
+    } catch (e) {
+      return { ok: false, error: e.message.slice(0, 300), seconds: Math.round((Date.now() - started) / 100) / 10 };
+    }
   });
   // The Claude model and effort the subscription runs (LLM tab).
   route('PUT', /^\/api\/llm\/claude$/, async (req) => {

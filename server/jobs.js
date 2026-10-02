@@ -4,6 +4,7 @@
 const { newId } = require('./store');
 const { Budget, pcModelLabel, claudeCliChoice, harnessSettings } = require('./llm');
 const pipeline = require('./pipeline');
+const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
 
 const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
@@ -28,7 +29,7 @@ function createJobs({ store, llm, config }) {
   function context(job, controller, extraSave) {
     const budget = new Budget(job.budget);
     Object.assign(budget, { calls: job.usage?.calls || 0, input: job.usage?.input || 0, output: job.usage?.output || 0, reasoning: job.usage?.reasoning || 0, total: job.usage?.total || 0 });
-    const provider = ['gemma', 'relay', 'claude', 'claude-cli'].includes(job.options?.provider) ? job.options.provider : 'deepseek';
+    const provider = ['gemma', 'relay', 'claude', 'claude-cli', 'agy-cli', 'codex-cli'].includes(job.options?.provider) ? job.options.provider : 'deepseek';
     const ctx = {
       store, job, budget, signal: controller.signal, provider,
       // Every model call in this job goes to the provider the teacher picked.
@@ -103,6 +104,7 @@ function createJobs({ store, llm, config }) {
       // The PC provider serves whichever local model is loaded, and the subscription runs the Claude model chosen on
       // the LLM tab; the job keeps that name (reports, PDFs).
       if (ctx.provider === 'claude-cli') job.modelLabel = claudeCliChoice(config).label;
+      if (cliModels.CLIS.includes(ctx.provider)) job.modelLabel = cliModels.cliChoice(config, ctx.provider).label;
       const named = ctx.provider === 'gemma' && llm.gemmaStatus
         ? llm.gemmaStatus(true).then((s) => { if (s.model) job.modelLabel = pcModelLabel(s.model).replace(' (PC)', ''); }).catch(() => {})
         : Promise.resolve();

@@ -126,12 +126,16 @@ function fixShape(data, shape) {
   return { data, moved };
 }
 
+const cli = require('./cli-models');
+
 const PROVIDERS = {
   deepseek: { label: 'DeepSeek V4 Flash' },
   gemma: { label: 'PC 모델' },
   relay: { label: 'Claude Opus 5.5 (세션 중계)' },
   claude: { label: 'Claude Opus 5.5' },
   'claude-cli': { label: 'Claude Opus 5.5 (구독)' },
+  'agy-cli': { label: 'Gemini (구독)' },
+  'codex-cli': { label: 'GPT (구독)' },
 };
 
 /** The Claude Code CLI is installed and someone has logged in to it on this machine (the file holds the login). */
@@ -517,7 +521,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : cli.CLIS.includes(provider) ? cli.cliChoice(config, provider).model || 'codex-default' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     // The teacher's persona and per-stage additions (LLM tab) go around the built-in instructions (not in mock mode).
     let messages = [{ role: 'system', content: mode === 'mock' ? system : withTeacherPrompt(config, system) }, { role: 'user', content }];
     let lastError;
@@ -534,6 +538,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
           : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal })
+          : cli.CLIS.includes(provider) ? await cli.sendCli(config, provider, { messages, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
         store.usage.put({ ...record, durationMs: Date.now() - started, outcome: 'error' });

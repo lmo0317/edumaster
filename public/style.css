@@ -705,3 +705,4 @@ a.lt-name:hover { color: var(--accent); }
 .lt-row.lt-llm { grid-template-columns: 18px minmax(0, 1fr) auto; }
 .lt-row.lt-llm .lt-more { padding-top: 10px; }
 @media (max-width: 640px) { .lt-row.lt-llm .lt-fact { grid-column: 2 / -1; grid-row: 2; } }
+.cli-code { font-size: 20px; letter-spacing: 2px; font-variant-numeric: tabular-nums; }

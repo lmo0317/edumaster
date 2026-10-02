@@ -78,7 +78,7 @@
   const PRICE = { deepseek: [0.30, 1.20], claude: [4, 20] };
   const cost = (u, provider = 'deepseek') => (PRICE[provider] ? ((u.paidInput ?? u.input ?? 0) * PRICE[provider][0] + (u.paidOutput ?? u.output ?? 0) * PRICE[provider][1]) / 1e6 : 0);
   const tokens = (u, provider) => u ? `모델 호출 ${u.calls}회 · ${Number(u.total || 0).toLocaleString()}토큰 · ${provider === 'gemma' ? '무료(PC 모델)' : provider === 'relay' ? '토큰 집계 없음(세션 중계)' : `최대 약 $${cost(u, provider).toFixed(3)}`}` : '';
-  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5', 'claude-cli': 'Claude Opus 5.5 (구독)' };
+  const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5', 'claude-cli': 'Claude Opus 5.5 (구독)', 'agy-cli': 'Gemini (구독)', 'codex-cli': 'GPT (구독)' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
   const loadStatus = async () => { statusCache = await api('GET', '/api/status'); paintModelState(statusCache); return statusCache; };
@@ -1494,6 +1494,74 @@
     }));
   }
 
+  // Signing the server's agy (Gemini) or Codex (GPT) in to the teacher's account. Gemini: open the link, sign in with
+  // Google, paste the code shown back here. GPT: open the link and type the code shown here; the server notices by itself.
+  const CLI_TXT = {
+    'agy-cli': { name: 'Gemini', account: 'Google 계정', where: 'Antigravity' },
+    'codex-cli': { name: 'GPT', account: 'ChatGPT 계정', where: 'Codex' },
+  };
+  async function cliLoginPanel(c) {
+    const el = $(`#login-${c}`);
+    if (!el) return;
+    const t = CLI_TXT[c];
+    const st = await api('GET', '/api/cli-login/' + c);
+    if (st.loggedIn) {
+      el.innerHTML = `<div class="fb-add-bar"><span class="muted small" data-r="check"></span><span class="spacer"></span>
+          <button class="small" data-a="check">연결 확인</button><button class="small danger" data-a="logout">연결 해제</button></div>`;
+      $('[data-a=check]', el).addEventListener('click', guard(async (e) => {
+        e.target.disabled = true; $('[data-r=check]', el).textContent = `${t.name}에 짧은 질문을 보내는 중…`;
+        try {
+          const r = await api('POST', `/api/cli-login/${c}/check`);
+          $('[data-r=check]', el).innerHTML = r.ok ? `<span class="chip ok">정상</span> ${esc(r.model)}이 ${r.seconds}초 만에 답했습니다.` : `<span class="chip bad">실패</span> ${esc(r.error || `답이 맞지 않음 (${r.answer})`)}`;
+        } finally { e.target.disabled = false; }
+      }));
+      $('[data-a=logout]', el).addEventListener('click', guard(async () => {
+        if (!confirm(`${t.name} 구독 연결을 해제할까요? 다시 쓰려면 로그인해야 합니다.`)) return;
+        await api('POST', `/api/cli-login/${c}/logout`);
+        toast('연결을 해제했습니다.'); await loadStatus().catch(() => {}); route();
+      }));
+      return;
+    }
+    const steps = c === 'agy-cli'
+      ? ['<b>로그인 시작</b>을 누르면 Google 로그인 링크가 나옵니다.', `링크를 열어 ${t.account}으로 로그인하고 허용하면 <b>코드</b>가 표시됩니다.`, '그 코드를 아래 칸에 붙여 넣고 <b>연결</b>을 누르세요.']
+      : ['<b>로그인 시작</b>을 누르면 링크와 <b>일회용 코드</b>가 나옵니다.', `링크를 열어 ${t.account}으로 로그인하고 그 코드를 입력하세요 (15분 안에).`, '입력을 마치면 이 화면이 저절로 연결됨으로 바뀝니다.'];
+    el.innerHTML = `<p class="muted small">서버를 선생님의 ${t.account} 구독에 한 번 연결하면 ${t.name}을 문제 분석·생성에 쓸 수 있습니다 (추가 비용 없음).</p>
+      <ol class="small">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>
+      ${st.result && !st.result.ok ? `<div class="note bad small">지난 연결 시도가 실패했습니다: ${esc(st.result.error || '이유를 알 수 없음')} — 로그인을 다시 시작해 주세요.</div>` : ''}
+      <div data-r="step"><button class="primary" data-a="start">로그인 시작</button></div>`;
+    // Waits for the sign-in to finish (GPT: after the code is entered on OpenAI's page; Gemini: after the code is pasted).
+    const wait = async (btn) => {
+      for (let i = 0; i < 360; i++) {
+        await new Promise((r) => setTimeout(r, 2500));
+        if (!$(`#login-${c}`)) return;
+        const now = await api('GET', '/api/cli-login/' + c);
+        if (now.loggedIn) { toast(`${t.name} 구독에 연결했습니다.`); await loadStatus().catch(() => {}); route(); return; }
+        if (!now.pending && now.result && !now.result.ok) { toast('연결되지 않았습니다: ' + (now.result.error || ''), true); cliLoginPanel(c); return; }
+        if (btn?.isConnected && now.checking) btn.textContent = '확인하는 중… (최대 1~2분)';
+      }
+    };
+    const show = (login) => {
+      if (login.url === '-') { wait(); return; } // already signed in on the server: being checked
+      $('[data-r=step]', el).innerHTML = `<p><a class="button primary" href="${esc(login.url)}" target="_blank" rel="noopener">로그인 링크 열기</a></p>
+        ${c === 'codex-cli' ? `<p>입력할 코드: <b class="cli-code">${esc(login.code)}</b></p><p class="muted small"><i class="spin"></i>코드를 입력하고 로그인을 마치면 저절로 연결됩니다.</p>`
+          : `<label for="code-${c}">로그인 후 표시된 코드</label><input type="text" id="code-${c}" autocomplete="off" spellcheck="false" placeholder="코드를 붙여 넣으세요">`}
+        <div class="fb-add-bar"><button data-a="cancel">취소</button><span class="spacer"></span>${c === 'agy-cli' ? '<button class="primary" data-a="send">연결</button>' : ''}</div>`;
+      $('[data-a=cancel]', el).addEventListener('click', guard(async () => { await api('POST', `/api/cli-login/${c}/cancel`); cliLoginPanel(c); }));
+      $('[data-a=send]', el)?.addEventListener('click', guard(async (e) => {
+        e.target.disabled = true; e.target.textContent = '확인하는 중… (최대 1~2분)';
+        await api('POST', `/api/cli-login/${c}/code`, { code: $(`#code-${c}`).value });
+        await wait(e.target);
+      }));
+      if (c === 'codex-cli') wait();
+    };
+    if (st.pending && st.url) show(st);
+    $('[data-a=start]', el)?.addEventListener('click', guard(async (e) => {
+      e.target.disabled = true; e.target.textContent = '링크를 만드는 중…';
+      try { show(await api('POST', `/api/cli-login/${c}/start`)); }
+      finally { if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = '로그인 시작'; } }
+    }));
+  }
+
   // ------------------------------------------------------------------ LLM
   // One column, three sections, one pattern: every model and every instruction is a row with its state on one line,
   // and 관리/편집 opens that row in place. The balance and limits are fetched when the page opens and on 새로 고침.
@@ -1545,6 +1613,22 @@
             ${c.loggedIn ? `<p class="lt-note">구독으로 실행되어 호출당 비용이 없습니다. ${lim ? `한도는 ${fmtTime(lim.at)} 기준이고, 5시간 한도는 ${lim.fiveHour?.resetsAt ? fmtTime(lim.fiveHour.resetsAt) : '-'}, 1주일 한도는 ${lim.sevenDay?.resetsAt ? fmtTime(lim.sevenDay.resetsAt) : '-'}에 다시 채워집니다.` : '한도는 새로 고침을 누르면 가져옵니다.'}</p>` : ''}
             <div id="claude-login"></div>`,
         }),
+        ...['agy-cli', 'codex-cli'].map((k) => {
+          const x = llm[k] || {};
+          const t = CLI_TXT[k];
+          const modelOpts = k === 'codex-cli' ? [['', 'Codex 기본 모델'], ...(x.models || []).map((m) => [m.id, m.label])] : (x.models || []).map((m) => [m.id, m.label]);
+          return row(k, {
+            name: x.loggedIn && x.label ? x.label : `${t.name} (구독)`, ok: x.loggedIn,
+            state: !x.installed ? '서버에 설치되어 있지 않음' : x.loggedIn ? `연결됨 · ${month(llm.usage[k])}` : '연결 안 됨',
+            fact: '<span class="lt-money">구독</span>',
+            more: `${x.loggedIn ? `<div class="lt-fields">
+                <div><label for="m-${k}">모델</label><select id="m-${k}" data-cli="${k}">${modelOpts.length ? modelOpts.map(([id, n]) => `<option value="${esc(id)}" ${id === (x.model || '') ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">목록을 불러오는 중 (새로 고침)</option>'}</select></div>
+                ${k === 'codex-cli' ? `<div><label for="e-${k}">추론 강도</label><select id="e-${k}" data-cli="${k}">${(x.efforts || []).map((e) => `<option value="${e}" ${e === x.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></div>` : ''}
+              </div>` : ''}
+              <p class="lt-note">서버의 ${t.where} CLI가 선생님의 ${t.account} 구독으로 실행되어 호출당 비용이 없습니다. 구독의 사용 한도가 적용되고, Claude보다 느릴 수 있습니다.</p>
+              ${x.installed ? `<div id="login-${k}"></div>` : ''}`,
+          });
+        }),
         row('deepseek', {
           name: p.deepseek?.label || 'DeepSeek', ok: p.deepseek?.available,
           state: p.deepseek?.available ? `사용 가능 · ${month(llm.usage.deepseek)}` : 'API 키 없음',
@@ -1584,6 +1668,14 @@
         finally { if (e.target.isConnected) e.target.disabled = false; }
       }));
       claudeLoginPanel().catch(() => {});
+      $$('select[data-cli]').forEach((sel) => sel.addEventListener('change', guard(async () => {
+        const k = sel.dataset.cli;
+        await api('PUT', '/api/llm/cli/' + k, { model: $('#m-' + k).value, effort: $('#e-' + k)?.value });
+        await loadStatus().catch(() => {});
+        toast(`${CLI_TXT[k].name} 설정을 바꿨습니다. 다음 호출부터 적용됩니다.`);
+        await paintModels(false);
+      })));
+      for (const k of ['agy-cli', 'codex-cli']) cliLoginPanel(k).catch(() => {});
     };
 
     $('#llm-refresh').addEventListener('click', guard(async (e) => { e.target.disabled = true; e.target.textContent = '가져오는 중…'; try { await paintModels(true); } finally { e.target.disabled = false; e.target.textContent = '새로 고침'; } }));

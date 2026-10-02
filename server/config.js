@@ -49,6 +49,18 @@ module.exports = {
     timeoutMs: int('EDUMASTER_CLAUDE_CLI_TIMEOUT_MS', 1800000),
     off: env.EDUMASTER_CLAUDE_CLI === 'off',
   },
+  // Gemini through the Antigravity CLI and GPT through the Codex CLI on this server (server/cli-models.js), on the
+  // subscriptions the teacher signs in to from the LLM tab. Both are per-user installs in ~/.local/bin.
+  agyCli: {
+    bin: env.EDUMASTER_AGY_CLI || path.join(os.homedir(), '.local', 'bin', 'agy'),
+    timeoutMs: int('EDUMASTER_AGY_CLI_TIMEOUT_MS', 1800000),
+    off: env.EDUMASTER_AGY_CLI === 'off',
+  },
+  codexCli: {
+    bin: env.EDUMASTER_CODEX_CLI || path.join(os.homedir(), '.local', 'bin', 'codex'),
+    timeoutMs: int('EDUMASTER_CODEX_CLI_TIMEOUT_MS', 1800000),
+    off: env.EDUMASTER_CODEX_CLI === 'off',
+  },
   // Claude over the Anthropic API (key in data/anthropic-api-key.txt, never in the repo).
   claude: {
     baseUrl: env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
