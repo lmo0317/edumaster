@@ -641,7 +641,7 @@
     // Deleting the problem takes everything of it: says exactly what goes and what stays.
     $('#del').addEventListener('click', guard(async () => {
       const sets = setsOf(m).length;
-      if (!confirm(`원본 문제 「${m.title}」를 삭제할까요?\n\n함께 지워집니다: 분석 결과${sets ? `, 만든 세트 ${sets}개` : ''}, 이 문제의 분석·생성 학습\n남습니다: 공통 학습, 지침\n\n되돌릴 수 없습니다.`)) return;
+      if (!confirm(`이 원본 문제를 삭제할까요?\n「${m.title}」\n\n함께 지워집니다: 분석 결과${sets ? `, 만든 세트 ${sets}개` : ''}, 이 문제의 분석·생성 학습\n남습니다: 공통 학습, 지침\n\n되돌릴 수 없습니다.`)) return;
       await api('DELETE', '/api/materials/' + m.id);
       toast('원본 문제를 삭제했습니다.');
       location.hash = '#/';
@@ -703,6 +703,15 @@
   // review got, and its problems in staircase order, each one line that opens it. A set made before later feedback
   // says how much of it is missing.
   const SET_ITEM = { adopted: ['채택', 'ok'], needs_review: ['검토 필요', 'bad'], warning: ['확인할 점', 'warn'], passed: ['통과', ''], failed: ['못 만듦', 'bad'], generating: ['만드는 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['고치는 중', 'run'], pending: ['대기', ''] };
+  // 을/를 after a set number, read as Sino-Korean (1 일을, 2 이를, 3 삼을 …).
+  const eulReul = (n) => ('013678'.includes(String(n).slice(-1)) ? '을' : '를');
+  async function deleteSet(no, items, id) {
+    const adopted = items.filter((it) => it.adopted).length;
+    if (!confirm(`세트 ${no}${eulReul(no)} 삭제할까요?\n\n함께 지워집니다: 이 세트의 문제 ${items.length}개${adopted ? ` (채택한 ${adopted}개와 그 본보기 포함)` : ''}\n남습니다: 원본 문제와 분석, 다른 세트, 고칠 점으로 남긴 생성 학습\n\n되돌릴 수 없습니다.`)) return false;
+    await api('DELETE', '/api/jobs/' + id);
+    toast(`세트 ${no}${eulReul(no)} 삭제했습니다.`);
+    return true;
+  }
   function variantsPanel(m, gens, on, learning) {
     const el = $('#variants');
     if (!el) return;
@@ -734,6 +743,7 @@
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
           <div class="set-tally">${tally}</div>
+          ${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
@@ -749,6 +759,13 @@
     const cards = gens.map(card);
     el.innerHTML = `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
+    $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
+      const j = gens.find((x) => x.id === b.dataset.delSet);
+      if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
+      m.jobs = (m.jobs || []).filter((x) => x.id !== j.id);
+      paintFlow(m);
+      await liveMaterial?.side();
+    })));
   }
 
   function showAnalysis(m) {
@@ -993,7 +1010,7 @@
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 수치 변형' : ''}</h1>
-        <a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a></div>
+        <div class="name-btns"><a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>
@@ -1008,14 +1025,16 @@
         ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('')}</ul>` : ''}
         <p class="small"><b>진행 기록</b></p>
         <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>
-        ${busy ? '' : '<p><button id="delete" class="small danger">세트 삭제</button></p>'}
       </div></details>
     </div>`;
   }
   function bindHead(job) {
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
     $('#resume')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/resume`); toast('이어서 진행합니다.'); route(); }));
-    $('#delete')?.addEventListener('click', guard(async () => { if (confirm('이 세트를 삭제할까요?')) { await api('DELETE', '/api/jobs/' + job.id); location.hash = '#/m/' + job.materialId; } }));
+    $('#delete')?.addEventListener('click', guard(async () => {
+      const no = /세트 (\d+)/.exec($('.jt-head h1')?.textContent || '')?.[1] || '';
+      if (await deleteSet(no, job.items || [], job.id)) location.hash = '#/m/' + job.materialId;
+    }));
     $$('[data-jump]').forEach((b) => b.addEventListener('click', () => $(`#item-${b.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
   }
 

@@ -650,3 +650,5 @@ a.lt-name:hover { color: var(--accent); }
 .name-btns { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
 .name-btns .danger { border-color: transparent; background: none; }
 .name-btns .danger:hover { background: var(--bad-soft); }
+.set-del { border-color: transparent; background: none; color: var(--muted); }
+.set-del:hover { color: var(--bad); background: var(--bad-soft); }
