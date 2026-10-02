@@ -1023,7 +1023,7 @@
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
       ${regenerating.length ? `<div class="note info"><i class="spin"></i> 문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.</div>` : ''}
       ${busy ? '' : setReport(job)}
-      ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 학습지에 들어가고, 이 문제로 다음 세트를 만들 때 같은 단계의 본보기가 됩니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
+      ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 이 원본으로 다음 세트를 만들 때 같은 단계 문제의 본보기(좋은 예시)로 AI에게 보여 줍니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
         <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
@@ -1216,7 +1216,7 @@
       e.target.textContent = r.adopted ? '✓ 채택됨' : '👍 채택';
       const state = $('.head .chip', card);
       if (state && !item.status.match(/ing$/)) state.outerHTML = r.adopted ? '<span class="chip ok">채택됨</span>' : chip(ITEM_STATUS, item.status);
-      toast(r.adopted ? '채택했습니다. 학습지에 들어가고, 다음 세트의 본보기가 됩니다.' : '채택을 취소했습니다.');
+      toast(r.adopted ? '채택했습니다. 다음 세트에서 같은 단계 문제의 본보기가 됩니다.' : '채택을 취소했습니다.');
     }));
     $('[data-rv="fix"]', card)?.addEventListener('click', () => { if (panel) panel.open = !panel.open; });
     $('[data-rv="regen"]', card)?.addEventListener('click', guard(async (e) => {
