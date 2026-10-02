@@ -1053,9 +1053,12 @@
       const name = k === 'sevenDay' ? '1주일' : '5시간';
       // The window refilled while the set ran: only the part after the refill is known.
       if (b.resetsAt && e.resetsAt && Math.abs(new Date(e.resetsAt) - new Date(b.resetsAt)) > 15 * 60000) return `${name} 한도는 중간에 다시 채워져 ${(e.used * 100).toFixed(1)}%p 이상`;
-      return `${name} 한도 <b>${Math.max(0, (e.used - b.used) * 100).toFixed(1)}%p</b> (${(b.used * 100).toFixed(1)}% → ${(e.used * 100).toFixed(1)}% 사용)`;
+      // Claude reports whole percents: no change means under one.
+      const d = Math.max(0, (e.used - b.used) * 100);
+      return `${name} 한도 <b>${d < 0.05 ? '1%p 미만' : `${d.toFixed(1)}%p`}</b> (${(b.used * 100).toFixed(1)}% → ${(e.used * 100).toFixed(1)}% 사용)`;
     };
-    const quotaLine = q?.after ? [usedOf('sevenDay'), usedOf('fiveHour')].filter(Boolean).join(' · ') : '';
+    const tokenCount = (n) => (n >= 1e4 ? `${Math.round(n / 1e3) / 10}만` : (n || 0).toLocaleString());
+    const quotaLine = q?.after ? [usedOf('sevenDay'), usedOf('fiveHour'), job.usage?.calls && `호출 ${job.usage.calls}번 · 토큰 ${tokenCount(job.usage.total)}`].filter(Boolean).join(' · ') : '';
     return `<section class="jt-report">
       <h2>세트 리포트</h2>
       <p><b>${done.length === job.items.length ? `${done.length}문제 모두 완성` : `${job.items.length}문제 중 ${done.length}문제 완성`}</b>${first.length ? ` · 첫 설계로 통과 ${first.length}` : ''}${left.length ? ` · 남은 점이 있는 문제 ${left.length}` : ''}${unsure.length ? ` · <span class="bad">정답 확인 필요 ${unsure.length}</span>` : ''}</p>
