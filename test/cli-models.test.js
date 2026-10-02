@@ -66,3 +66,14 @@ test('codex gets the request on stdin and the image attached, with the picked mo
   assert.equal(r.usage.total_tokens, 315);
   assert.equal(cli.cliChoice(config, 'codex-cli').label, 'GPT-X (구독)');
 });
+
+test('Gemini\'s remaining limits come from agy\'s /usage screen, kept like Claude\'s (used share and reset time)', async () => {
+  const fake = path.join(dir, 'fake-quota.js');
+  fs.writeFileSync(fake, 'console.log(JSON.stringify({ ok: true, fiveHour: { left: 93.29, resetsInMin: 152 }, sevenDay: { left: 38.38, resetsInMin: 1275 } }));');
+  const before = Date.now();
+  const limits = await cli.refreshAgyLimits({ ...config, agyCli: { ...config.agyCli, python: process.execPath, quotaScript: fake } });
+  assert.ok(Math.abs(limits.fiveHour.used - 0.0671) < 1e-6 && Math.abs(limits.sevenDay.used - 0.6162) < 1e-6);
+  const resets = new Date(limits.fiveHour.resetsAt).getTime() - before;
+  assert.ok(resets >= 152 * 60000 - 1000 && resets <= 152 * 60000 + 5000);
+  assert.deepEqual(cli.agyLimits(config), limits, 'kept for the LLM tab');
+});

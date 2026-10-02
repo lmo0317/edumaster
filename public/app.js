@@ -1589,7 +1589,7 @@
 
     const paintModels = async (fresh) => {
       // 새로 고침 asks Claude once (a tiny question) so the remaining share is current, not as of the last generation.
-      if (fresh) await api('POST', '/api/claude-login/check').catch(() => null);
+      if (fresh) await Promise.all([api('POST', '/api/claude-login/check').catch(() => null), api('POST', '/api/cli-login/agy-cli/limits').catch(() => null)]);
       const [status, llm] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/llm')]);
       const p = status.providers || {};
       const def = status.defaultProvider || 'deepseek';
@@ -1623,12 +1623,12 @@
           return row(k, {
             name: x.loggedIn && x.label ? x.label : `${t.name} (구독)`, ok: x.loggedIn,
             state: !x.installed ? '서버에 설치되어 있지 않음' : x.loggedIn ? `연결됨 · ${month(llm.usage[k])}` : '연결 안 됨',
-            fact: x.loggedIn ? used(llm.usage[k]) : '<span class="lt-money">구독</span>',
+            fact: !x.loggedIn ? '<span class="lt-money">구독</span>' : x.limits ? `${meter('5시간', x.limits.fiveHour)}${meter('1주일', x.limits.sevenDay)}` : used(llm.usage[k]),
             more: `${x.loggedIn ? `<div class="lt-fields">
                 <div><label for="m-${k}">모델</label><select id="m-${k}" data-cli="${k}">${modelOpts.length ? modelOpts.map(([id, n]) => `<option value="${esc(id)}" ${id === (x.model || '') ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">목록을 불러오는 중 (새로 고침)</option>'}</select></div>
                 ${k === 'codex-cli' ? `<div><label for="e-${k}">추론 강도</label><select id="e-${k}" data-cli="${k}">${(x.efforts || []).map((e) => `<option value="${e}" ${e === x.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></div>` : ''}
               </div>` : ''}
-              <p class="lt-note">서버의 ${t.where} CLI가 선생님의 ${t.account} 구독으로 실행되어 호출당 비용이 없습니다. 구독의 사용 한도가 적용되고, Claude보다 느릴 수 있습니다. ${t.name}은 남은 한도를 알려 주지 않아, 이 서버에서 쓴 토큰만 보여 줍니다.</p>
+              <p class="lt-note">서버의 ${t.where} CLI가 선생님의 ${t.account} 구독으로 실행되어 호출당 비용이 없습니다. 구독의 사용 한도가 적용되고, Claude보다 느릴 수 있습니다. ${x.limits ? `한도는 ${fmtTime(x.limits.at)} 기준이고, 5시간 한도는 ${x.limits.fiveHour?.resetsAt ? fmtTime(x.limits.fiveHour.resetsAt) : '-'}, 1주일 한도는 ${x.limits.sevenDay?.resetsAt ? fmtTime(x.limits.sevenDay.resetsAt) : '-'}에 다시 채워집니다. 이 서버에서 오늘 ${tok((llm.usage[k]?.today?.input || 0) + (llm.usage[k]?.today?.output || 0))} 토큰을 썼습니다.` : `${t.name}은 남은 한도를 알려 주지 않아, 이 서버에서 쓴 토큰만 보여 줍니다.`}</p>
               ${x.installed ? `<div id="login-${k}"></div>` : ''}`,
           });
         }),

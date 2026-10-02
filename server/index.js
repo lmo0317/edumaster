@@ -212,7 +212,7 @@ function createApp(options = {}) {
     }
     const cliInfo = (c) => ({ installed: fs.existsSync(c === 'agy-cli' ? cfg.agyCli.bin : cfg.codexCli.bin), loggedIn: cliModels.cliReady(cfg, c), ...cliModels.cliChoice(cfg, c), models: cliModels.cliModels(cfg, c), login: cliModels.loginState(c) });
     return { usage, claude: { loggedIn: claudeCliReady(cfg), ...claudeCliChoice(cfg), limits: claudeLimits(cfg), models: CLAUDE_MODELS, efforts: CLAUDE_EFFORTS }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' },
-      'agy-cli': cliInfo('agy-cli'), 'codex-cli': { ...cliInfo('codex-cli'), efforts: cliModels.CODEX_EFFORTS } };
+      'agy-cli': { ...cliInfo('agy-cli'), limits: cliModels.cliReady(cfg, 'agy-cli') ? cliModels.agyLimitsFresh(cfg) : null }, 'codex-cli': { ...cliInfo('codex-cli'), efforts: cliModels.CODEX_EFFORTS } };
   });
   // Gemini (agy) and GPT (Codex) on the LLM tab: the model (and GPT's reasoning effort), sign-in, a check, sign-out.
   const CLI_RE = '(agy-cli|codex-cli)';
@@ -230,6 +230,8 @@ function createApp(options = {}) {
     return cliModels.loginStart(cfg, c, cfg.root);
   });
   route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/code$`), async (req, res, [c]) => cliModels.loginCode(c, String((await readBody(req, 4096)).code || '').trim()));
+  // 새로 고침 on the LLM tab: Gemini's remaining limits read now.
+  route('POST', /^\/api\/cli-login\/agy-cli\/limits$/, async () => ({ limits: await cliModels.refreshAgyLimits(cfg) }));
   route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/cancel$`), (req, res, [c]) => { cliModels.loginCancel(c); return { ok: true }; });
   route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/logout$`), async (req, res, [c]) => { await cliModels.logout(cfg, c); return { loggedIn: cliModels.cliReady(cfg, c) }; });
   route('POST', new RegExp(`^/api/cli-login/${CLI_RE}/check$`), async (req, res, [c]) => {

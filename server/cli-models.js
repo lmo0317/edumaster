@@ -125,6 +125,8 @@ async function sendCli(config, cli, { messages, effort, signal }) {
       try { result = JSON.parse(stdout.trim().split('\n').filter((l) => l.startsWith('{')).pop() || ''); } catch { result = null; }
       if (!result) throw fail(`실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`);
       if (result.status !== 'SUCCESS') throw fail(`오류: ${String(result.error || result.response || result.status).slice(0, 300)}`);
+      const last = agyLimits(config);
+      if (!last || Date.now() - new Date(last.at).getTime() > 120000) refreshAgyLimits(config).catch(() => {});
       const u = result.usage || {};
       const input = (u.input_tokens || 0) + (u.cache_read_tokens || 0);
       const output = (u.output_tokens || 0);
@@ -154,6 +156,38 @@ async function sendCli(config, cli, { messages, effort, signal }) {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// ---------------------------------------------------------------- Gemini's remaining limits
+// agy shows them only on its interactive /usage screen; deploy/agy-quota.py reads it (about 5 seconds, no model call).
+// Kept in data/agy-limits.json in the shape Claude's limits have: { at, fiveHour: { used, resetsAt }, sevenDay }.
+const limitsFile = (config) => path.join(config.dataDir || '.', 'agy-limits.json');
+function agyLimits(config) {
+  try { return JSON.parse(fs.readFileSync(limitsFile(config), 'utf8')); } catch { return null; }
+}
+let limitsRun = null;
+function refreshAgyLimits(config) {
+  if (limitsRun) return limitsRun;
+  const c = config.agyCli;
+  if (!c?.python || !fs.existsSync(c.python) || !cliReady(config, 'agy-cli')) return Promise.resolve(agyLimits(config));
+  const script = c.quotaScript || path.join(config.root || path.join(__dirname, '..'), 'deploy', 'agy-quota.py');
+  limitsRun = run({ bin: c.python }, [script], { cwd: os.tmpdir(), timeoutMs: 90000, env: { AGY_BIN: c.bin } }).then(({ stdout }) => {
+    let r = null;
+    try { r = JSON.parse(stdout.trim().split('\n').pop()); } catch { /* not JSON */ }
+    if (!r?.ok) return agyLimits(config);
+    const now = Date.now();
+    const win = (w) => (w ? { used: Math.max(0, Math.min(1, 1 - w.left / 100)), resetsAt: w.resetsInMin ? new Date(now + w.resetsInMin * 60000).toISOString() : '' } : null);
+    const data = { at: new Date(now).toISOString(), fiveHour: win(r.fiveHour), sevenDay: win(r.sevenDay) };
+    try { fs.writeFileSync(limitsFile(config), JSON.stringify(data)); } catch { /* display only */ }
+    return data;
+  }).catch(() => agyLimits(config)).finally(() => { limitsRun = null; });
+  return limitsRun;
+}
+/** The limits for the LLM tab; read again in the background when older than ten minutes. */
+function agyLimitsFresh(config) {
+  const l = agyLimits(config);
+  if (!l || Date.now() - new Date(l.at).getTime() > 600000) refreshAgyLimits(config).catch(() => {});
+  return l;
 }
 
 // ---------------------------------------------------------------- sign-in from the LLM tab
@@ -225,4 +259,4 @@ async function logout(config, cli) {
   else fs.rmSync(agyMarker(config), { force: true });
 }
 
-module.exports = { CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };
+module.exports = { agyLimits, agyLimitsFresh, refreshAgyLimits, CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };

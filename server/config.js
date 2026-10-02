@@ -55,6 +55,8 @@ module.exports = {
     bin: env.EDUMASTER_AGY_CLI || path.join(os.homedir(), '.local', 'bin', 'agy'),
     timeoutMs: int('EDUMASTER_AGY_CLI_TIMEOUT_MS', 1800000),
     off: env.EDUMASTER_AGY_CLI === 'off',
+    // The python with pyte that reads the remaining limits from agy's /usage screen (deploy/agy-quota.py).
+    python: env.EDUMASTER_AGY_PYTHON || path.join(os.homedir(), '.local', 'share', 'edumaster-py', 'bin', 'python'),
   },
   codexCli: {
     bin: env.EDUMASTER_CODEX_CLI || path.join(os.homedir(), '.local', 'bin', 'codex'),
