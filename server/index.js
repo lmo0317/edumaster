@@ -212,7 +212,7 @@ function createApp(options = {}) {
     }
     const cliInfo = (c) => ({ installed: fs.existsSync(c === 'agy-cli' ? cfg.agyCli.bin : cfg.codexCli.bin), loggedIn: cliModels.cliReady(cfg, c), ...cliModels.cliChoice(cfg, c), models: cliModels.cliModels(cfg, c), login: cliModels.loginState(c) });
     return { usage, claude: { loggedIn: claudeCliReady(cfg), ...claudeCliChoice(cfg), limits: claudeLimits(cfg), models: CLAUDE_MODELS, efforts: CLAUDE_EFFORTS }, deepseek: { key: apiKey ? '…' + apiKey.slice(-4) : '' },
-      'agy-cli': { ...cliInfo('agy-cli'), limits: cliModels.cliReady(cfg, 'agy-cli') ? cliModels.agyLimitsFresh(cfg) : null }, 'codex-cli': { ...cliInfo('codex-cli'), efforts: cliModels.CODEX_EFFORTS } };
+      'agy-cli': { ...cliInfo('agy-cli'), limits: cliModels.cliReady(cfg, 'agy-cli') ? cliModels.agyLimitsFresh(cfg) : null }, 'codex-cli': { ...cliInfo('codex-cli'), efforts: cliModels.CODEX_EFFORTS, limits: cliModels.cliReady(cfg, 'codex-cli') ? cliModels.codexLimits(cfg) : null } };
   });
   // Gemini (agy) and GPT (Codex) on the LLM tab: the model (and GPT's reasoning effort), sign-in, a check, sign-out.
   const CLI_RE = '(agy-cli|codex-cli)';

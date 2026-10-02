@@ -27,7 +27,13 @@ if (args[0] === 'debug') { console.log(JSON.stringify({ models: [{ slug: 'gpt-x'
 let input = '';
 process.stdin.on('data', (d) => { input += d; }).on('end', () => {
   const answer = { stdin: input.startsWith('JSON만'), images: args.filter((a) => a === '-i').length, effort: args[args.indexOf('-c') + 1], model: args.includes('-m') ? args[args.indexOf('-m') + 1] : '' };
-  console.log(JSON.stringify({ type: 'thread.started' }));
+  // Like Codex: the session file, with the subscription's limits in a token_count event.
+  const d = new Date(); const day = [String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')];
+  const sessions = require('path').join(process.env.CODEX_HOME, 'sessions', ...day);
+  require('fs').mkdirSync(sessions, { recursive: true });
+  require('fs').writeFileSync(require('path').join(sessions, 'rollout-x-thread-1.jsonl'), [JSON.stringify({ type: 'session_meta', payload: {} }),
+    JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', rate_limits: { primary: { used_percent: 65, window_minutes: 300, resets_at: 1790942108 }, secondary: { used_percent: 98, window_minutes: 10080, resets_at: 1791072076 }, plan_type: 'plus' } } })].join('\\n'));
+  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }));
   console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify(answer) } }));
   console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 300, cached_input_tokens: 100, output_tokens: 10, reasoning_output_tokens: 5 } }));
 });
@@ -73,6 +79,12 @@ test('codex gets the request on stdin and the image attached, with the picked mo
   assert.deepEqual(JSON.parse(r.choices[0].message.content), { stdin: true, images: 1, effort: 'model_reasoning_effort="low"', model: 'gpt-x' });
   assert.equal(r.usage.total_tokens, 315);
   assert.equal(cli.cliChoice(config, 'codex-cli').label, 'GPT-X (구독)');
+  // The limits from the session file, in Claude's shape; the file (it holds the request) is deleted.
+  const l = cli.codexLimits(config);
+  assert.deepEqual([l.plan, l.fiveHour, l.sevenDay], ['plus', { used: 0.65, resetsAt: new Date(1790942108000).toISOString() }, { used: 0.98, resetsAt: new Date(1791072076000).toISOString() }]);
+  const d = new Date();
+  const sessions = path.join(process.env.CODEX_HOME, 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  assert.deepEqual(fs.readdirSync(sessions), []);
 });
 
 test('Gemini\'s remaining limits come from agy\'s /usage screen, kept like Claude\'s (used share and reset time)', async () => {

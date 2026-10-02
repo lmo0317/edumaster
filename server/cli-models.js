@@ -160,7 +160,8 @@ async function sendCli(config, cli, { messages, effort, signal }) {
       };
     }
     const level = choice.effort || (effort === 'high' ? 'high' : 'medium');
-    const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '-C', dir,
+    // Not --ephemeral: the session file is where Codex records the subscription's limits (read and deleted below).
+    const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', dir,
       ...(choice.model ? ['-m', choice.model] : []), '-c', `model_reasoning_effort="${level}"`,
       ...images.flatMap((f) => ['-i', path.join(dir, f)]), '-'];
     const request = `${messages[0].content}\n\n---\n\n${images.length ? '첨부한 이미지는 [이미지: 파일] 자리에 순서대로 놓인 것이다.\n\n' : ''}${text}\n\n도구나 명령을 쓰지 않고 답만 출력한다.`;
@@ -170,6 +171,8 @@ async function sendCli(config, cli, { messages, effort, signal }) {
     const failed = events.find((e) => e.type === 'turn.failed' || e.type === 'error');
     const answer = events.filter((e) => e.type === 'item.completed' && e.item?.type === 'agent_message').pop()?.item?.text;
     if (!answer) throw fail(failed ? `오류: ${String(failed.error?.message || failed.message || '').slice(0, 300)}` : `실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(-300)}`);
+    const thread = events.find((e) => e.type === 'thread.started')?.thread_id;
+    if (thread) readCodexSession(config, thread);
     const u = events.filter((e) => e.type === 'turn.completed').pop()?.usage || {};
     const input = u.input_tokens || 0;
     const output = (u.output_tokens || 0) + (u.reasoning_output_tokens || 0);
@@ -179,6 +182,43 @@ async function sendCli(config, cli, { messages, effort, signal }) {
     };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------- GPT's remaining limits
+// Codex records them in the run's session file (~/.codex/sessions/YYYY/MM/DD/rollout-…-<thread>.jsonl) as
+// rate_limits: primary (the 5-hour window, 300 minutes) and secondary (the week, 10080). Kept in data/codex-limits.json
+// in Claude's shape; the session file holds the request, so it is deleted once read.
+const codexLimitsFile = (config) => path.join(config.dataDir || '.', 'codex-limits.json');
+function codexLimits(config) {
+  try { return JSON.parse(fs.readFileSync(codexLimitsFile(config), 'utf8')); } catch { return null; }
+}
+function findSession(root, thread) {
+  const days = [0, 1].map((back) => { const d = new Date(Date.now() - back * 86400000); return [String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')]; });
+  for (const parts of days) {
+    const dirPath = path.join(root, 'sessions', ...parts);
+    let files = [];
+    try { files = fs.readdirSync(dirPath); } catch { continue; }
+    const hit = files.find((f) => f.includes(thread) && f.endsWith('.jsonl'));
+    if (hit) return path.join(dirPath, hit);
+  }
+  return '';
+}
+function readCodexSession(config, thread) {
+  const file = findSession(codexHome(), thread);
+  if (!file) return;
+  try {
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    const r = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((e) => e?.payload?.rate_limits).pop()?.payload.rate_limits;
+    if (r) {
+      const win = (w) => (w ? { used: Math.max(0, Math.min(1, (Number(w.used_percent) || 0) / 100)), resetsAt: w.resets_at ? new Date(w.resets_at * 1000).toISOString() : '' } : null);
+      const all = [r.primary, r.secondary].filter(Boolean);
+      const five = all.find((w) => w.window_minutes <= 300) || r.primary;
+      const week = all.find((w) => w.window_minutes >= 10080) || r.secondary;
+      fs.writeFileSync(codexLimitsFile(config), JSON.stringify({ at: new Date().toISOString(), plan: r.plan_type || '', fiveHour: win(five), sevenDay: win(week) }));
+    }
+  } catch { /* display only */ } finally {
+    fs.rmSync(file, { force: true });
   }
 }
 
@@ -284,4 +324,4 @@ async function logout(config, cli) {
   else fs.rmSync(agyMarker(config), { force: true });
 }
 
-module.exports = { ensureAgySettings, agyLimits, agyLimitsFresh, refreshAgyLimits, CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };
+module.exports = { codexLimits, ensureAgySettings, agyLimits, agyLimitsFresh, refreshAgyLimits, CLIS, NAME, CODEX_EFFORTS, cliReady, cliModels, cliChoice, refreshModels, sendCli, loginState, loginStart, loginCode, loginCancel, logout };
