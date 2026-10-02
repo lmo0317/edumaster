@@ -134,6 +134,8 @@ test('the solution reviewer compares only the STEPs of the problem\'s range', ()
     material: { steps: [{ title: 'S1', work: 'w1' }, { title: 'S2', work: 'w2' }, { title: 'S3', work: 'w3' }] }, rules: [] });
   assert.match(text, /STEP 3은 이 문제에 필요 없고/);
   assert.ok(text.includes('STEP 2. S2') && !text.includes('STEP 3. S3'));
+  const withChoices = prompts.solutionReviewText({ item: { stage: { kind: 'twin' }, problem: { text: 'Q', choices: ['1', '2', '3'], answer: 2 }, solution: { steps: [] } }, material: { steps: [{ title: 'S1', work: 'w1' }] }, rules: [] });
+  assert.ok(withChoices.includes('① 1  ② 2  ③ 3\n정답: ②'), 'the reviewer sees the choices and the answer');
 });
 
 // 2026-10-02 (Opus): a STEP 1~2 practice whose solution wrote the final calculation as "STEP 3 선택지 분석"; the title

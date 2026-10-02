@@ -374,6 +374,8 @@ function solutionReviewText({ item, material, rules }) {
     material.steps.map((s, i) => ({ s, n: i + 1 })).filter(({ n }) => scope.steps.includes(n)).map(({ s, n }) => `STEP ${n}. ${s.title}\n${s.work}`).join('\n\n'),
     '\n[변형 문제]',
     item.problem.text,
+    // Without the choices the reviewer once called "정답은 ②" in the solution a fault ("선택지가 없는데 ②를 쓴다").
+    item.problem.choices?.length ? item.problem.choices.map((c, i) => `${'①②③④⑤⑥⑦⑧⑨'[i] || i + 1} ${c}`).join('  ') + `\n정답: ${'①②③④⑤⑥⑦⑧⑨'[item.problem.answer - 1] || item.problem.answer}` : '(서술형)',
     '\n[변형 문제의 해설]',
     (item.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
     solutionRules.length ? '\n[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 해설 지침] 없음. rules는 빈 배열.',
