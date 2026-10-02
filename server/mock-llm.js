@@ -134,6 +134,11 @@ function mock(messages) {
     const steps = [...outline.matchAll(/^STEP (\d+)\. ([^\n]*)\n([\s\S]*?)(?=\n\nSTEP \d+\.|\n요약:|$)/gm)].map((m) => ({ step: Number(m[1]), title: m[2], work: m[3].trim() }));
     data = { solution: { steps, summary: '모의 해설' } };
   } else if (system === prompts.ADJUDICATE_SYSTEM) data = { problemAtFault: false, reason: '모의 판정: 검토자 계산 실수' };
+  // One item per set that had faults, about the first one (a real model generalizes them).
+  else if (system === prompts.LEARN_SYSTEM) {
+    const first = /\n- \(([^)]*)\) (.+)/.exec(text.split('[이번 세트에서 나온 실수]')[1] || '');
+    data = { items: first ? [{ text: `모의 학습: ${first[2].slice(0, 60)} 같은 실수를 처음부터 피한다.`, scope: 'problem', target: 'problem', why: first[2].slice(0, 80) }] : [] };
+  }
   else data = generated(text);
   const content = JSON.stringify(data);
   return new Promise((resolve) => setTimeout(() => resolve({

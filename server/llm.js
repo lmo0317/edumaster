@@ -83,6 +83,7 @@ const REQUIRED = {
   'fix-verification': ['verification'],
   'write-solution': ['solution'],
   adjudicate: ['problemAtFault', 'reason'],
+  learn: ['items'],
   // 'repair-lean' returns only what changed, so nothing in particular is required.
 };
 

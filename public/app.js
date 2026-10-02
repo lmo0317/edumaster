@@ -102,7 +102,9 @@
   }
 
   const JOB_STATUS = { queued: ['대기 중', 'run'], running: ['진행 중', 'run'], done: ['완료', 'ok'], failed: ['실패', 'bad'], cancelled: ['취소됨', ''], interrupted: ['중단됨', 'warn'] };
-  const ITEM_STATUS = { pending: ['대기', ''], generating: ['설계 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['수정 중', 'run'], passed: ['검증 통과', 'ok'], warning: ['확인할 점', 'warn'], needs_review: ['교사 검토 필요', 'bad'], failed: ['실패', 'bad'] };
+  const ITEM_STATUS = { pending: ['대기', ''], generating: ['설계 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['수정 중', 'run'], passed: ['완성', 'ok'], warning: ['완성 · 남은 점', 'warn'], needs_review: ['정답 확인 필요', 'bad'], failed: ['실패', 'bad'] };
+  // A set made before 2026-10-02 stopped after two repairs and marked design faults 검토 필요 (its items have no design).
+  const legacyReview = (item) => item.status === 'needs_review' && !item.design;
   const MAT_STATUS = { analyzing: ['분석 중', 'run'], ready: ['분석 완료', 'ok'], failed: ['분석 실패', 'bad'] };
   const inlineRich = (t) => rich(t).replace(/^<p>|<\/p>$/g, '');
   const chip = (map, s) => { const [t, c] = map[s] || [s, '']; return `<span class="chip ${c}">${esc(t)}</span>`; };
@@ -290,12 +292,12 @@
     if (j.status === 'queued') return { cat: 'busy', tone: 'run', label: '순서 기다리는 중', detail: '' };
     if (j.status === 'running') return { cat: 'busy', tone: 'run', label: `만드는 중 · ${made}/${n}문제 완성`, detail: '' };
     const parts = [
-      count('passed') && `바로 사용 ${count('passed')}`, count('warning') && `확인할 점 ${count('warning')}`,
-      count('needs_review') && `검토 필요 ${count('needs_review')}`, count('failed') && `못 만듦 ${count('failed')}`,
+      count('passed') && `완성 ${count('passed')}`, count('warning') && `남은 점 있음 ${count('warning')}`,
+      count('needs_review') && `정답 확인 필요 ${count('needs_review')}`, count('failed') && `못 만듦 ${count('failed')}`,
     ].filter(Boolean).join(' · ');
     if (j.status === 'done') {
       const trouble = count('needs_review') + count('failed');
-      return { cat: trouble ? 'check' : 'done', tone: trouble ? 'warn' : 'ok', label: trouble ? '완료 · 확인 필요' : count('warning') ? '완료 · 확인할 점 있음' : '완료 · 모두 바로 사용 가능', detail: parts };
+      return { cat: trouble ? 'check' : 'done', tone: trouble ? 'warn' : 'ok', label: trouble ? '완료 · 확인 필요' : count('warning') ? '완료 · 남은 점 있음' : '완료 · 모두 완성', detail: parts };
     }
     return { cat: 'check', tone: 'bad', label: `멈춤 · ${made}/${n}문제까지 완성`, detail: j.error ? '' : parts };
   }
@@ -391,7 +393,7 @@
       const items = latest.items || [];
       const review = items.filter((i) => !i.adopted && i.status === 'needs_review').length;
       const adopted = items.filter((i) => i.adopted).length;
-      st.review = regen ? { state: 'run', note: '다시 만드는 중' } : review ? { state: 'warn', note: `검토 필요 ${review}` }
+      st.review = regen ? { state: 'run', note: '다시 만드는 중' } : review ? { state: 'warn', note: `정답 확인 필요 ${review}` }
         : adopted ? { state: 'done', note: `채택 ${adopted}/${items.length}` } : { state: 'warn', note: `채택 0/${items.length}` };
     }
     let now;
@@ -400,7 +402,7 @@
     else if (making) now = { tone: 'run', text: `변형 문제를 만드는 중입니다 (${making.status === 'queued' ? '순서 기다리는 중' : st.make.done}). 문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 끝나면 저절로 바뀝니다.`, href: '#/j/' + making.id, action: '진행 보기' };
     else if (regen) now = { tone: 'run', text: '세트의 문제 하나를 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.', href: '#/j/' + regen.parentJobId, action: '진행 보기' };
     else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 분석 결과를 보고, 틀린 곳은 고치거나 분석 학습에 적은 뒤 문제를 만드세요.', go: 'make', action: '문제 생성으로 가기' };
-    else if (st.review.state === 'warn') now = { tone: 'warn', text: `세트 ${no}의 문제를 검토해 주세요 (${st.review.note}). 좋은 문제는 채택, 아쉬운 점은 고칠 점으로 남기면 다음 세트에 반영됩니다.`, href: '#/j/' + latest.id, action: '세트 열기' };
+    else if (st.review.state === 'warn') now = { tone: 'warn', text: `세트 ${no}가 완성되었습니다 (${st.review.note}). 리포트를 보고 좋은 문제는 채택, 아쉬운 점은 고칠 점으로 남기면 다음 세트에 반영됩니다.`, href: '#/j/' + latest.id, action: '세트 열기' };
     else now = { tone: 'ok', text: '여기까지 끝났습니다. 생성 피드백을 더 남기고 새 세트를 만들면 더 나아집니다.', go: 'make', action: '새 세트 만들러 가기' };
     return { st, now };
   }
@@ -496,7 +498,7 @@
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
   const targetOptions = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
   const emptyRow = (text) => `<div class="lt-row lt-plain fb-empty"><span class="muted small">${text}</span></div>`;
-  const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서' };
+  const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서', auto: '세트 리포트에서 자동으로' };
   function learnEffect(x) {
     if (x.status !== 'approved') return '꺼짐';
     if (x.stage === 'analysis') {
@@ -508,7 +510,7 @@
   }
   function learnRow(x, opened) {
     const key = 'L:' + x.id;
-    const from = x.from === 'fix' && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT.fix}</a>` : FROM_TXT[x.from] || '';
+    const from = ['fix', 'auto'].includes(x.from) && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
     return `<div class="lt-row lt-pick${x.status === 'approved' ? '' : ' off'}${opened.has(key) ? ' open' : ''}" data-row="${key}" data-learn="${x.id}">
         <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="적용">
         <div class="lt-main"><span class="lt-name lt-clamp">${esc(x.text)}</span>
@@ -668,7 +670,7 @@
       $('#st-read').textContent = `STEP ${m.steps.length}개 · 학습 ${on(a).length}개`;
       $('#st-make').textContent = `생성 학습 ${on(g).length}개${ex.length ? ` · 본보기 ${ex.length}개` : ''}`;
       const review = gens.filter((j) => !isBusy(j)).flatMap((j) => j.items || []).filter((it) => !it.adopted && it.status === 'needs_review').length;
-      $('#st-list').innerHTML = gens.some(isBusy) ? '<span class="run">만드는 중</span>' : `세트 ${gens.length}개${review ? ` · <span class="warn">검토 필요 ${review}</span>` : ''}`;
+      $('#st-list').innerHTML = gens.some(isBusy) ? '<span class="run">만드는 중</span>' : `세트 ${gens.length}개${review ? ` · <span class="warn">정답 확인 필요 ${review}</span>` : ''}`;
       variantsPanel(m, gens, on(g), L);
       carryLine(m, n, on(g).length, on(L.generation.items).length - on(g).length, ex.length);
     };
@@ -702,7 +704,7 @@
   // The sets made from this problem, newest first, one card each: when and with what it was made, how far its
   // review got, and its problems in staircase order, each one line that opens it. A set made before later feedback
   // says how much of it is missing.
-  const SET_ITEM = { adopted: ['채택', 'ok'], needs_review: ['검토 필요', 'bad'], warning: ['확인할 점', 'warn'], passed: ['통과', ''], failed: ['못 만듦', 'bad'], generating: ['만드는 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['고치는 중', 'run'], pending: ['대기', ''] };
+  const SET_ITEM = { adopted: ['채택', 'ok'], needs_review: ['정답 확인 필요', 'bad'], legacy: ['검토 필요', 'bad'], warning: ['남은 점 있음', 'warn'], passed: ['완성', ''], failed: ['못 만듦', 'bad'], generating: ['만드는 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['고치는 중', 'run'], pending: ['대기', ''] };
   // 을/를 after a set number, read as Sino-Korean (1 일을, 2 이를, 3 삼을 …).
   const eulReul = (n) => ('013678'.includes(String(n).slice(-1)) ? '을' : '를');
   async function deleteSet(no, items, id) {
@@ -734,7 +736,7 @@
       const tally = busy
         ? `<span class="set-pill run"><i class="spin"></i>${j.status === 'queued' ? '순서 기다리는 중' : `만드는 중 ${made}/${items.length}`}</span>`
         : [`<span class="set-pill${adopted ? ' ok' : ''}">채택 ${adopted}/${items.length}</span>`,
-          review && `<span class="set-pill bad">검토 필요 ${review}</span>`,
+          review && `<span class="set-pill bad">정답 확인 필요 ${review}</span>`,
           failed && `<span class="set-pill bad">못 만듦 ${failed}</span>`].filter(Boolean).join('');
       const meta = [fmtTime(j.createdAt), esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'),
         `학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''} 반영`,
@@ -747,7 +749,7 @@
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
-          const [t, c] = SET_ITEM[it.adopted ? 'adopted' : it.status] || [it.status, ''];
+          const [t, c] = SET_ITEM[it.adopted ? 'adopted' : legacyReview(it) ? 'legacy' : it.status] || [it.status, ''];
           const last = it.stage?.kind === 'twin' || k === items.length - 1;
           return `<li><a class="set-item" href="#/j/${j.id}?item=${it.index}">
             <span class="si-no${last ? ' last' : ''}">${k + 1}</span>
@@ -1006,7 +1008,7 @@
     const stepFor = mins >= 1 ? ` · 이 단계 ${mins}분째` : '';
     const line = job.status === 'queued' ? '<i class="spin"></i>순서를 기다리는 중'
       : busy ? `<i class="spin"></i>${made}/${items.length} 만드는 중${now ? ` — 문제 ${now.index + 1} ${(ITEM_STATUS[now.status] || [''])[0]}` : ''}${stepFor} · ${model}`
-      : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">검토 필요 ${review}</span>` : ''} · ${model}`;
+      : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">정답 확인 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 수치 변형' : ''}</h1>
@@ -1017,6 +1019,7 @@
       ${busy ? `<div class="jt-bar"><span style="width:${items.length ? Math.round((made / items.length) * 100) : 0}%"></span></div><p class="muted small jt-wait">문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 화면을 닫아도 서버에서 계속되고, 이 화면은 저절로 바뀝니다.</p>` : ''}
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
       ${regenerating.length ? `<div class="note info"><i class="spin"></i> 문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.</div>` : ''}
+      ${busy ? '' : setReport(job)}
       ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 학습지에 들어가고, 이 문제로 다음 세트를 만들 때 같은 단계의 본보기가 됩니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
@@ -1027,6 +1030,26 @@
         <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>
       </div></details>
     </div>`;
+  }
+  // What the set's checks found and fixed, what is left, and what was learned from it.
+  function setReport(job) {
+    const items = job.items.filter((i) => i.problem);
+    if (!items.length) return '';
+    const count = (kind) => items.reduce((n, i) => n + (i.attempts || []).filter((a) => a.kind === kind).length, 0);
+    const done = items.filter((i) => ['passed', 'warning'].includes(i.status));
+    const first = done.filter((i) => !(i.attempts || []).some((a) => a.kind !== 'generate'));
+    const left = items.filter((i) => i.status === 'warning');
+    const unsure = items.filter((i) => i.status === 'needs_review');
+    const fixes = [count('rewrite') && `해설 다시 쓰기 ${count('rewrite')}번`, count('repair') && `문제 수정 ${count('repair')}번`, count('redesign') && `새로 설계 ${count('redesign')}번`].filter(Boolean);
+    const learned = job.learned;
+    return `<section class="jt-report">
+      <h2>세트 리포트</h2>
+      <p><b>${done.length === job.items.length ? `${done.length}문제 모두 완성` : `${job.items.length}문제 중 ${done.length}문제 완성`}</b>${first.length ? ` · 첫 설계로 통과 ${first.length}` : ''}${left.length ? ` · 남은 점이 있는 문제 ${left.length}` : ''}${unsure.length ? ` · <span class="bad">정답 확인 필요 ${unsure.length}</span>` : ''}</p>
+      ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 문제마다 아래 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
+      ${learned ? (learned.length ? `<div class="jt-learned"><b>이번 세트에서 배운 학습 ${learned.length}개</b> — 다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.
+        <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${esc(l.text)}${l.why ? ` <span class="muted">— ${esc(l.why)}</span>` : ''} <a href="#/learn/${l.scope === 'common' ? 'common' : 'problems'}">보기</a></li>`).join('')}</ul></div>`
+        : '<p class="muted">이번 세트에서 새로 추가할 학습은 없었습니다.</p>') : ''}
+    </section>`;
   }
   function bindHead(job) {
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
@@ -1059,30 +1082,41 @@
       ${blind.solution ? `<details data-k="blind"><summary>독립 풀이 전문</summary><div class="inner rich">${rich(blind.solution)}</div></details>` : ''}`;
   }
 
-  // Under the problem, what the checks left. 검토 필요: what happened and what to do in one sentence, the remaining
-  // issues once each (a broken learning is not listed again as a problem) in a fold. Otherwise one quiet line.
+  // Under the problem, its report: one line on how it was made (first design, fixed n times, or an answer that could
+  // not be confirmed), and in a fold what each check found and what was done about it, what is left, and the learning
+  // it kept or broke.
+  const ATTEMPT_TXT = {
+    rewrite: (n) => `해설이 선생님 해설과 달라 해설을 다시 씀 (${n}건)`,
+    repair: (n) => `검토에서 ${n}건을 찾아 문제를 고침`,
+    redesign: (n) => `고쳐도 ${n}건이 남아 처음부터 새로 설계`,
+  };
   function checkLine(item) {
     const v = item.verification;
-    const plain = (x) => String(x).replace(/^(문제 설계|해설): /, '');
+    const plain = (x) => String(x).replace(/^(문제 설계|STEP 범위|해설): /, '');
     const rules = v?.rules || [];
     const bad = rules.filter((r) => r.judged && !r.judged.ok);
     const ok = rules.filter((r) => r.judged?.ok).length;
-    const problems = [...new Set((item.problems || []).map(plain).filter((x) => !x.startsWith('교사 지침 미준수')))];
-    const warnings = [...new Set((item.warnings || []).map(plain))];
-    const issues = [...problems.map((x) => inlineRich(x)), ...bad.map((r) => `학습을 어김: ${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`)];
     const list = (xs) => `<ul class="lt-ul">${xs.map((x) => `<li>${x}</li>`).join('')}</ul>`;
-    if (item.status === 'needs_review') {
-      return `<div class="jt-need">
-        <p><b>자동 검토가 두 번 고쳐 봤지만 ${issues.length}가지가 남았습니다.</b> 아래 <b>🔄 다시 만들기</b>를 누르면 이 점들을 고치도록 다시 만듭니다. 따로 적지 않아도 됩니다.</p>
-        <details data-k="check"><summary>남은 문제 ${issues.length}가지 보기</summary>${list(issues)}${warnings.length ? `<p class="muted small">함께 나온 지적</p>${list(warnings.map((x) => inlineRich(x)))}` : ''}</details>
-      </div>`;
+    if (legacyReview(item)) {
+      const issues = [...new Set((item.problems || []).map(plain))];
+      return `<div class="jt-need"><p><b>예전 방식으로 만든 문제라 자동 수정이 두 번에서 멈췄습니다.</b> 🔄 다시 만들기를 누르면 남은 점을 끝까지 자동으로 고쳐 다시 만듭니다.</p>
+        <details data-k="check"><summary>남은 점 ${issues.length}가지</summary>${list(issues.map((x) => inlineRich(x)))}</details></div>`;
     }
-    const parts = [warnings.length && `확인할 점 ${warnings.length}`, ok + bad.length && `학습 지킴 ${ok}/${ok + bad.length}`].filter(Boolean);
-    if (!parts.length) return '';
-    return `<details class="jt-check" data-k="check"><summary>${parts.join(' · ')}</summary><div class="jt-check-in">
-      ${warnings.length ? list(warnings.map((x) => inlineRich(x))) : ''}
-      ${bad.length ? `<div><b>어긴 학습</b>${list(bad.map((r) => `${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`))}</div>` : ''}
-    </div></details>`;
+    const steps = (item.attempts || []).filter((x) => ATTEMPT_TXT[x.kind]);
+    const left = [...new Set((item.warnings || []).map(plain))];
+    const unsure = [...new Set((item.problems || []).map(plain))];
+    const head = item.status === 'needs_review'
+      ? `<b>정답을 확정하지 못했습니다.</b> ${(item.redesigned || 0) + 1}번 설계하고 고쳐 봤지만 검산이나 독립 풀이와 정답이 맞지 않았습니다. 학생에게 내기 전에 정답을 확인해 주세요.`
+      : !steps.length ? '<b>첫 설계로 검토를 통과했습니다.</b>'
+      : `<b>자동으로 ${steps.length}번 고쳐 완성했습니다.</b>${left.length ? ` 끝내 남은 점 ${left.length}개는 리포트에 있습니다.` : ''}`;
+    const tone = item.status === 'needs_review' ? 'bad' : left.length ? 'warn' : 'ok';
+    const body = [
+      steps.length && `<ol class="jt-steps">${steps.map((x) => `<li>${ATTEMPT_TXT[x.kind]((x.failures || []).length)}${(x.failures || []).length ? list(x.failures.map((f) => inlineRich(plain(f)))) : ''}</li>`).join('')}</ol>`,
+      unsure.length && `<div><b>정답이 맞지 않은 이유</b>${list(unsure.map((x) => inlineRich(x)))}</div>`,
+      left.length && `<div><b>남은 점</b>${list(left.map((x) => inlineRich(x)))}</div>`,
+      ok + bad.length && `<div><b>학습 지킴 ${ok}/${ok + bad.length}</b>${bad.length ? list(bad.map((r) => `어김: ${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`)) : ''}</div>`,
+    ].filter(Boolean);
+    return `<div class="jt-report-item ${tone}"><p>${head}</p>${body.length ? `<details data-k="check"><summary>리포트 보기</summary><div class="jt-check-in">${body.join('')}</div></details>` : ''}</div>`;
   }
 
   // A problem of the set: its state, the problem itself first, the check line, then the review (채택 / 고칠 점 /
@@ -1095,10 +1129,12 @@
     const running = ['generating', 'verifying', 'repairing'].includes(item.status);
     const finished = p && ['passed', 'warning', 'needs_review'].includes(item.status);
     const state = item.adopted ? '<span class="chip ok">채택됨</span>'
-      : item.status === 'warning' ? `<span class="chip warn">확인할 점 ${new Set(item.warnings || []).size}</span>` : chip(ITEM_STATUS, item.status);
+      : item.status === 'warning' ? `<span class="chip warn">완성 · 남은 점 ${new Set(item.warnings || []).size}</span>`
+      : legacyReview(item) ? '<span class="chip bad">검토 필요</span>' : chip(ITEM_STATUS, item.status);
     const made = [
       item.examplesUsed && `채택한 문제 ${item.examplesUsed}개를 본보기로 참고`,
       repairs && `검토 후 고친 횟수 ${repairs}회`,
+      item.redesigned && `새로 설계 ${item.redesigned}번 (${item.design}번째 설계를 씀)`,
       item.history?.length && `다시 만든 횟수 ${item.history.length}회`,
       item.usesSteps?.length && `사용한 원본 STEP ${item.usesSteps.join(', ')}`,
     ].filter(Boolean);
@@ -1323,7 +1359,7 @@
       bindLearnRows($('#g-g'), d.guides.generation, globalOpen, repaint);
       const list = (items) => `<ul>${items.map((x) => `<li><b>${esc(x.label)}</b><span>${esc(x.how)}</span></li>`).join('')}</ul>`;
       $('#g-c').innerHTML = `<details><summary>AI가 만든 결과는 어떻게 검토하나요? (검사 ${d.checks.generation.length + d.checks.analysis.length}개)</summary>
-        <p class="small">만든 문제는 저장하기 전에 자동으로 검토합니다. 걸린 곳은 AI가 최대 2번 고치고, 그래도 남으면 <b>교사 검토 필요</b>로 표시합니다.</p>
+        <p class="small">만든 문제는 저장하기 전에 자동으로 검토합니다. 걸린 곳은 AI가 스스로 고치고(해설 다시 쓰기, 문제 수정, 처음부터 새로 설계 최대 3번), 가장 나은 설계를 남깁니다. 끝내 남은 점은 문제마다 리포트에 적고, 정답을 확정하지 못한 문제만 <b>정답 확인 필요</b>로 표시합니다. 세트가 끝나면 나온 실수를 학습으로 정리해 자동으로 추가합니다.</p>
         <div class="lt-check-groups"><div><h3>변형 문제</h3>${list(d.checks.generation)}</div><div><h3>원본 분석</h3>${list(d.checks.analysis)}</div></div></details>`;
     };
     bindGlobalAdd('ga', 'analysis', 'guide', repaint);

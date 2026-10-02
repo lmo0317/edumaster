@@ -1,7 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { selectRules, analysisLearning, layerOf, readingHint, readingPairs } = require('./learning');
+const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule } = require('./learning');
 const harness = require('./harness');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
@@ -685,8 +685,11 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const hard = [];
   const soft = [];
   const rewriteNotes = [];
+  // Faults that make the problem unusable: the server's calculation fails, or the independent solver gets another
+  // answer or finds it ambiguous, contradictory, short of a condition or giving away its conclusion.
+  const invalid = [];
   let adjudication = keep?.adjudication || null;
-  if (code.status === 'fail') hard.push(...code.reasons.map((r) => '코드 검산: ' + r));
+  if (code.status === 'fail') invalid.push(...code.reasons.map((r) => '코드 검산: ' + r));
   soft.push(...(code.warnings || []));
   const mismatch = !item.problem.choices.length ? ''
     : !blind.answer ? '독립 풀이가 정답을 고르지 못했습니다: ' + blind.solution.slice(0, 300)
@@ -695,12 +698,13 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const blocking = blind.issues.filter((i) => BLOCKING_ISSUES.has(i.type)).map((i) => `독립 풀이 지적(${i.type}): ${i.detail}`);
   if (lean && (mismatch || blocking.length) && code.status !== 'fail') {
     adjudication = adjudication || await adjudicate(ctx, item, blind, [mismatch, ...blocking].filter(Boolean));
-    if (adjudication.problemAtFault) hard.push(...[mismatch, ...blocking].filter(Boolean), `출제자 재확인: ${adjudication.reason}`);
+    if (adjudication.problemAtFault) invalid.push(...[mismatch, ...blocking].filter(Boolean), `출제자 재확인: ${adjudication.reason}`);
     else soft.push(`독립 풀이와 결과가 달랐지만 출제자가 재확인함: ${adjudication.reason}`);
   } else {
-    if (mismatch) hard.push(mismatch);
-    hard.push(...blocking);
+    if (mismatch) invalid.push(mismatch);
+    invalid.push(...blocking);
   }
+  hard.push(...invalid);
   if (!lean) for (const issue of blind.issues.filter((i) => !BLOCKING_ISSUES.has(i.type))) soft.push(`독립 풀이 지적(${issue.type}): ${issue.detail}`);
   const cov = coverage(item.stage, material.steps.length, blind.stepsUsed, blind.shortcuts);
   if (!lean) {
@@ -712,19 +716,19 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const codeChecks = harness.inspectItem(material, item, mode);
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
-    if (lean && solutionOnly(c)) rewriteNotes.push(`${c.label}: ${c.evidence}`);
-    else (c.severity === 'hard' ? hard : soft).push(`${c.label}: ${c.evidence}`);
+    if (solutionOnly(c) && c.severity !== 'hard') rewriteNotes.push(`${c.label}: ${c.evidence}`);
+    else if (c.severity === 'hard') { hard.push(`${c.label}: ${c.evidence}`); invalid.push(`${c.label}: ${c.evidence}`); }
+    else soft.push(`${c.label}: ${c.evidence}`);
   }
   const reviewNotes = solutionReview.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`));
-  if (lean) rewriteNotes.push(...reviewNotes);
+  rewriteNotes.push(...reviewNotes);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
     ...(lean ? [] : blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
     ...(!lean && integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
-    ...failed.filter((c) => c.severity === 'design' && !(lean && solutionOnly(c))).map((c) => `${c.label}: ${c.evidence}`),
-    ...(lean ? [] : reviewNotes),
+    ...failed.filter((c) => c.severity === 'design' && !solutionOnly(c)).map((c) => `${c.label}: ${c.evidence}`),
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
@@ -736,13 +740,13 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     // run a solution rule goes back to the writer, and a problem rule judged by the solver is only recorded).
     if (judged && !judged.ok) {
       const note = `교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`;
-      if (!lean) designNotes.push(note);
-      else if (judged === byReviewer) rewriteNotes.push(note);
+      if (judged === byReviewer) rewriteNotes.push(note);
+      else if (!lean) designNotes.push(note);
     }
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
-    hard, soft, coverageNotes: cov.notes, designNotes, rewriteNotes,
+    hard, invalid, soft, coverageNotes: cov.notes, designNotes, rewriteNotes,
     verification: {
       ...(adjudication ? { adjudication } : {}),
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
@@ -755,14 +759,20 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   };
 }
 
-/** Generates, checks, and (at most once) repairs one problem. Mutates `item` and saves progress. */
-async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
-  const examples = examplesFor(item, allExamples);
-  item.examplesUsed = examples.length;
+// The fields one version of a problem consists of: kept per design so the best one can be put back.
+const VERSION_KEYS = ['problem', 'solution', 'outline', 'usesSteps', 'designNote', 'appliedRules', 'verificationSpec'];
+const versionOf = (item) => Object.fromEntries(VERSION_KEYS.filter((k) => item[k] !== undefined).map((k) => [k, item[k]]));
+// A design with fewer faults that make it unusable wins; then fewer design faults; then fewer solution notes.
+const faultScore = (r) => r.check.invalid.length * 1000 + r.reasons.length * 10 + r.check.rewriteNotes.length;
+const MAX_DESIGNS = 3;
+
+/** One design of a problem: generated, checked, repaired (problem) and rewritten (solution) until it passes or stops
+ *  getting better. Mutates `item`; returns its version, the last check and what is still wrong. */
+async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples, design }) {
   const total = material.steps.length;
   const lean = Boolean(ctx.lean);
   item.status = 'generating'; item.error = ''; ctx.save();
-  ctx.log(`${item.label}: 문제 설계 중`);
+  ctx.log(`${item.label}: 문제 설계 중${design > 1 ? ` (${design}번째 설계)` : ''}`);
   const { data, shapeFixes: generateShape = [] } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
@@ -770,47 +780,53 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   });
   if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
   Object.assign(item, normalizeGenerated(data));
-  item.attempts = [{ kind: 'generate', at: new Date().toISOString() }];
+  item.attempts.push({ kind: 'generate', design, at: new Date().toISOString() });
   // Lean run: what the designer wrote is the outline; the job's own model writes it out as the solution.
   let writeNotes = [];
   if (lean) { item.outline = item.solution; writeNotes = await writeSolution(ctx, item, material, rules); }
   item.status = 'verifying'; ctx.save();
 
   let check = await verifyItem(ctx, item, material, rules, mode, prior);
-  // A STEP-range mismatch is the teacher's core requirement, so it also earns the single repair;
-  // if it remains afterwards it is only a warning (the blind solver's STEP tagging can be noisy).
   // In a lean run the solver's STEP tagging does not send the problem back (see verifyItem).
   const repairReasons = (c) => [...c.hard, ...(lean ? [] : c.coverageNotes.map((n) => 'STEP 범위: ' + n)), ...c.designNotes.map((n) => '문제 설계: ' + n)];
-  // Up to ctx.maxRepairs repairs, but a further one only when the previous repair changed what is wrong;
-  // the same complaints twice means the model is stuck, so stop and show them to the teacher.
-  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  // Up to ctx.maxRepairs repairs, a further one only when the previous one changed what is wrong (the same complaints
+  // twice means the model is stuck: a fresh design does better). The solution alone is rewritten up to twice.
+  const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+  let lastRepair = null;
   let rewrites = 0;
   for (let round = 0; ;) {
-    // Lean: a fault only in the written solution is rewritten once by the writer — no design repair, no new solve.
-    if (lean && check.rewriteNotes.length && !repairReasons(check).length && rewrites < 1) {
+    if (ctx.signal?.aborted) break;
+    // A fault only in the solution (wording, the teacher's sentence frame, a solution rule) is rewritten by the writer
+    // — no redesign, no new solve. Outside a lean run the current solution is what gets rewritten.
+    if (check.rewriteNotes.length && !repairReasons(check).length && rewrites < 2 && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
       rewrites++;
+      item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: check.rewriteNotes });
+      if (!lean) item.outline = item.solution;
       writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes);
+      const before = check.rewriteNotes;
       check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
+      if (same(before, check.rewriteNotes)) rewrites = 2; // the same notes again: rewriting more will not help
       continue;
     }
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
-    if (round > 0 && same(repairReasons(check), item.attempts[item.attempts.length - 1].failures)) break;
+    if (lastRepair && same(repairReasons(check), lastRepair)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
     if (ctx.budget.affords && !ctx.budget.affords(3 + (ctx.reserveCalls || 0))) {
       ctx.log(`${item.label}: 남은 문제를 만들 토큰을 남기려고 수정을 건너뜁니다`);
-      check.soft.push('토큰 상한 때문에 자동 수정을 건너뛰었습니다. 교사 검토가 필요합니다.');
+      check.soft.push('토큰 상한 때문에 자동 수정을 더 하지 못했습니다.');
       break;
     }
     round++;
-    item.attempts.push({ kind: 'repair', at: new Date().toISOString(), failures: repairReasons(check) });
+    lastRepair = repairReasons(check);
+    item.attempts.push({ kind: 'repair', design, at: new Date().toISOString(), failures: lastRepair });
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
     const purpose = lean ? 'repair-lean' : 'repair';
-    ctx.log(`${item.label}: 검토에서 발견된 ${repairReasons(check).length}건 수정 중${ctx.routes?.[purpose] ? ` (${ctx.routes[purpose]})` : ''}`);
+    ctx.log(`${item.label}: 검토에서 발견된 ${lastRepair.length}건 수정 중${ctx.routes?.[purpose] ? ` (${ctx.routes[purpose]})` : ''}`);
     const { data: fixed, shapeFixes: repairShape = [] } = await ctx.llm.json({
       purpose, jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
       system: prompts.REPAIR_SYSTEM,
       // A lean repair sees the designer's own outline (not the long written solution) and returns only what changed.
-      text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item: lean ? { ...item, solution: item.outline } : item, failures: repairReasons(check), blind: check.verification.blind })
+      text: prompts.repairText({ material, stage: item.stage, total, mode, rules, item: lean ? { ...item, solution: item.outline } : item, failures: lastRepair, blind: check.verification.blind })
         + (lean ? prompts.LEAN_REPAIR : ''),
     });
     if (repairShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${repairShape.join(', ')})`);
@@ -827,22 +843,106 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
       const next = normalizeGenerated(fixed);
       for (const key of ['designNote', 'appliedRules', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
       Object.assign(item, next);
+      rewrites = 0;
     }
     item.status = 'verifying'; ctx.save();
     check = await verifyItem(ctx, item, material, rules, mode, prior);
   }
+  return { version: versionOf(item), check, writeNotes, reasons: repairReasons(check), design };
+}
+
+/** Makes one problem without stopping for the teacher: up to MAX_DESIGNS designs (each repaired and rewritten), the
+ *  best one kept. What was found and fixed along the way is in item.attempts (the report); what is still left is in
+ *  item.problems (the answer cannot be trusted) or item.warnings (the problem is usable). Mutates `item`. */
+async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
+  const examples = examplesFor(item, allExamples);
+  item.examplesUsed = examples.length;
+  item.attempts = [];
+  item.redesigned = 0;
+  let best = null;
+  let left = previous;
+  for (let design = 1; design <= MAX_DESIGNS; design++) {
+    if (design > 1) {
+      if (ctx.signal?.aborted) break;
+      // A fresh design costs a design, a solve and a review at least; the later problems keep theirs.
+      if (ctx.budget.affords && !ctx.budget.affords(6 + (ctx.reserveCalls || 0))) {
+        ctx.log(`${item.label}: 남은 문제를 만들 토큰을 남기려고 새 설계를 하지 않습니다`);
+        break;
+      }
+      ctx.log(`${item.label}: 고쳐도 ${best.reasons.length}건이 남아 새로 설계합니다`);
+      item.attempts.push({ kind: 'redesign', design, at: new Date().toISOString(), failures: left.problems });
+      item.redesigned = design - 1;
+    }
+    const result = await designOnce(ctx, { material, item, prior, rules, mode, extraFeedback, previous: left, examples, design });
+    if (!best || faultScore(result) < faultScore(best)) best = result;
+    if (!result.reasons.length) break;
+    left = { problem: item.problem, solution: item.solution, problems: result.reasons };
+  }
+  // The best design is the one kept.
+  Object.assign(item, best.version);
+  const check = best.check;
   item.verification = check.verification;
-  // What the repairs could not fix goes to the teacher: a wrong answer, a problem that skips or overshoots its
-  // STEPs, an unused condition, a numbers-only final, a broken rule. Only light notes leave it usable.
-  const unresolved = repairReasons(check);
-  item.problems = [...new Set(unresolved)];
-  // The same note can come from two checks; the teacher reads it once.
+  item.design = best.design;
+  // Only a problem whose answer cannot be trusted is held back for the teacher; anything else the checks could not fix
+  // is listed with the problem as 남은 점.
+  item.problems = [...new Set(check.invalid)];
   item.warnings = [...new Set([
-    ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w)),
-    ...(lean ? [...check.rewriteNotes.map((n) => '해설: ' + n), ...writeNotes] : []),
+    ...best.reasons.filter((r) => !check.invalid.some((x) => r.endsWith(x))),
+    ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w) && !check.invalid.includes(w)),
+    ...check.rewriteNotes.map((n) => '해설: ' + n), ...best.writeNotes,
   ])];
-  item.status = unresolved.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
-  ctx.log(`${item.label}: ${{ passed: '검증 통과', warning: '통과 (확인할 점 있음)', needs_review: '교사 검토 필요' }[item.status]}`);
+  item.status = item.problems.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
+  const fixes = item.attempts.filter((x) => x.kind !== 'generate').length;
+  ctx.log(`${item.label}: ${{ passed: '완성', warning: `완성 (남은 점 ${item.warnings.length}개)`, needs_review: '정답을 확정하지 못함' }[item.status]}${fixes ? ` — 자동 수정 ${fixes}번${item.redesigned ? `, 새 설계 ${item.redesigned}번` : ''}` : ''}`);
+  ctx.save();
+}
+
+// After a set: what its checks found becomes at most three learning items (this problem's or every problem's), so the
+// next set avoids it from the start. Recorded on the job for its report. A failure here never fails the set.
+async function learnFromSet(ctx) {
+  const { job, store } = ctx;
+  const faults = [];
+  for (const item of job.items) {
+    const seen = new Set();
+    const left = new Set([...(item.problems || []), ...(item.warnings || [])]);
+    for (const a of item.attempts || []) for (const f of a.failures || []) {
+      const text = String(f).replace(/^(문제 설계|STEP 범위|해설): /, '');
+      if (seen.has(text)) continue;
+      seen.add(text);
+      faults.push({ label: item.label, text: text.slice(0, 400), left: [...left].some((x) => x.includes(text.slice(0, 60))) });
+    }
+  }
+  if (!faults.length || !store) return;
+  if (ctx.budget.affords && !ctx.budget.affords(1)) return;
+  const material = job.material;
+  const existing = selectRules(store.rules.all(), { ...material, id: job.materialId }).map((r) => r.text);
+  ctx.log('세트에서 나온 실수로 학습 정리 중');
+  let data;
+  try {
+    ({ data } = await ctx.llm.json({
+      purpose: 'learn', jobId: job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 6000,
+      system: prompts.LEARN_SYSTEM, text: prompts.learnText({ material, faults: faults.slice(0, 40), existing }),
+    }));
+  } catch (e) {
+    if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) return;
+    ctx.log(`학습 정리 실패 — ${e.message}`);
+    return;
+  }
+  const learned = [];
+  for (const x of arr(data?.items).slice(0, 3)) {
+    const text = str(x?.text, 600);
+    if (text.length < 8 || existing.includes(text)) continue;
+    const common = x?.scope === 'common';
+    const rule = makeRule({
+      text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
+      scope: common ? 'global' : 'material', layer: 'lesson',
+      source: { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto' },
+    });
+    store.rules.put(rule);
+    learned.push({ id: rule.id, text, scope: common ? 'common' : 'problem', target: rule.target, why: str(x?.why, 300) });
+  }
+  job.learned = learned;
+  ctx.log(learned.length ? `학습 ${learned.length}개를 추가했습니다` : '새로 추가할 학습은 없습니다');
   ctx.save();
 }
 
@@ -871,6 +971,7 @@ async function runGeneration(ctx) {
     const stored = store.rules.get(rule.id);
     if (stored) store.rules.put({ ...stored, applied: (stored.applied || 0) + 1 });
   }
+  if (!ctx.signal.aborted) await learnFromSet(ctx);
 }
 
 function pickRules(store, material) {
@@ -904,7 +1005,8 @@ const SYSTEM_CHECKS = {
     { label: '결론 노출·표기 형식', how: '앞 STEP의 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 확인.', onFail: 'repair' },
     { label: '교사 지침 준수', how: '생성 모델이 지침별로 적용 방법을 적고, 독립 풀이가 문제에 관한 지침을 다시 판정한다.', onFail: 'note' },
   ],
-  repair: '발견된 문제를 모델에 보여 주고 최대 2번 수정한다. 같은 지적이 반복되면 멈추고, 뒤에 만들 문제의 토큰이 부족해질 것 같으면 수정을 건너뛴다. 남은 문제는 교사 검토 필요 또는 확인할 점으로 표시한다.',
+  repair: '해설만의 문제는 해설을 최대 2번 다시 쓰고, 문제의 결함은 최대 2번 수정한다. 그래도 남거나 같은 지적이 반복되면 처음부터 새로 설계한다(문제마다 최대 3번 설계). 설계 중 결함이 가장 적은 것을 남기고, 남은 점은 리포트에 적는다. 정답을 믿을 수 없는 문제만 교사 확인으로 둔다. 세트가 끝나면 나온 실수를 학습으로 정리해 자동으로 추가한다.',
 };
 
-module.exports = { reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+module.exports = {
+  learnFromSet, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

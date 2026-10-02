@@ -13,7 +13,8 @@ const TARGETS = new Set(['problem', 'solution', 'design', 'all']);
 const SCOPES = new Set(['material', 'global', 'topic']);
 const STAGES = new Set(['analysis', 'generation']);
 const LAYERS = new Set(['guide', 'lesson']);
-const FROM = new Set(['input', 'check', 'fix', 'promote', 'migrated']);
+// auto: written after a set from the faults its checks found (pipeline.learnFromSet).
+const FROM = new Set(['input', 'check', 'fix', 'promote', 'migrated', 'auto']);
 /** 지침 / 문제 / 전체 — which of the three an item is, for prompts and the page. */
 const layerOf = (r) => (r.scope === 'material' ? 'problem' : r.layer === 'guide' ? 'guide' : 'lesson');
 const stageOf = (r) => r.stage || 'generation';

@@ -74,6 +74,10 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
       assert.ok(item.verification.rules[0].how);
     }
     assert.ok(job.items.some((i) => i.attempts.some((a) => a.kind === 'repair')), 'the deliberately wrong mock answer was repaired');
+    // What the checks had to fix became this problem's learning, reported on the set.
+    assert.equal(job.learned.length, 1);
+    const auto = (await s.call('GET', '/api/rules')).data.find((r) => r.id === job.learned[0].id);
+    assert.deepEqual([auto.scope, auto.stage, auto.source.from, auto.source.jobId], ['material', 'generation', 'auto', job.id]);
     assert.ok(job.usage.calls >= 7 && job.usage.calls <= job.budget.maxCalls);
 
     // feedback on one problem → pending rule, approve it, regenerate that problem only
@@ -92,7 +96,7 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
     // next generation for the same material picks up the approved topic rule
     const gen2 = await s.call('POST', '/api/generations', { materialId: material.id, stages: [{ kind: 'focus', step: 3 }], mode: 'numeric' });
     const job2 = await s.waitJob(gen2.data.jobId);
-    assert.deepEqual(job2.rules.map((r) => r.id).sort(), [rule.id, fb.data.id].sort());
+    assert.deepEqual(job2.rules.map((r) => r.id).sort(), [rule.id, fb.data.id, job.learned[0].id].sort());
     assert.equal(job2.items[0].label, 'STEP 3 집중 연습 (앞 단계 결과 제공)');
 
     const usage = (await s.call('GET', '/api/usage')).data;
@@ -324,8 +328,9 @@ test('problem feedback: written on the problem page or on a variant it belongs t
     const genB = await s.waitJob((await s.call('POST', '/api/generations', { materialId: b.material.id, mode: 'integrated' })).data.jobId);
     assert.ok(!genB.rules.some((r) => [onPage.id, onVariant.id].includes(r.id)), 'B never gets A\'s feedback');
     const list = (await s.call('GET', '/api/materials')).data;
-    assert.equal(list.find((x) => x.id === a.material.id).feedbackCount, 2);
-    assert.equal(list.find((x) => x.id === b.material.id).feedbackCount, 0);
+    const autoOf = (job) => (job.learned || []).filter((l) => l.scope === 'problem').length; // learned from the set's own faults
+    assert.equal(list.find((x) => x.id === a.material.id).feedbackCount, 2 + autoOf(genA));
+    assert.equal(list.find((x) => x.id === b.material.id).feedbackCount, autoOf(genB));
     // Widened to every problem, it reaches B too.
     await s.call('PUT', '/api/rules/' + onPage.id, { scope: 'global' });
     const genB2 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: b.material.id, mode: 'integrated' })).data.jobId);

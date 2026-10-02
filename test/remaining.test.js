@@ -53,16 +53,24 @@ test('a second repair is used when the first one fixed something but a new probl
   assert.equal(item.status, 'passed');
 });
 
-test('the same complaint after a repair stops the loop (no token burn)', async () => {
-  const item = await run([
+test('the same complaint after a repair stops the repairs (no token burn); one fresh design follows', async () => {
+  const solves = [
     { answer: 3, stepsUsed: [1, 2] },
-    { answer: 3, stepsUsed: [1, 2] },
-    { answer: 3, stepsUsed: [1] },
-  ]);
-  assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 1);
-  // A problem still outside its STEP range is not handed out as usable; the teacher sees why.
-  assert.equal(item.status, 'needs_review');
-  assert.match(item.problems.join(), /STEP 범위/);
+    { answer: 3, stepsUsed: [1, 2] }, // the repair did not change the complaint: stop repairing
+    { answer: 3, stepsUsed: [1] }, // the fresh design is in range
+  ];
+  const item = await run(solves);
+  assert.equal(solves.length, 0, 'two solves for the first design (no second repair), one for the fresh design');
+  assert.equal(item.redesigned, 1);
+  assert.equal(item.status, 'passed');
+});
+
+test('designs that keep the same fault: three designs, the best kept, the fault reported with the problem', async () => {
+  const item = await run(Array.from({ length: 6 }, () => ({ answer: 3, stepsUsed: [1, 2] })));
+  assert.equal(item.redesigned, 2, 'three designs in all');
+  assert.equal(item.status, 'warning');
+  assert.match(item.warnings.join(), /STEP 범위/);
+  assert.deepEqual(item.attempts.map((a) => a.kind), ['generate', 'repair', 'redesign', 'generate', 'repair', 'redesign', 'generate', 'repair']);
 });
 
 // Opus bio run (2026-09-29): membrane potentials read off one shared curve were flagged as "reused numbers".
@@ -95,4 +103,35 @@ test('a repair is skipped when it would leave too little budget for the problems
   assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 0);
   assert.ok(item.warnings.some((w) => w.includes('토큰 상한')), item.warnings.join(' | '));
   assert.ok(budget.affords(3), 'the next problem still fits');
+});
+
+// 2026-10-02: a problem is made without stopping for the teacher; of its designs, the one with the fewest faults is kept.
+test('of three designs the one with the fewest faults is kept: a later design with a wrong answer never replaces it', async () => {
+  let designs = 0;
+  const solves = [
+    { answer: 3, stepsUsed: [1, 2] }, { answer: 3, stepsUsed: [1, 2] }, // design 1: out of range, answer right
+    { answer: 4, stepsUsed: [1] }, { answer: 4, stepsUsed: [1] }, // design 2: another answer
+    { answer: 4, stepsUsed: [1] }, { answer: 4, stepsUsed: [1] }, // design 3: the same
+  ];
+  const llm = { json: async ({ system }) => {
+    if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+    if (system === prompts.GENERATE_SYSTEM) { designs++; return { data: { ...generated(designs), problem: { ...generated(designs).problem, text: `설계 ${designs}번째 문제` } } }; }
+    if (system === prompts.REPAIR_SYSTEM) return { data: { ...generated(designs), problem: { ...generated(designs).problem, text: `설계 ${designs}번째 문제 고침` } } };
+    return { data: { steps: [], rules: [] } };
+  } };
+  const ctx = { llm, job: { id: 'j' }, budget: new Budget({ maxCalls: 40, maxTokens: 1e6 }), effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, save() {}, log() {} };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(designs, 3);
+  assert.equal(item.design, 1);
+  assert.equal(item.problem.text, '설계 1번째 문제 고침');
+  assert.equal(item.status, 'warning', 'its answer checks out; the range fault is reported');
+  assert.deepEqual(item.problems, []);
+});
+
+test('the solution reviewer compares only the STEPs of the problem\'s range', () => {
+  const text = prompts.solutionReviewText({ item: { stage: { kind: 'upto', upto: 2 }, problem: { text: 'Q' }, solution: { steps: [] } },
+    material: { steps: [{ title: 'S1', work: 'w1' }, { title: 'S2', work: 'w2' }, { title: 'S3', work: 'w3' }] }, rules: [] });
+  assert.match(text, /STEP 3은 이 문제에 필요 없고/);
+  assert.ok(text.includes('STEP 2. S2') && !text.includes('STEP 3. S3'));
 });

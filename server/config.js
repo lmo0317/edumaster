@@ -70,11 +70,11 @@ module.exports = {
   budget: {
     analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 11),
     analyzeTokens: int('EDUMASTER_ANALYZE_TOKENS', 160000),
-    // generate + (independent solve + solution review) per try, up to 2 repairs, 3 problems
-    generateCalls: int('EDUMASTER_GENERATE_CALLS', 33),
-    generateTokens: int('EDUMASTER_GENERATE_TOKENS', 800000),
-    regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 10),
-    regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 250000),
+    // generate + (independent solve + solution review) per try; repairs, rewrites and up to 3 designs per problem, 3 problems
+    generateCalls: int('EDUMASTER_GENERATE_CALLS', 60),
+    generateTokens: int('EDUMASTER_GENERATE_TOKENS', 1600000),
+    regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 25),
+    regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 600000),
   },
   // USD per million tokens, for the cost estimate on the 모델 비교 page (checked 2026-09-29: DeepSeek's own
   // price list, claude.com/pricing for Opus 5.5). Gemma runs free on the teacher's PC.

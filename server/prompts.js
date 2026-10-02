@@ -346,23 +346,61 @@ const SOLUTION_REVIEW_SYSTEM = `너는 교사의 해설 방식을 지키는지 �
   (1) 교사 해설에 없는 논리를 더하거나 다른 방법으로 푼 것 (예: 교사는 한 방향만 가정해 모순을 보이는데 경우를 나누어 모두 검토, 교사가 질량비로 판정하는데 몰수로 판정, 교사가 다음 STEP에서 도입하는 보조 문자를 먼저 도입).
   (2) 교사의 문장 틀·표기·표 구성을 바꾼 것 (예: 교사는 질량비를 A : B 순서로 쓰는데 B : A로 씀, 교사 해설의 표에 있는 열을 뺌).
   (3) 필요한 중간 단계를 건너뛴 것 (예: 문제가 질량비와 전체 질량을 주는데 각 물질의 질량으로 바꾸는 계산 없이 바로 씀).
-- 이탈이 아닌 것: 실험 번호가 다름, 문제 구조상 가정하는 실험이나 남는 물질이 바뀜, 문제에 반응식이 없어 계수 관계를 문장으로 씀, 교사 해설과 같은 흐름에서 수치만 다른 표.
+- 이탈이 아닌 것: 실험 번호가 다름, 문제 구조상 가정하는 실험이나 남는 물질이 바뀜, 문제에 반응식이 없어 계수 관계를 문장으로 씀, 교사 해설과 같은 흐름에서 수치만 다른 표, [이 문제의 범위] 밖의 교사 STEP이 변형 해설에 없음, 문제가 보조 문자나 값을 조건으로 주어 해설이 그것을 새로 도입하지 않음처럼 문제 설계 때문에 생긴 차이.
+- 교사 해설은 [이 문제의 범위] 안의 STEP만 비교한다.
 - steps에는 변형 해설의 STEP마다 ok와, 이탈이 있으면 issues에 무엇이 교사 해설과 어떻게 다른지 구체적으로 적는다.
 - rules: [판정할 해설 지침]이 있으면 지침마다 지켰는지 판정한다. 없으면 빈 배열.
 ${FORMAT}
 반환 JSON 형식:
 {"steps":[{"step":1,"ok":true,"issues":["..."]}],"rules":[{"id":"...","ok":true,"note":"..."}]}`;
 
+// The STEPs of the teacher's solution a variant is expected to follow.
+function stageScope(stage, total) {
+  if (stage?.kind === 'upto') return { steps: Array.from({ length: stage.upto }, (_, i) => i + 1), text: `원본 STEP 1${stage.upto > 1 ? `~${stage.upto}` : ''}만 쓰는 연습 문제다. STEP ${stage.upto + 1 < total ? `${stage.upto + 1}~${total}` : total}은 이 문제에 필요 없고 해설에도 없어야 한다.` };
+  if (stage?.kind === 'focus') return { steps: [stage.step], text: `원본 STEP ${stage.step}을 연습하는 문제다. 앞 STEP의 결론은 문제에 주어질 수 있다.` };
+  return { steps: Array.from({ length: total }, (_, i) => i + 1), text: `원본 STEP 1~${total}을 모두 쓰는 최종 문제다.` };
+}
+
 function solutionReviewText({ item, material, rules }) {
   const solutionRules = rules.filter((r) => r.target === 'solution' || r.target === 'all');
+  const scope = stageScope(item.stage, material.steps.length);
   return [
-    '[교사 해설 — 원본 문제의 풀이 STEP]',
-    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n'),
+    `[이 문제의 범위] ${scope.text}`,
+    '\n[교사 해설 — 원본 문제의 풀이 STEP 중 이 문제의 범위]',
+    material.steps.map((s, i) => ({ s, n: i + 1 })).filter(({ n }) => scope.steps.includes(n)).map(({ s, n }) => `STEP ${n}. ${s.title}\n${s.work}`).join('\n\n'),
     '\n[변형 문제]',
     item.problem.text,
     '\n[변형 문제의 해설]',
     (item.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
     solutionRules.length ? '\n[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 해설 지침] 없음. rules는 빈 배열.',
+    '\nJSON만 반환하라.',
+  ].join('\n');
+}
+
+// After a set: the faults the checks found (and fixed or not) become at most three learning items, so the next set
+// avoids them from the start. Only what would have prevented a fault that really happened; nothing the learning
+// already says.
+const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같은 실수를 하지 않도록 학습 항목을 정리하는 사람이다.
+[이번 세트에서 나온 실수]는 자동 검토가 찾아내 고치거나 끝내 남은 것이다. 이 중 다음 세트에서 처음부터 피하면 수정·재설계가 줄어드는 것만 학습 항목으로 만든다.
+- 최대 3개. 필요 없으면 빈 배열.
+- [이미 있는 학습·지침]과 같은 뜻이면 만들지 않는다.
+- 만들지 않는 것: 검토자의 지적이 틀렸거나 문제 설계상 당연한 차이, 한 번 생긴 단순 계산 실수, 표·수식 표기 오류(서버가 고친다).
+- 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common".
+- target: 문제 설계에 관한 것이면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
+- text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓰고, 필요하면 괄호에 짧은 예를 든다. 이번 문제의 수치를 그대로 옮기지 않는다.
+- why에는 이 항목이 막는 실수를 한 문장으로 쓴다.
+${FORMAT}
+반환 JSON 형식:
+{"items":[{"text":"...","scope":"problem","target":"problem","why":"..."}]}`;
+
+function learnText({ material, faults, existing }) {
+  return [
+    `[원본] ${material.title || ''} (${[material.subject, material.topic].filter(Boolean).join(' · ')})`,
+    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}`).join('\n'),
+    '\n[이번 세트에서 나온 실수]',
+    faults.map((f) => `- (${f.label}${f.left ? ', 끝내 남음' : ', 고침'}) ${f.text}`).join('\n'),
+    '\n[이미 있는 학습·지침]',
+    existing.length ? existing.map((t) => '- ' + t).join('\n') : '없음',
     '\nJSON만 반환하라.',
   ].join('\n');
 }
@@ -441,7 +479,7 @@ const SYSTEMS = {
   analyze: ANALYZE_SYSTEM, proofread: PROOFREAD_SYSTEM, 'reread-question': REREAD_QUESTION_SYSTEM, 'reread-problem': REREAD_PROBLEM_SYSTEM,
   'reread-headings': REREAD_HEADINGS_SYSTEM, regroup: REGROUP_SYSTEM, 'fix-verification': FIX_VERIFICATION_SYSTEM,
   generate: GENERATE_SYSTEM, solve: SOLVE_SYSTEM, 'review-solution': SOLUTION_REVIEW_SYSTEM, repair: REPAIR_SYSTEM,
-  'write-solution': WRITE_SOLUTION_SYSTEM, adjudicate: ADJUDICATE_SYSTEM,
+  'write-solution': WRITE_SOLUTION_SYSTEM, adjudicate: ADJUDICATE_SYSTEM, learn: LEARN_SYSTEM,
 };
 const PROMPT_VERSION = require('node:crypto').createHash('sha256')
   .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
@@ -454,5 +492,5 @@ module.exports = {
   SOLUTION_REVIEW_SYSTEM, solutionReviewText,
   REPAIR_SYSTEM, repairText,
   LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, ADJUDICATE_SYSTEM, adjudicateText,
-  stageInstruction, rulesBlock,
+  LEARN_SYSTEM, learnText, stageScope, stageInstruction, rulesBlock,
 };
