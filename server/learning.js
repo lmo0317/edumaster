@@ -1,6 +1,6 @@
 'use strict';
 // What the teacher taught, as one kind of item (docs/learning.md): a stage (analysis | generation), a scope (one
-// problem | every problem) and, for every problem, a layer — 지침 (guide: must / must not) or 전체 학습 (lesson). Approved
+// problem | every problem) and, for every problem, a layer — 지침 (guide: must / must not) or 공통 학습 (lesson). Approved
 // items go into the next analysis or generation of the problems they cover, and each result reports how it applied
 // them. This is prompt-level learning (retrieval), not model fine-tuning.
 const { newId } = require('./store');
@@ -51,7 +51,7 @@ function updateRule(rule, patch, now = new Date()) {
   const next = { ...rule, updatedAt: now.toISOString() };
   if (patch.text !== undefined) { next.text = clean(patch.text, 1500); if (next.text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 }); }
   if (['approved', 'pending', 'rejected'].includes(patch.status)) next.status = patch.status;
-  // Moving up and down: 문제 학습 → 전체 학습 → 지침, and back (to a problem only if it came from one).
+  // Moving up and down: 문제 학습 → 공통 학습 → 지침, and back (to a problem only if it came from one).
   if (SCOPES.has(patch.scope) && (patch.scope !== 'material' || next.source?.materialId)) next.scope = patch.scope;
   if (next.scope === 'global') next.layer = LAYERS.has(patch.layer) ? patch.layer : (next.layer || 'lesson');
   else delete next.layer;

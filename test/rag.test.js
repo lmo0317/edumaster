@@ -105,11 +105,11 @@ test('the analysis prompt carries 지침, then this problem\'s feedback, then th
   assert.doesNotMatch(analyzeText({ hasSolution: true }), /분석 (지침|피드백|교훈)/);
 });
 
-test('the generation prompt labels each item 지침 / 이 문제 / 전체 학습 and says which wins', () => {
+test('the generation prompt labels each item 지침 / 이 문제 / 공통 학습 and says which wins', () => {
   const { rulesBlock } = require('../server/prompts');
   const text = rulesBlock([{ id: 'g1', layer: 'guide', kind: 'dont', text: '조건 낭비' }, { id: 'p1', layer: 'problem', kind: 'feedback', target: 'problem', text: '가정→모순' }, { id: 'l1', layer: 'lesson', kind: 'feedback', text: '작은 수' }]);
-  assert.match(text, /지침 > 이 문제 > 전체 학습/);
-  assert.match(text, /- \(g1\) \[지침·하지 말 것\] 조건 낭비\n- \(p1\) \[이 문제·문제\] 가정→모순\n- \(l1\) \[전체 학습\] 작은 수/);
+  assert.match(text, /지침 > 이 문제 > 공통 학습/);
+  assert.match(text, /- \(g1\) \[지침·하지 말 것\] 조건 낭비\n- \(p1\) \[이 문제·문제\] 가정→모순\n- \(l1\) \[공통 학습] 작은 수/);
 });
 
 test('learning picks by stage and layer, and older learning moves into the one store once', () => {

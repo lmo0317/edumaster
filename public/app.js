@@ -197,9 +197,10 @@
       else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
-      else if (hash.startsWith('#/lessons')) { setNav('lessons'); await lessonsView(); }
-      else if (hash.startsWith('#/guides')) { setNav('guides'); await guidesView(); }
-      else if (hash.startsWith('#/learning') || hash.startsWith('#/common') || hash.startsWith('#/rules') || hash.startsWith('#/learn')) { location.replace('#/lessons'); return; }
+      else if ((m = /^#\/learn\/(problems|common|guides)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
+      else if (hash.startsWith('#/guides')) { location.replace('#/learn/guides'); return; }
+      else if (hash.startsWith('#/lessons') || hash.startsWith('#/common')) { location.replace('#/learn/common'); return; }
+      else if (hash.startsWith('#/learn') || hash.startsWith('#/rules')) { location.replace('#/learn/problems'); return; }
       else if (hash.startsWith('#/system')) { location.replace('#/llm'); return; }
       else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView(); }
       else { setNav('home'); await materialsView(); }
@@ -541,7 +542,7 @@
       }));
     });
   }
-  // Adds one item: this problem's (on its page, from 확인할 곳 or a set's 고칠 점), or every problem's (전체 학습 / 지침).
+  // Adds one item: this problem's (on its page, or from a set's 고칠 점), or every problem's (공통 학습 / 지침).
   async function teach({ text, stage, scope = 'problem', target = 'all', materialId, from = 'input', jobId, itemIndex }) {
     const body = scope === 'problem'
       ? { text, stage, target, scope: 'material', source: jobId ? { jobId, itemIndex, from } : { materialId, from } }
@@ -550,7 +551,7 @@
   }
 
   // The problem page in three tabs: 분석 (the result, then this problem's 분석 학습), 문제 생성 (this problem's
-  // 생성 학습, a new set) and 문제 리스트 (the sets made). Every-problem learning lives on 전체 학습 and 지침.
+  // 생성 학습, a new set) and 문제 리스트 (the sets made). Every-problem learning lives on 학습 (공통 학습, 지침).
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = setsOf(m);
@@ -1166,10 +1167,10 @@
     api('GET', '/api/balance').then((x) => { if ($('#balance')) $('#balance').textContent = x.balance; }).catch(() => { if ($('#balance')) $('#balance').textContent = '확인 실패'; });
   }
 
-  // ------------------------------------------------------------------ 전체 학습 / 지침 (docs/learning.md)
-  // 전체 학습: lessons learned across problems that every problem gets (analysis, reading corrections, generation).
-  // 지침: what the AI must always do or not do, and its persona; how the results are checked. Each list can be added to
-  // here; most lessons arrive from a problem ("전체 학습으로").
+  // ------------------------------------------------------------------ 학습 (docs/learning.md)
+  // One menu, three tabs. 문제별 학습: every problem's own items, by problem, to read, edit, switch off or delete (they
+  // are added on the problem page). 공통 학습: lessons every problem gets (analysis, reading corrections, generation).
+  // 지침: what the AI must always do or not do, and its persona; how the results are checked.
   const globalOpen = new Set();
   function globalAddHtml(p, stage, placeholder) {
     return `<div class="panel fb-new"><textarea id="${p}-text" rows="2" placeholder="${placeholder}"></textarea>
@@ -1180,23 +1181,75 @@
       const text = $(`#${p}-text`).value.trim();
       if (!text) throw new Error('내용을 적어 주세요.');
       await teach({ text, stage, scope: layer, target: $(`#${p}-target`)?.value || 'all' });
-      toast(layer === 'guide' ? '지침에 넣었습니다. 모든 문제에 가장 먼저 들어갑니다.' : '전체 학습에 넣었습니다. 모든 문제에 들어갑니다.');
+      toast(layer === 'guide' ? '지침에 넣었습니다. 모든 문제에 가장 먼저 들어갑니다.' : '공통 학습에 넣었습니다. 모든 문제에 들어갑니다.');
       await repaint();
     }));
   }
-  async function lessonsView() {
+  const LEARN_TABS = [
+    ['problems', '문제별 학습', '문제 하나에만 적용'],
+    ['common', '공통 학습', '모든 문제에 적용'],
+    ['guides', '지침', '반드시 지킬 규칙 · 페르소나'],
+  ];
+  async function learnView(tab) {
     view.innerHTML = `<div class="lt">
-      <div class="lt-title"><h1>전체 학습</h1><p class="lt-meta">여러 문제에 통하는 교훈입니다. 여기 넣은 것은 모든 문제에 들어갑니다. 반드시 지킬 규칙은 <a href="#/guides">지침</a>에 둡니다.</p></div>
+      <div class="lt-title"><h1>학습</h1><p class="lt-meta">AI가 문제를 분석하고 만들 때 따르는 것들입니다. 부딪히면 <b>지침 → 문제별 학습 → 공통 학습</b> 순서로 따릅니다.</p></div>
+      <nav class="stage-tabs" role="tablist">${LEARN_TABS.map(([k, label, sub], i) => `<button type="button" role="tab" data-learn-tab="${k}" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab}">
+        <span class="stage-no">${i + 1}</span><span class="stage-txt"><b>${label}</b><small id="lt-n-${k}">${sub}</small></span></button>`).join('')}</nav>
+      <div class="stage" id="learn-pane"></div>
+    </div>`;
+    $$('[data-learn-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = '#/learn/' + b.dataset.learnTab; }));
+    const pane = $('#learn-pane');
+    if (tab === 'problems') await problemsLearn(pane);
+    else if (tab === 'common') await lessonsView(pane);
+    else await guidesView(pane);
+  }
+  // Counts under the tab names, from one read.
+  function learnCounts(d) {
+    const on = (list) => list.filter((x) => x.status === 'approved').length;
+    const set = (k, t) => { if ($('#lt-n-' + k)) $('#lt-n-' + k).textContent = t; };
+    set('problems', `문제 ${d.problems.length}개 · ${d.problems.reduce((n, p) => n + p.analysis.length + p.generation.length, 0)}개`);
+    set('common', `${on(d.lessons.analysis) + on(d.lessons.generation)}개 · 읽기 교정 ${d.corrections.length}개`);
+    set('guides', `${on(d.guides.analysis) + on(d.guides.generation)}개${d.persona ? ' · 페르소나' : ''}`);
+  }
+
+  // 문제별 학습: one card per problem that has any, newest teaching first; each item edited, switched off or deleted in
+  // place. New items are added on the problem page, where the result they change is in view.
+  async function problemsLearn(pane) {
+    pane.innerHTML = '<p class="muted">불러오는 중…</p>';
+    const repaint = async () => {
+      const d = await api('GET', '/api/learning');
+      if (!pane.isConnected) return;
+      learnCounts(d);
+      const group = (p, stage, items) => (items.length ? `<div class="lp-group"><h3>${stage === 'analysis' ? '분석 학습' : '생성 학습'} <span class="muted">${items.length}</span></h3>
+          <div class="lt-list" data-group="${stage}:${p.id}">${items.map((x) => learnRow(x, globalOpen)).join('')}</div></div>` : '');
+      pane.innerHTML = `<p class="lp-intro">문제 하나에만 들어가는 학습입니다. <b>분석 학습</b>은 그 문제를 다시 분석할 때, <b>생성 학습</b>은 그 문제로 새 세트를 만들 때 들어갑니다. 새 학습은 문제 페이지에서 결과를 보며 넣습니다.</p>`
+        + (d.problems.length ? `<div class="lp-list">${d.problems.map((p) => `<article class="panel lp-card">
+            <header class="lp-head"><div class="lp-title"><a href="#/m/${p.id}">${esc(p.title)}</a><span class="lp-meta">${esc([p.subject, p.topic].filter(Boolean).join(' · ') || '과목·유형 없음')}</span></div>
+              <a class="btn small" href="#/m/${p.id}">문제 열기</a></header>
+            ${group(p, 'analysis', p.analysis)}${group(p, 'generation', p.generation)}</article>`).join('')}</div>`
+          : '<div class="panel set-empty"><p>아직 문제별 학습이 없습니다. 문제 페이지의 분석 학습·생성 학습이나 세트의 고칠 점에서 넣으면 여기에 모입니다.</p></div>')
+        + (d.materials > d.problems.length ? `<p class="muted small">학습이 없는 문제 ${d.materials - d.problems.length}개는 보이지 않습니다.</p>` : '');
+      for (const p of d.problems) for (const stage of ['analysis', 'generation']) {
+        const box = $(`[data-group="${stage}:${p.id}"]`, pane);
+        if (box) bindLearnRows(box, p[stage], globalOpen, repaint);
+      }
+    };
+    await repaint();
+  }
+
+  async function lessonsView(pane) {
+    pane.innerHTML = `
+      <p class="lp-intro">여러 문제에 통하는 교훈입니다. 여기 넣은 것은 모든 문제에 들어갑니다. 반드시 지킬 규칙은 <a href="#/learn/guides">지침</a>에 둡니다.</p>
       <section class="lt-sec"><div class="lt-sec-head"><h2>분석 교훈</h2><p>모든 문제를 분석할 때 들어갑니다. 한 문제의 학습과 부딪히면 그 문제의 것을 따릅니다.</p></div>
-        <div class="fb-wrap">${globalAddHtml('la', 'analysis', '예: 해설의 step 하나에 판단이 여러 개 있으면 판단마다 STEP을 나눈다.')}<div class="panel lt-list" id="l-a"></div></div></section>
+        <div class="fb-wrap"><div class="panel lt-list" id="l-a"></div>${globalAddHtml('la', 'analysis', '예: 해설의 step 하나에 판단이 여러 개 있으면 판단마다 STEP을 나눈다.')}</div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>읽기 교정</h2><p>사진에서 잘못 읽은 단어입니다. 분석 결과 수정이나 단어 확인에서 고치면 자동으로 쌓이고, 다음 분석부터 그 단어를 주의해서 읽습니다.</p></div>
         <div class="panel lt-list" id="l-c"></div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>생성 교훈</h2><p>모든 문제의 변형을 만들 때 들어가고, 만든 문제마다 지켰는지 검사합니다.</p></div>
-        <div class="fb-wrap">${globalAddHtml('lg', 'generation', '예: 수는 계산기 없이 풀리게 작은 정수로 잡는다.')}<div class="panel lt-list" id="l-g"></div></div></section>
-    </div>`;
+        <div class="fb-wrap"><div class="panel lt-list" id="l-g"></div>${globalAddHtml('lg', 'generation', '예: 수는 계산기 없이 풀리게 작은 정수로 잡는다.')}</div></section>`;
     const repaint = async () => {
       const d = await api('GET', '/api/learning');
       if (!$('#l-a')) return;
+      learnCounts(d);
       const a = d.lessons.analysis.map((x) => ({ ...x, inAnalysis: undefined }));
       $('#l-a').innerHTML = a.map((x) => learnRow(x, globalOpen)).join('') || emptyRow('아직 없습니다.');
       bindLearnRows($('#l-a'), a, globalOpen, repaint);
@@ -1216,19 +1269,19 @@
     await repaint();
   }
 
-  async function guidesView() {
-    view.innerHTML = `<div class="lt">
-      <div class="lt-title"><h1>지침</h1><p class="lt-meta">학습과 별개로 AI가 반드시 지킬 것과 하면 안 될 것, 그리고 AI의 역할입니다. 모든 문제에 가장 먼저 들어가고, 문제 학습이나 전체 학습과 부딪히면 지침을 따릅니다.</p></div>
+  async function guidesView(pane) {
+    pane.innerHTML = `
+      <p class="lp-intro">학습과 별개로 AI가 반드시 지킬 것과 하면 안 될 것, 그리고 AI의 역할입니다. 모든 문제에 가장 먼저 들어가고, 문제별 학습이나 공통 학습과 부딪히면 지침을 따릅니다.</p>
       <section class="lt-sec"><div class="lt-sec-head"><h2>페르소나</h2><p>분석·생성·검토, 모든 AI 호출의 맨 앞에 붙는 AI의 역할입니다.</p></div><div class="panel lt-list" id="g-p"></div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>분석 지침</h2><p>원본을 읽고 STEP으로 정리할 때 반드시 지킬 것입니다.</p></div>
-        <div class="fb-wrap">${globalAddHtml('ga', 'analysis', '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.')}<div class="panel lt-list" id="g-a"></div></div></section>
+        <div class="fb-wrap"><div class="panel lt-list" id="g-a"></div>${globalAddHtml('ga', 'analysis', '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.')}</div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>생성 지침</h2><p>변형 문제를 만들 때 반드시 지킬 것입니다. 만든 문제마다 지켰는지 검사합니다.</p></div>
-        <div class="fb-wrap">${globalAddHtml('gg', 'generation', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.')}<div class="panel lt-list" id="g-g"></div></div></section>
-      <section class="lt-sec"><div class="panel lt-checks" id="g-c"></div></section>
-    </div>`;
+        <div class="fb-wrap"><div class="panel lt-list" id="g-g"></div>${globalAddHtml('gg', 'generation', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.')}</div></section>
+      <section class="lt-sec"><div class="panel lt-checks" id="g-c"></div></section>`;
     const repaint = async () => {
       const d = await api('GET', '/api/learning');
       if (!$('#g-p')) return;
+      learnCounts(d);
       const k = 'persona';
       $('#g-p').innerHTML = `<div class="lt-row lt-plain${globalOpen.has(k) ? ' open' : ''}" data-row="${k}">
           <div class="lt-main"><span class="lt-name${d.persona ? ' lt-clamp' : ''}">${esc(d.persona || '아직 정하지 않았습니다')}</span><span class="lt-sub lt-wrap">${d.persona ? '모든 AI 호출의 맨 앞에 붙습니다' : '예: 고등학교 화학 선생님의 출제를 돕는 조교로서, 학생이 읽는 문장은 교과서 말투로 쓰고 단위를 빠뜨리지 않는다.'}</span></div>
@@ -1328,7 +1381,7 @@
         <div class="lt-sec-head"><h2>모델</h2><p>고른 모델이 <b>기본 모델</b>이 되어 문제 분석·생성에서 먼저 선택됩니다.</p></div>
         <div class="panel lt-list" id="lt-models"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
       </section>
-      <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/guides">지침</a>에서 관리합니다.</p>
+      <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/learn/guides">학습 › 지침</a>에서 관리합니다.</p>
     </div>`;
     const opened = new Set(); // rows left open survive a repaint
     const toggleRows = (box) => rowToggles(box, opened);

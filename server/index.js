@@ -279,7 +279,7 @@ function createApp(options = {}) {
     return out;
   }
   const titleOfMaterial = (id) => (id ? store.materials.get(id)?.title || '삭제된 문제' : '');
-  // An item as the pages show it: which of 지침 / 이 문제 / 전체 학습, where it was learned, and how it fared.
+  // An item as the pages show it: which of 지침 / 이 문제 / 공통 학습, where it was learned, and how it fared.
   const itemView = (r, kept) => ({
     id: r.id, layer: layerOf(r), stage: stageOf(r), text: r.text, target: r.target, status: r.status, createdAt: r.createdAt,
     from: r.source?.from || 'input', fromLabel: r.source?.label || '', jobId: r.source?.jobId || '', itemIndex: r.source?.itemIndex,
@@ -683,13 +683,27 @@ function createApp(options = {}) {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });
-  // 전체 학습 and 지침 (docs/learning.md): the every-problem items by layer and stage, with where each was learned and how
-  // it fared; the reading corrections (전체 학습 of analysis); the persona and, read-only, how results are checked (지침).
+  // 학습 (docs/learning.md): each problem's own items (문제별 학습) and the every-problem items by layer and stage, with where each was learned and how
+  // it fared; the reading corrections (공통 학습 of analysis); the persona and, read-only, how results are checked (지침).
   route('GET', /^\/api\/learning$/, () => {
     const kept = keptByRule();
     const global = store.rules.all().filter((r) => r.scope !== 'material').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => itemView(r, kept));
     const pick = (layer, stage) => global.filter((r) => r.layer === layer && r.stage === stage);
+    // 문제별 학습: each problem's own items, problems with the newest teaching first. An analysis item says whether the
+    // problem's current analysis had it (as on the problem page).
+    const own = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const problems = store.materials.all().map((m) => {
+      const mine = own.filter((r) => r.source.materialId === m.id);
+      const used = new Set((m.learningUsed || []).map((x) => x.id));
+      const view = (r) => (stageOf(r) === 'analysis'
+        ? { ...itemView(r, kept), inAnalysis: m.learningUsed ? used.has(r.id) : Boolean(m.analyzedAt && r.createdAt < m.analyzedAt) }
+        : itemView(r, kept));
+      return { id: m.id, title: m.title, subject: m.subject || '', topic: m.topic || '', latest: mine.at(-1)?.createdAt || '',
+        analysis: mine.filter((r) => stageOf(r) === 'analysis').map(view), generation: mine.filter((r) => stageOf(r) === 'generation').map(view) };
+    }).filter((p) => p.analysis.length + p.generation.length).sort((a, b) => b.latest.localeCompare(a.latest));
     return {
+      problems,
+      materials: store.materials.all().length,
       persona: llmSettings(cfg.dataDir).persona || '',
       guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
       lessons: { analysis: pick('lesson', 'analysis'), generation: pick('lesson', 'generation') },

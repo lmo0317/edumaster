@@ -128,7 +128,7 @@ function analyzeText({ hasSolution, sameImage, note, guides = [], feedback = [],
   else lines.push('문제 이미지만 있다. 해설이 없으므로 직접 풀어 STEP을 만들어라 (solutionSource="ai").');
   lines.push('작은 원본을 확대해 위에서 아래로 자른 조각이 올 수 있다. 조각은 위아래가 조금 겹치므로 겹친 줄을 두 번 옮기지 말고 순서대로 이어 읽어라.');
   if (note) lines.push('교사 메모: ' + note);
-  // 지침 > 이 문제의 피드백 > 전체 학습: all three come before the rules above about STEP counts and copying the solution.
+  // 지침 > 이 문제의 피드백 > 공통 학습: all three come before the rules above about STEP counts and copying the solution.
   const block = (title, items) => { if (items.length) lines.push(title, ...items.map((x) => '- ' + x.text)); };
   block('[분석 지침 — 선생님이 정한, 모든 문제에서 반드시 지킬 규칙. 가장 우선한다]', guides);
   block('[이 문제의 분석 피드백 — 이 원본을 앞서 읽고 정리한 결과에 선생님이 요청한 점. 읽기에 관한 것은 이미지를 다시 확인한다]', feedback);
@@ -246,10 +246,10 @@ function priorBlock(prior) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
-const LAYER_LABEL = { guide: '지침', problem: '이 문제', lesson: '전체 학습' };
+const LAYER_LABEL = { guide: '지침', problem: '이 문제', lesson: '공통 학습' };
 function rulesBlock(rules) {
   if (!rules.length) return '\n[교사 지침·학습] 없음. appliedRules는 빈 배열.';
-  return '\n[교사 지침·학습 — 모두 지킨다. 지침은 반드시 지킬 규칙, 이 문제는 선생님이 이 원본에 대해 가르친 것, 전체 학습은 여러 문제에서 배운 교훈이다. 서로 부딪히면 지침 > 이 문제 > 전체 학습 순서로 따른다. 각 항목을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
+  return '\n[교사 지침·학습 — 모두 지킨다. 지침은 반드시 지킬 규칙, 이 문제는 선생님이 이 원본에 대해 가르친 것, 공통 학습은 여러 문제에서 배운 교훈이다. 서로 부딪히면 지침 > 이 문제 > 공통 학습 순서로 따른다. 각 항목을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
     `- (${r.id}) [${LAYER_LABEL[r.layer] || '이 문제'}${r.kind === 'dont' ? '·하지 말 것' : r.kind === 'do' ? '·할 것' : ''}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`
     + (r.context ? `\n    (이 피드백을 받은 문제 — 같은 실수를 반복하지 않는다. 내용·수치를 베끼지 않는다: ${r.context})` : '')).join('\n');
 }
