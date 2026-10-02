@@ -1256,17 +1256,11 @@
       await repaint();
     }));
   }
-  const LEARN_TABS = [
-    ['problems', '문제별 학습', '문제 하나에만 적용'],
-    ['common', '공통 학습', '모든 문제에 적용'],
-    ['guides', '지침', '반드시 지킬 규칙 · 페르소나'],
-    ['harness', '하네스', '검사하고 스스로 고치는 방식'],
-  ];
+  const LEARN_TABS = [['problems', '문제별 학습'], ['common', '공통 학습'], ['guides', '지침'], ['harness', '하네스']];
   async function learnView(tab) {
     view.innerHTML = `<div class="lt">
       <div class="lt-title"><h1>학습</h1><p class="lt-meta">AI가 문제를 분석하고 만들 때 따르는 것들입니다. 부딪히면 <b>지침 → 문제별 학습 → 공통 학습</b> 순서로 따릅니다.</p></div>
-      <nav class="stage-tabs" role="tablist">${LEARN_TABS.map(([k, label, sub], i) => `<button type="button" role="tab" data-learn-tab="${k}" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab}">
-        <span class="stage-no">${i + 1}</span><span class="stage-txt"><b>${label}</b><small id="lt-n-${k}">${sub}</small></span></button>`).join('')}</nav>
+      <nav class="lt-tabs" role="tablist">${LEARN_TABS.map(([k, label]) => `<button type="button" role="tab" data-learn-tab="${k}" class="lt-tab${k === tab ? ' on' : ''}" aria-selected="${k === tab}">${label}<em id="lt-n-${k}" hidden></em></button>`).join('')}</nav>
       <div class="stage" id="learn-pane"></div>
     </div>`;
     $$('[data-learn-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = '#/learn/' + b.dataset.learnTab; }));
@@ -1274,15 +1268,18 @@
     if (tab === 'problems') await problemsLearn(pane);
     else if (tab === 'common') await lessonsView(pane);
     else if (tab === 'guides') await guidesView(pane);
-    else await harnessView(pane);
+    else {
+      api('GET', '/api/learning').then(learnCounts).catch(() => {}); // the other tabs' counts
+      await harnessView(pane);
+    }
   }
-  // Counts under the tab names, from one read.
+  // How many items each tab holds, beside its name.
   function learnCounts(d) {
     const on = (list) => list.filter((x) => x.status === 'approved').length;
-    const set = (k, t) => { if ($('#lt-n-' + k)) $('#lt-n-' + k).textContent = t; };
-    set('problems', `문제 ${d.problems.length}개 · ${d.problems.reduce((n, p) => n + p.analysis.length + p.generation.length, 0)}개`);
-    set('common', `${on(d.lessons.analysis) + on(d.lessons.generation)}개 · 읽기 교정 ${d.corrections.length}개`);
-    set('guides', `${on(d.guides.analysis) + on(d.guides.generation)}개${d.persona ? ' · 페르소나' : ''}`);
+    const set = (k, n) => { const el = $('#lt-n-' + k); if (el) { el.textContent = n; el.hidden = !n; } };
+    set('problems', d.problems.reduce((n, p) => n + p.analysis.length + p.generation.length, 0));
+    set('common', on(d.lessons.analysis) + on(d.lessons.generation) + d.corrections.length);
+    set('guides', on(d.guides.analysis) + on(d.guides.generation));
   }
 
   // 문제별 학습: one card per problem that has any, newest teaching first; each item edited, switched off or deleted in
@@ -1389,7 +1386,6 @@
       const h = await api('GET', '/api/harness');
       if (!pane.isConnected) return;
       const { settings: v, stats: st, limits } = h;
-      if ($('#lt-n-harness')) $('#lt-n-harness').textContent = `검사 ${h.checks.generation.length + h.checks.analysis.length}개 · 설계 최대 ${v.maxDesigns}번`;
       const fired = new Map(st.checks.map((c) => [c.label, c]));
       const checkRow = (c, withStats) => {
         const f = fired.get(c.label);
@@ -1512,10 +1508,6 @@
       </section>
       <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/learn/guides">학습 › 지침</a>에서 관리합니다.</p>
     </div>`;
-    const opened = new Set(); // rows left open survive a repaint
-    const toggleRows = (box) => rowToggles(box, opened);
-    const isOpen = (key) => (opened.has(key) ? ' open' : '');
-
     const won = (usd) => `약 ${Math.round(usd * 1400).toLocaleString()}원`;
     const month = (u) => (u?.month?.sets ? `이번 달 ${u.month.sets}세트${u.month.usd ? ' · ' + won(u.month.usd) : ''}` : '이번 달 사용 없음');
     const left = (w) => (w ? Math.max(0, Math.round((1 - w.used) * 100)) : null);
@@ -1532,14 +1524,13 @@
       const def = status.defaultProvider || 'deepseek';
       const c = llm.claude;
       const lim = c.loggedIn ? c.limits : null;
-      const row = (key, { name, ok, state, fact, more, open = '관리' }) => `<div class="lt-row${isOpen(key)}" data-row="${key}">
+      const row = (key, { name, ok, state, fact, more }) => `<div class="lt-row lt-llm open" data-row="${key}">
         <input type="radio" name="lt-default" id="lt-def-${key}" value="${key}" aria-label="${esc(name)} 기본 모델로 사용" ${def === key ? 'checked' : ''} ${ok ? '' : 'disabled'}>
         <div class="lt-main">
           <span class="lt-name">${esc(name)}${def === key ? '<span class="lt-tag">기본</span>' : ''}</span>
           <span class="lt-sub"><i class="lt-dot ${ok ? 'ok' : ''}"></i>${state}</span>
         </div>
         <div class="lt-fact">${fact}</div>
-        <button class="small lt-open" data-open>${open}</button>
         <div class="lt-more">${more}</div>
       </div>`;
       $('#lt-models').innerHTML = [
@@ -1547,7 +1538,6 @@
           name: c.label || 'Claude (구독)', ok: c.loggedIn,
           state: c.loggedIn ? `연결됨 · ${month(llm.usage['claude-cli'])}` : '연결 안 됨',
           fact: c.loggedIn ? `${meter('5시간', lim?.fiveHour)}${meter('1주일', lim?.sevenDay)}` : '',
-          open: c.loggedIn ? '관리' : '연결하기',
           more: `<div class="lt-fields">
               <div><label for="cl-model">모델</label><select id="cl-model">${Object.entries(c.models || {}).map(([id, n]) => `<option value="${id}" ${id === c.model ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
               <div><label for="cl-effort">추론 강도</label><select id="cl-effort">${(c.efforts || []).map((e) => `<option value="${e}" ${e === c.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></div>
@@ -1572,7 +1562,6 @@
         }),
       ].join('');
       $('#llm-at').textContent = fmtTime(new Date().toISOString()) + ' 기준';
-      toggleRows($('#lt-models'));
       api('GET', '/api/balance').then((x) => { if ($('#ds-balance')) $('#ds-balance').textContent = x.balance; }).catch(() => { if ($('#ds-balance')) $('#ds-balance').textContent = '확인 실패'; });
       $$('[name=lt-default]').forEach((r) => r.addEventListener('change', guard(async () => {
         await api('PUT', '/api/llm/default', { provider: r.value });
