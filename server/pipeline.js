@@ -781,7 +781,6 @@ const VERSION_KEYS = ['problem', 'solution', 'outline', 'usesSteps', 'designNote
 const versionOf = (item) => Object.fromEntries(VERSION_KEYS.filter((k) => item[k] !== undefined).map((k) => [k, item[k]]));
 // A design with fewer faults that make it unusable wins; then fewer design faults; then fewer solution notes.
 const faultScore = (r) => r.check.invalid.length * 1000 + r.reasons.length * 10 + r.check.rewriteNotes.length;
-const MAX_DESIGNS = 3;
 
 /** One design of a problem: generated, checked, repaired (problem) and rewritten (solution) until it passes or stops
  *  getting better. Mutates `item`; returns its version, the last check and what is still wrong. */
@@ -815,14 +814,14 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     if (ctx.signal?.aborted) break;
     // A fault only in the solution (wording, the teacher's sentence frame, a solution rule) is rewritten by the writer
     // — no redesign, no new solve. Outside a lean run the current solution is what gets rewritten.
-    if (check.rewriteNotes.length && !repairReasons(check).length && rewrites < 2 && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
+    if (check.rewriteNotes.length && !repairReasons(check).length && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
       rewrites++;
       item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: check.rewriteNotes });
       if (!lean) item.outline = item.solution;
       writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes);
       const before = check.rewriteNotes;
       check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
-      if (same(before, check.rewriteNotes)) rewrites = 2; // the same notes again: rewriting more will not help
+      if (same(before, check.rewriteNotes)) rewrites = Infinity; // the same notes again: rewriting more will not help
       continue;
     }
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
@@ -868,7 +867,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   return { version: versionOf(item), check, writeNotes, reasons: repairReasons(check), design };
 }
 
-/** Makes one problem without stopping for the teacher: up to MAX_DESIGNS designs (each repaired and rewritten), the
+/** Makes one problem without stopping for the teacher: up to ctx.maxDesigns designs (each repaired and rewritten), the
  *  best one kept. What was found and fixed along the way is in item.attempts (the report); what is still left is in
  *  item.problems (the answer cannot be trusted) or item.warnings (the problem is usable). Mutates `item`. */
 async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
@@ -878,7 +877,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   item.redesigned = 0;
   let best = null;
   let left = previous;
-  for (let design = 1; design <= MAX_DESIGNS; design++) {
+  for (let design = 1; design <= (ctx.maxDesigns ?? 3); design++) {
     if (design > 1) {
       if (ctx.signal?.aborted) break;
       // A fresh design costs a design, a solve and a review at least; the later problems keep theirs.
@@ -997,33 +996,58 @@ function pickRules(store, material) {
     context: r.source?.excerpt ? `${r.source.label || '이전 생성 문제'}: ${r.source.excerpt.replace(/\s+/g, ' ').slice(0, 220)}` : '' }));
 }
 
-// What the pipeline checks and what happens on failure — shown on the LLM tab. Keep in step with the code above.
-// onFail: 'fix' = the pipeline corrects it itself, 'repair' = the problem goes back to the model once more,
-// 'review' = shown to the teacher as 교사 검토 필요, 'note' = shown as 확인할 점.
+// What the pipeline checks and what happens on failure — shown on 학습 › 하네스. Keep in step with the code above.
+// onFail: 'fix' = the server corrects it itself, 'rewrite' = the solution is written again (the problem kept),
+// 'repair' = the problem is repaired, then designed afresh if that does not do it, 'answer' = if it is still so after
+// every design, the problem is marked 정답 확인 필요. match: how a recorded fault is counted under the check.
 const SYSTEM_CHECKS = {
   analysis: [
     { label: '원본 대조 교정', how: '옮겨 적은 문제·해설을 이미지와 글자 단위로 다시 대조해 오독(몰질량↔물질량, 숫자, 로마 숫자)을 고친다.', onFail: 'fix' },
     { label: '필기 유입 재판독', how: '해설에서 구하는 값(x=15, 2cm/ms)이 문제 본문에 있으면 문제 이미지만 인쇄 글자 기준으로 두 번 다시 읽는다. 두 번 다 있으면 인쇄된 조건으로 인정한다.', onFail: 'fix' },
     { label: '발문 재판독 (2회)', how: '발문만 따로 두 번 읽어, 두 번 일치한 글자로 첫 판독을 고친다. 알려진·교사가 고친 혼동 단어는 해설까지 함께 고친다.', onFail: 'fix' },
     { label: '해설 단계 제목 재판독 (2회)', how: '해설에 인쇄된 step 제목을 두 번 읽어 STEP 수와 제목을 정한다.', onFail: 'fix' },
-    { label: 'STEP 수 맞추기', how: '정리한 STEP이 해설의 단계 수보다 많으면 이웃한 STEP을 합친다.', onFail: 'fix' },
-    { label: '원본 정답 검산', how: '원본을 해설대로 계산하는 프로그램을 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 본다. 프로그램이 실행되지 않으면 오류를 보여 주고 한 번 고치게 한다.', onFail: 'review' },
-    { label: '혼동 단어 확인', how: '뒤바뀐 적이 있는 단어(기본 목록 + 교사 교정 기억)가 나오면 원본 확인 항목에 올린다.', onFail: 'note' },
+    { label: 'STEP 수 맞추기', how: '정리한 STEP이 해설의 단계 수보다 많으면 이웃한 STEP을 합친다 (선생님이 STEP 수를 정했으면 그대로 둔다).', onFail: 'fix' },
+    { label: '원본 정답 검산', how: '원본을 해설대로 계산하는 프로그램을 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 본다. 프로그램이 실행되지 않으면 오류를 보여 주고 한 번 고치게 한다.', onFail: 'fix' },
   ],
   generation: [
-    { label: '코드 검산', how: '생성 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행: 정답 값이 선택지 하나와만 맞는지, 설계 조건(가정→모순 등)이 참인지.', onFail: 'repair' },
-    { label: '독립 풀이', how: '정답을 모르는 별도 호출이 문제만 보고 풀어 정답을 대조하고, 모호·모순·조건 부족·결론 노출을 지적한다.', onFail: 'repair' },
-    { label: 'STEP 범위', how: '독립 풀이에 원본 STEP 기법 중 무엇이 꼭 필요했는지로, 목표 범위(STEP 1, STEP 1~2, 전체)와 맞는지 본다.', onFail: 'repair' },
-    { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 안 쓰인 조건이 있으면 설계 결함.', onFail: 'repair' },
-    { label: '통합 변형 여부', how: '통합 모드의 최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 코드 골격 비교) 본다.', onFail: 'repair' },
-    { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문이 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair' },
-    { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 확인.', onFail: 'repair' },
-    { label: '보기·정답 연결, O/X 일관성', how: '보기 수·중복·정답 번호, ㄱㄴㄷ 해설의 참 판정과 정답 보기가 맞는지 코드로 확인.', onFail: 'review' },
-    { label: '결론 노출·표기 형식', how: '앞 STEP의 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 확인.', onFail: 'repair' },
-    { label: '교사 지침 준수', how: '생성 모델이 지침별로 적용 방법을 적고, 독립 풀이가 문제에 관한 지침을 다시 판정한다.', onFail: 'note' },
+    { label: '코드 검산', how: '생성 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행해, 정답 값이 선택지 하나와만 맞는지와 설계 조건(가정→모순 등)이 참인지 본다.', onFail: 'answer', match: /^코드 검산/ },
+    { label: '독립 풀이', how: '정답을 모르는 별도 호출이 문제만 보고 풀어 정답을 대조하고, 모호·모순·조건 부족·결론 노출을 지적한다.', onFail: 'answer', match: /독립 풀이(의 정답|가 정답| 지적)/ },
+    { label: '보기·정답 연결', how: '보기 수·중복·정답 번호, ㄱㄴㄷ 해설의 참 판정과 정답 보기가 맞는지 코드로 본다.', onFail: 'answer', match: /^(보기·정답|해설 O\/X)/ },
+    { label: 'STEP 범위', how: '독립 풀이에 원본 STEP 기법 중 무엇이 꼭 필요했는지로, 목표 범위(STEP 1, STEP 1~2, 전체)와 맞는지, 기법 없이 풀리는 지름길이 없는지 본다.', onFail: 'repair', match: /^STEP 범위|로직 없이|핵심 기법 없이|목표 범위 밖/ },
+    { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 쓰이지 않은 조건·문자 계수가 있으면 설계 결함이다.', onFail: 'repair', match: /쓰이지 않는 조건|문자 계수/ },
+    { label: '통합 변형 여부', how: '최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 표 구조 비교) 본다.', onFail: 'repair', match: /숫자만 바뀌|통합 변형/ },
+    { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문·보기가 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair', match: /수치\(|질문이 같|선택지가 같/ },
+    { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 본다.', onFail: 'repair', match: /가정→모순 판정 유지|보조 문자 유지|풀이 순서/ },
+    { label: '결론 노출·표기 형식', how: '추론할 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 본다.', onFail: 'repair', match: /결론을 표에|표기 형식/ },
+    { label: '해설 대조', how: '별도 검토자가 변형 해설을 선생님 해설과 이 문제의 STEP 범위 안에서 STEP별로 비교해, 다른 논리·문장 틀·표 구성을 찾는다. 범위 밖 STEP으로 쓴 정답 계산은 서버가 마지막 STEP에 합친다.', onFail: 'rewrite', match: /해설이 선생님 해설과 다름|STEP 제목/ },
+    { label: '지침·학습 준수', how: '생성 모델이 지침·학습마다 적용 방법을 적고, 문제에 관한 것은 독립 풀이가, 해설에 관한 것은 해설 검토자가 다시 판정한다.', onFail: 'repair', match: /교사 지침 미준수/ },
   ],
-  repair: '해설만의 문제는 해설을 최대 2번 다시 쓰고, 문제의 결함은 최대 2번 수정한다. 그래도 남거나 같은 지적이 반복되면 처음부터 새로 설계한다(문제마다 최대 3번 설계). 설계 중 결함이 가장 적은 것을 남기고, 남은 점은 리포트에 적는다. 정답을 믿을 수 없는 문제만 교사 확인으로 둔다. 세트가 끝나면 나온 실수를 학습으로 정리해 자동으로 추가한다.',
 };
+const ON_FAIL = { fix: '서버가 바로 고침', rewrite: '해설만 다시 씀', repair: '문제 수정 → 안 되면 새로 설계', answer: '고치고 새로 설계, 끝내 안 되면 정답 확인 필요' };
+
+/** How the checks fared on the recent sets: per check, on how many problems it fired and on how many it was left. */
+function harnessStats(jobs) {
+  const sets = jobs.filter((j) => j.type === 'generate' && j.status === 'done').sort((x, y) => y.createdAt.localeCompare(x.createdAt)).slice(0, 10);
+  const items = sets.flatMap((j) => (j.items || []).filter((i) => i.problem));
+  const fired = (item) => (item.attempts || []).flatMap((a) => a.failures || []);
+  const left = (item) => [...(item.problems || []), ...(item.warnings || [])];
+  const checks = SYSTEM_CHECKS.generation.map((c) => ({
+    label: c.label,
+    fired: items.filter((i) => [...fired(i), ...left(i)].some((f) => c.match.test(String(f).replace(/^(문제 설계|STEP 범위|해설): /, '')) || c.match.test(f))).length,
+    left: items.filter((i) => left(i).some((f) => c.match.test(String(f).replace(/^(문제 설계|해설): /, '')) || c.match.test(f))).length,
+  }));
+  const first = items.filter((i) => ['passed', 'warning'].includes(i.status) && !(i.attempts || []).some((a) => a.kind !== 'generate')).length;
+  const minutes = sets.map((j) => (new Date(j.finishedAt || j.updatedAt) - new Date(j.startedAt || j.createdAt)) / 60000).filter((m) => m > 0);
+  return {
+    sets: sets.length, problems: items.length, first,
+    made: items.filter((i) => ['passed', 'warning'].includes(i.status)).length,
+    answer: items.filter((i) => i.status === 'needs_review' && i.design).length,
+    failed: items.filter((i) => i.status === 'failed').length,
+    calls: sets.length ? Math.round(sets.reduce((n, j) => n + (j.usage?.calls || 0), 0) / sets.length) : 0,
+    minutes: minutes.length ? Math.round(minutes.reduce((a, m) => a + m, 0) / minutes.length) : 0,
+    checks,
+  };
+}
 
 module.exports = {
-  learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+  harnessStats, ON_FAIL, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

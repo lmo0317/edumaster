@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { openStore, newId, isId } = require('./store');
-const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS } = require('./llm');
+const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, HARNESS_LIMITS, harnessSettings } = require('./llm');
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
@@ -716,8 +716,28 @@ function createApp(options = {}) {
       guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
       lessons: { analysis: pick('lesson', 'analysis'), generation: pick('lesson', 'generation') },
       corrections: store.corrections.all().sort((a, b) => b.count - a.count),
-      checks: { analysis: pipeline.SYSTEM_CHECKS.analysis, generation: pipeline.SYSTEM_CHECKS.generation, repair: pipeline.SYSTEM_CHECKS.repair },
+      // How results are checked is on 학습 › 하네스 (/api/harness).
     };
+  });
+  // 하네스 (학습 › 하네스): how results are checked and fixed, how that went on the recent sets, and the counts the teacher
+  // can change. A change applies to sets started after it.
+  const strip = ({ match, ...c }) => c;
+  route('GET', /^\/api\/harness$/, () => ({
+    settings: harnessSettings(cfg.dataDir), limits: HARNESS_LIMITS,
+    checks: { analysis: pipeline.SYSTEM_CHECKS.analysis.map(strip), generation: pipeline.SYSTEM_CHECKS.generation.map(strip) }, onFail: pipeline.ON_FAIL,
+    stats: pipeline.harnessStats(store.jobs.all()),
+  }));
+  route('PUT', /^\/api\/harness$/, async (req) => {
+    const body = await readBody(req, 4096);
+    const next = {};
+    for (const [k, [lo, hi]] of Object.entries(HARNESS_LIMITS)) {
+      if (body[k] === undefined) continue;
+      const v = Number(body[k]);
+      if (!Number.isInteger(v) || v < lo || v > hi) throw fail(400, `${k}은(는) ${lo}~${hi} 사이의 정수여야 합니다.`);
+      next[k] = v;
+    }
+    saveLlmSettings(cfg.dataDir, { harness: { ...harnessSettings(cfg.dataDir), ...next } });
+    return { settings: harnessSettings(cfg.dataDir) };
   });
   const PERSONA_MAX = 4000;
   route('PUT', /^\/api\/persona$/, async (req) => {

@@ -71,7 +71,7 @@ module.exports = {
     analyzeCalls: int('EDUMASTER_ANALYZE_CALLS', 11),
     analyzeTokens: int('EDUMASTER_ANALYZE_TOKENS', 160000),
     // generate + (independent solve + solution review) per try; repairs, rewrites and up to 3 designs per problem, 3 problems
-    generateCalls: int('EDUMASTER_GENERATE_CALLS', 60),
+    generateCalls: int('EDUMASTER_GENERATE_CALLS', 150), // a ceiling: a set's cap is the 하네스 setting (default 60) up to this
     generateTokens: int('EDUMASTER_GENERATE_TOKENS', 1600000),
     regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 25),
     regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 600000),

@@ -186,7 +186,18 @@ test('지침 and 전체 학습: the persona leads every call; every-problem anal
     await s.call('POST', '/api/login', { code: 'test-code' });
     let d = (await s.call('GET', '/api/learning')).data;
     assert.deepEqual([d.persona, d.guides.analysis, d.guides.generation, d.lessons.analysis, d.lessons.generation], ['', [], [], [], []]);
-    assert.ok(d.checks.generation.length >= 8 && d.checks.analysis.length >= 5);
+    // 하네스: the checks with what happens on failure, how they fared, and settings kept within their range.
+    const h = (await s.call('GET', '/api/harness')).data;
+    assert.ok(h.checks.generation.length >= 10 && h.checks.analysis.length >= 5);
+    assert.ok(h.checks.generation.every((c) => h.onFail[c.onFail]), 'every check says what happens on failure');
+    assert.deepEqual(h.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 3, setCalls: 60 });
+    assert.deepEqual(h.stats.checks.map((c) => c.label), h.checks.generation.map((c) => c.label));
+    assert.equal((await s.call('PUT', '/api/harness', { maxDesigns: 9 })).status, 400);
+    assert.deepEqual((await s.call('PUT', '/api/harness', { maxDesigns: 2, setCalls: 80 })).data.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 2, setCalls: 80 });
+    const made = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
+    await s.waitJob(made.jobId);
+    const job = (await s.call('POST', '/api/generations', { materialId: made.material.id, mode: 'integrated' })).data;
+    assert.equal((await s.waitJob(job.jobId)).budget.maxCalls, 80, 'a new set takes the call cap');
 
     assert.equal((await s.call('PUT', '/api/persona', { persona: '  화학 선생님의 조교  ' })).data.persona, '화학 선생님의 조교');
     assert.equal((await s.call('PUT', '/api/persona', { persona: 'x'.repeat(4001) })).status, 400);

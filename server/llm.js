@@ -155,6 +155,18 @@ function saveLlmSettings(dataDir, patch) {
   fs.writeFileSync(path.join(dataDir, 'llm-settings.json'), JSON.stringify(next, null, 1));
   return next;
 }
+// The harness settings on the 학습 › 하네스 tab: [lowest, highest, default].
+const HARNESS_LIMITS = {
+  maxRewrites: [0, 3, 2], // solution-only rewrites per design
+  maxRepairs: [0, 4, 2], // problem repairs per design
+  maxDesigns: [1, 5, 3], // designs per problem (the first and fresh ones)
+  setCalls: [20, 150, 60], // model calls one set may use
+};
+function harnessSettings(dataDir) {
+  const saved = (dataDir && llmSettings(dataDir).harness) || {};
+  return Object.fromEntries(Object.entries(HARNESS_LIMITS).map(([k, [lo, hi, def]]) => [k, Number.isInteger(saved[k]) && saved[k] >= lo && saved[k] <= hi ? saved[k] : def]));
+}
+
 /** The built-in instructions with the teacher's AI role (공통 지침) before them. */
 function withTeacherPrompt(config, system) {
   if (!config.dataDir) return system;
@@ -603,4 +615,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

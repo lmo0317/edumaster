@@ -199,7 +199,7 @@
       else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
-      else if ((m = /^#\/learn\/(problems|common|guides)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
+      else if ((m = /^#\/learn\/(problems|common|guides|harness)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
       else if (hash.startsWith('#/guides')) { location.replace('#/learn/guides'); return; }
       else if (hash.startsWith('#/lessons') || hash.startsWith('#/common')) { location.replace('#/learn/common'); return; }
       else if (hash.startsWith('#/learn') || hash.startsWith('#/rules')) { location.replace('#/learn/problems'); return; }
@@ -1260,6 +1260,7 @@
     ['problems', '문제별 학습', '문제 하나에만 적용'],
     ['common', '공통 학습', '모든 문제에 적용'],
     ['guides', '지침', '반드시 지킬 규칙 · 페르소나'],
+    ['harness', '하네스', '검사하고 스스로 고치는 방식'],
   ];
   async function learnView(tab) {
     view.innerHTML = `<div class="lt">
@@ -1272,7 +1273,8 @@
     const pane = $('#learn-pane');
     if (tab === 'problems') await problemsLearn(pane);
     else if (tab === 'common') await lessonsView(pane);
-    else await guidesView(pane);
+    else if (tab === 'guides') await guidesView(pane);
+    else await harnessView(pane);
   }
   // Counts under the tab names, from one read.
   function learnCounts(d) {
@@ -1347,8 +1349,7 @@
       <section class="lt-sec"><div class="lt-sec-head"><h2>분석 지침</h2><p>원본을 읽고 STEP으로 정리할 때 반드시 지킬 것입니다.</p></div>
         <div class="fb-wrap"><div class="panel lt-list" id="g-a"></div>${globalAddHtml('ga', 'analysis', '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.')}</div></section>
       <section class="lt-sec"><div class="lt-sec-head"><h2>생성 지침</h2><p>변형 문제를 만들 때 반드시 지킬 것입니다. 만든 문제마다 지켰는지 검사합니다.</p></div>
-        <div class="fb-wrap"><div class="panel lt-list" id="g-g"></div>${globalAddHtml('gg', 'generation', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.')}</div></section>
-      <section class="lt-sec"><div class="panel lt-checks" id="g-c"></div></section>`;
+        <div class="fb-wrap"><div class="panel lt-list" id="g-g"></div>${globalAddHtml('gg', 'generation', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.')}</div></section>`;
     const repaint = async () => {
       const d = await api('GET', '/api/learning');
       if (!$('#g-p')) return;
@@ -1367,14 +1368,71 @@
       bindLearnRows($('#g-a'), a, globalOpen, repaint);
       $('#g-g').innerHTML = d.guides.generation.map((x) => learnRow(x, globalOpen)).join('') || emptyRow('아직 없습니다.');
       bindLearnRows($('#g-g'), d.guides.generation, globalOpen, repaint);
-      const list = (items) => `<ul>${items.map((x) => `<li><b>${esc(x.label)}</b><span>${esc(x.how)}</span></li>`).join('')}</ul>`;
-      $('#g-c').innerHTML = `<details><summary>AI가 만든 결과는 어떻게 검토하나요? (검사 ${d.checks.generation.length + d.checks.analysis.length}개)</summary>
-        <p class="small">만든 문제는 저장하기 전에 자동으로 검토합니다. 걸린 곳은 AI가 스스로 고치고(해설 다시 쓰기, 문제 수정, 처음부터 새로 설계 최대 3번), 가장 나은 설계를 남깁니다. 끝내 남은 점은 문제마다 리포트에 적고, 정답을 확정하지 못한 문제만 <b>정답 확인 필요</b>로 표시합니다. 세트가 끝나면 나온 실수를 학습으로 정리해 자동으로 추가합니다.</p>
-        <div class="lt-check-groups"><div><h3>변형 문제</h3>${list(d.checks.generation)}</div><div><h3>원본 분석</h3>${list(d.checks.analysis)}</div></div></details>`;
     };
     bindGlobalAdd('ga', 'analysis', 'guide', repaint);
     bindGlobalAdd('gg', 'generation', 'guide', repaint);
     await repaint();
+  }
+
+  // 하네스: how a set is checked and fixed (in the order it happens, with the counts the settings give), how that went on
+  // the recent sets, the counts the teacher can change, and every check with what happens when it fails and how often
+  // it did. The numbers say what the harness does now; the checks are fixed in code.
+  const HN_SETTINGS = [
+    ['maxRewrites', '해설 다시 쓰기', '해설만 선생님 해설과 다를 때 문제는 두고 해설만 다시 쓰는 횟수 (설계마다)'],
+    ['maxRepairs', '문제 수정', '문제에 결함이 있을 때 고치게 하는 횟수 (설계마다). 같은 지적이 되풀이되면 일찍 멈춘다'],
+    ['maxDesigns', '설계 횟수', '고쳐도 남으면 처음부터 새로 설계한다. 첫 설계를 포함한 최대 횟수 (문제마다)'],
+    ['setCalls', '세트당 AI 호출 상한', '한 세트가 쓸 수 있는 AI 호출 수. 뒤 문제를 만들 몫은 남겨 두고 고친다'],
+  ];
+  async function harnessView(pane) {
+    pane.innerHTML = '<p class="muted">불러오는 중…</p>';
+    const paint = async () => {
+      const h = await api('GET', '/api/harness');
+      if (!pane.isConnected) return;
+      const { settings: v, stats: st, limits } = h;
+      if ($('#lt-n-harness')) $('#lt-n-harness').textContent = `검사 ${h.checks.generation.length + h.checks.analysis.length}개 · 설계 최대 ${v.maxDesigns}번`;
+      const fired = new Map(st.checks.map((c) => [c.label, c]));
+      const checkRow = (c, withStats) => {
+        const f = fired.get(c.label);
+        return `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">${esc(c.label)}</span><span class="lt-sub lt-wrap">${esc(c.how)}</span>
+          ${withStats && st.problems ? `<span class="lt-sub">최근 ${st.problems}문제 중 걸림 <b>${f?.fired || 0}</b> · 끝내 남음 <b>${f?.left || 0}</b></span>` : ''}</div>
+          <span class="hn-fail ${c.onFail}">${esc(h.onFail[c.onFail] || '')}</span></div>`;
+      };
+      pane.innerHTML = `
+        <p class="lp-intro">하네스는 AI가 만든 문제를 서버가 검사하고 스스로 고치는 장치입니다. 문제마다 아래 순서로 돌고, 선생님에게 넘기는 것은 정답을 확정하지 못한 문제뿐입니다.</p>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>문제 하나를 만드는 순서</h2></div>
+          <ol class="hn-flow panel">
+            <li><b>설계</b><span>지침·학습·본보기를 넣어 문제, 해설, 검산 프로그램을 만든다.</span></li>
+            <li><b>검사</b><span>코드 검산, 정답을 모르는 독립 풀이, 선생님 해설과의 대조, 코드 점검까지 아래 ${h.checks.generation.length}가지.</span></li>
+            <li><b>고치기</b><span>해설만 다르면 해설만 다시 쓴다(최대 ${v.maxRewrites}번). 문제에 결함이 있으면 고친다(최대 ${v.maxRepairs}번).</span></li>
+            <li><b>새로 설계</b><span>그래도 남으면 남은 점을 알려 주고 처음부터 다시 설계한다. 문제마다 최대 ${v.maxDesigns}번.</span></li>
+            <li><b>마무리</b><span>결함이 가장 적은 설계를 남기고 문제마다 리포트를 쓴다. 세트가 끝나면 나온 실수를 학습으로 정리해 자동으로 넣는다.</span></li>
+          </ol></section>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>최근 성적</h2><p>최근 세트 ${st.sets}개에서 만든 문제입니다.</p></div>
+          <div class="panel hn-stats">${st.problems ? [
+            ['문제', st.problems], ['첫 설계로 통과', st.first], ['고쳐서 완성', st.made - st.first], ['정답 확인 필요', st.answer], ['못 만듦', st.failed],
+            ['세트당 호출', `${st.calls}번`], ['세트당 시간', `${st.minutes}분`],
+          ].map(([k, n]) => `<div><b>${n}</b><span>${k}</span></div>`).join('') : '<p class="muted">아직 만든 세트가 없습니다.</p>'}</div></section>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>설정</h2><p>바꾼 값은 새로 만드는 세트부터 적용됩니다. 횟수를 늘리면 더 끝까지 고치지만 시간과 호출이 늘어납니다.</p></div>
+          <form class="panel hn-form" id="hn-form">${HN_SETTINGS.map(([k, label, sub]) => `<div class="hn-set">
+              <label for="hn-${k}">${label}</label>
+              <input type="number" id="hn-${k}" name="${k}" min="${limits[k][0]}" max="${limits[k][1]}" step="1" value="${v[k]}" required>
+              <p class="muted small">${sub} (${limits[k][0]}~${limits[k][1]}, 기본 ${limits[k][2]})</p></div>`).join('')}
+            <div class="lt-actions"><button type="button" class="small" id="hn-reset">기본값으로</button><span class="spacer"></span><button type="submit" class="small primary">저장</button></div>
+          </form></section>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>생성 검사</h2><p>만든 문제마다 이 검사를 모두 거칩니다. 오른쪽은 걸렸을 때 하네스가 하는 일입니다.</p></div>
+          <div class="panel lt-list">${h.checks.generation.map((c) => checkRow(c, true)).join('')}</div></section>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>원본 분석 검사</h2><p>사진을 읽고 STEP으로 정리할 때 거치는 검사입니다.</p></div>
+          <div class="panel lt-list">${h.checks.analysis.map((c) => checkRow(c, false)).join('')}</div></section>`;
+      $('#hn-form', pane).addEventListener('submit', guard(async (e) => {
+        e.preventDefault();
+        const body = Object.fromEntries(HN_SETTINGS.map(([k]) => [k, Number($('#hn-' + k, pane).value)]));
+        await api('PUT', '/api/harness', body);
+        toast('저장했습니다. 새로 만드는 세트부터 적용됩니다.');
+        await paint();
+      }));
+      $('#hn-reset', pane).addEventListener('click', () => { for (const [k] of HN_SETTINGS) $('#hn-' + k, pane).value = limits[k][2]; });
+    };
+    await paint();
   }
 
   // ------------------------------------------------------------------ Claude login

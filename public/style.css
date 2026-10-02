@@ -670,3 +670,26 @@ a.lt-name:hover { color: var(--accent); }
 .jt-report-item .jt-check-in { padding: 8px 0 0; }
 .jt-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .jt-steps .lt-ul { font-size: 13px; color: var(--muted); }
+/* 학습 › 하네스 */
+.hn-flow { margin: 0; padding: 14px 18px 14px 40px; display: grid; gap: 8px; font-size: 14px; }
+.hn-flow li b { margin-right: 8px; }
+.hn-flow li span { color: var(--muted); }
+.hn-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; }
+.hn-stats div { display: grid; gap: 2px; }
+.hn-stats b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.hn-stats span { font-size: 13px; color: var(--muted); }
+.hn-form { display: grid; gap: 14px; }
+.hn-set { display: grid; grid-template-columns: 170px 90px minmax(0, 1fr); gap: 4px 14px; align-items: center; }
+.hn-set label { margin: 0; font-weight: 600; font-size: 14px; }
+.hn-set input { width: 90px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+.hn-set p { margin: 0; }
+.hn-fail { font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; background: var(--bg); color: var(--muted); }
+.hn-fail.rewrite { background: var(--accent-soft); color: var(--accent); }
+.hn-fail.repair { background: var(--warn-soft); color: var(--warn); }
+.hn-fail.answer { background: var(--bad-soft); color: var(--bad); }
+.hn-fail.fix { background: var(--ok-soft); color: var(--ok); }
+@media (max-width: 640px) {
+  .hn-set { grid-template-columns: minmax(0, 1fr) 90px; }
+  .hn-set p { grid-column: 1 / -1; }
+  .lt-row .hn-fail { grid-column: 1 / -1; justify-self: start; }
+}
