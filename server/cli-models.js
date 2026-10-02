@@ -165,7 +165,7 @@ async function sendCli(config, cli, { messages, effort, signal }) {
 const logins = new Map();
 function loginState(cli) {
   const s = logins.get(cli);
-  return s ? { pending: !s.done, url: s.url, code: s.userCode || '', needsCode: cli === 'agy-cli', checking: Boolean(s.codeSent && !s.done), result: s.result } : { pending: false };
+  return s ? { pending: !s.done, ...(s.done ? {} : { url: s.url, code: s.userCode || '' }), needsCode: cli === 'agy-cli', checking: Boolean(s.codeSent && !s.done), result: s.result } : { pending: false };
 }
 async function loginStart(config, cli, root) {
   const old = logins.get(cli);

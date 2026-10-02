@@ -1524,7 +1524,8 @@
     }
     const steps = c === 'agy-cli'
       ? ['<b>로그인 시작</b>을 누르면 Google 로그인 링크가 나옵니다.', `링크를 열어 ${t.account}으로 로그인하고 허용하면 <b>코드</b>가 표시됩니다.`, '그 코드를 아래 칸에 붙여 넣고 <b>연결</b>을 누르세요.']
-      : ['<b>로그인 시작</b>을 누르면 링크와 <b>일회용 코드</b>가 나옵니다.', `링크를 열어 ${t.account}으로 로그인하고 그 코드를 입력하세요 (15분 안에).`, '입력을 마치면 이 화면이 저절로 연결됨으로 바뀝니다.'];
+      : ['<b>로그인 시작</b>을 누르면 링크와 <b>일회용 코드</b>가 나옵니다.', `링크를 열어 ${t.account}으로 로그인하고 그 코드를 입력하세요 (15분 안에).`, '입력을 마치면 이 화면이 저절로 연결됨으로 바뀝니다.',
+        '“기기 코드 로그인을 활성화”하라는 안내가 나오면 ChatGPT 웹의 <b>설정 › 보안</b>에서 Codex 기기 코드 로그인을 켠 뒤, 여기서 로그인을 다시 시작하세요 (코드는 새로 받습니다).'];
     el.innerHTML = `<p class="muted small">서버를 선생님의 ${t.account} 구독에 한 번 연결하면 ${t.name}을 문제 분석·생성에 쓸 수 있습니다 (추가 비용 없음).</p>
       <ol class="small">${steps.map((x) => `<li>${x}</li>`).join('')}</ol>
       ${st.result && !st.result.ok ? `<div class="note bad small">지난 연결 시도가 실패했습니다: ${esc(st.result.error || '이유를 알 수 없음')} — 로그인을 다시 시작해 주세요.</div>` : ''}
@@ -1577,6 +1578,8 @@
       <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/learn/guides">학습 › 지침</a>에서 관리합니다.</p>
     </div>`;
     const won = (usd) => `약 ${Math.round(usd * 1400).toLocaleString()}원`;
+    const tok = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0));
+    const used = (u) => `<span class="lt-money">오늘 <b>${tok((u?.today?.input || 0) + (u?.today?.output || 0))}</b> · 이번 달 <b>${tok((u?.month?.input || 0) + (u?.month?.output || 0))}</b> 토큰</span>`;
     const month = (u) => (u?.month?.sets ? `이번 달 ${u.month.sets}세트${u.month.usd ? ' · ' + won(u.month.usd) : ''}` : '이번 달 사용 없음');
     const left = (w) => (w ? Math.max(0, Math.round((1 - w.used) * 100)) : null);
     const meter = (title, w) => {
@@ -1620,12 +1623,12 @@
           return row(k, {
             name: x.loggedIn && x.label ? x.label : `${t.name} (구독)`, ok: x.loggedIn,
             state: !x.installed ? '서버에 설치되어 있지 않음' : x.loggedIn ? `연결됨 · ${month(llm.usage[k])}` : '연결 안 됨',
-            fact: '<span class="lt-money">구독</span>',
+            fact: x.loggedIn ? used(llm.usage[k]) : '<span class="lt-money">구독</span>',
             more: `${x.loggedIn ? `<div class="lt-fields">
                 <div><label for="m-${k}">모델</label><select id="m-${k}" data-cli="${k}">${modelOpts.length ? modelOpts.map(([id, n]) => `<option value="${esc(id)}" ${id === (x.model || '') ? 'selected' : ''}>${esc(n)}</option>`).join('') : '<option value="">목록을 불러오는 중 (새로 고침)</option>'}</select></div>
                 ${k === 'codex-cli' ? `<div><label for="e-${k}">추론 강도</label><select id="e-${k}" data-cli="${k}">${(x.efforts || []).map((e) => `<option value="${e}" ${e === x.effort ? 'selected' : ''}>${EFFORT_TXT[e] || e}</option>`).join('')}</select></div>` : ''}
               </div>` : ''}
-              <p class="lt-note">서버의 ${t.where} CLI가 선생님의 ${t.account} 구독으로 실행되어 호출당 비용이 없습니다. 구독의 사용 한도가 적용되고, Claude보다 느릴 수 있습니다.</p>
+              <p class="lt-note">서버의 ${t.where} CLI가 선생님의 ${t.account} 구독으로 실행되어 호출당 비용이 없습니다. 구독의 사용 한도가 적용되고, Claude보다 느릴 수 있습니다. ${t.name}은 남은 한도를 알려 주지 않아, 이 서버에서 쓴 토큰만 보여 줍니다.</p>
               ${x.installed ? `<div id="login-${k}"></div>` : ''}`,
           });
         }),
