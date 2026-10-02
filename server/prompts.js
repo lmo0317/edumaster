@@ -277,7 +277,11 @@ function generateText({ material, stage, total, mode, prior, rules, variantNo, e
   if (previous) {
     parts.push('\n[직전에 만든 이 문제와 교사 피드백 — 피드백을 반영해 다시 만든다]\n' + JSON.stringify({ problem: previous.problem, solution: previous.solution }, null, 0));
     const left = [...(previous.problems || []), ...(previous.warnings || [])];
-    if (left.length) parts.push('\n[직전 버전에서 자동 검토가 끝내 해결하지 못한 점 — 이번에는 반드시 고친다]\n' + left.map((x) => '- ' + x).join('\n'));
+    // A remake once added a STEP 3 to a STEP 1~2 practice because a carried-over note (from a review that compared the
+    // whole teacher solution) said STEP 3 was missing: the range of this problem wins over any such note.
+    const range = stage.kind === 'upto' ? `STEP ${stage.upto === 1 ? '1' : '1~' + stage.upto}` : stage.kind === 'focus' ? `STEP ${stage.step}` : '';
+    const guard = range ? `. 단, 이 문제는 ${range} 연습이다. 범위 밖 STEP(그 STEP의 해설·표·계산)을 넣으라는 지적은 따르지 않는다` : '';
+    if (left.length) parts.push(`\n[직전 버전에서 자동 검토가 끝내 해결하지 못한 점 — 이번에는 반드시 고친다${guard}]\n` + left.map((x) => '- ' + x).join('\n'));
   }
   if (extraFeedback) parts.push('\n[이번 재생성에 대한 교사 피드백 — 최우선으로 반영]\n' + extraFeedback);
   parts.push('\n위 지시에 따라 JSON만 반환하라. verification.program은 네가 쓴 해설 계산과 같은 순서로 쓴다.');
