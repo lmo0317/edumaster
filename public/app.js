@@ -398,7 +398,7 @@
     else if (st.read.state === 'bad') now = { tone: 'bad', text: '분석하지 못했습니다. 다시 분석하거나 더 선명한 사진을 넣어 주세요.' };
     else if (making) now = { tone: 'run', text: `변형 문제를 만드는 중입니다 (${making.status === 'queued' ? '순서 기다리는 중' : st.make.done}). 문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 끝나면 저절로 바뀝니다.`, href: '#/j/' + making.id, action: '진행 보기' };
     else if (regen) now = { tone: 'run', text: '세트의 문제 하나를 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.', href: '#/j/' + regen.parentJobId, action: '진행 보기' };
-    else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 분석 결과를 보고, 틀린 곳은 고치거나 분석 학습에 적은 뒤 변형 문제를 만드세요.', go: 'make', action: '변형 문제 만들러 가기' };
+    else if (!gens.length) now = { tone: 'ok', text: '분석이 끝났습니다. 분석 결과를 보고, 틀린 곳은 고치거나 분석 학습에 적은 뒤 문제를 만드세요.', go: 'make', action: '문제 생성으로 가기' };
     else if (st.review.state === 'warn') now = { tone: 'warn', text: `세트 ${no}의 문제를 검토해 주세요 (${st.review.note}). 좋은 문제는 채택, 아쉬운 점은 고칠 점으로 남기면 다음 세트에 반영됩니다.`, href: '#/j/' + latest.id, action: '세트 열기' };
     else now = { tone: 'ok', text: '여기까지 끝났습니다. 생성 피드백을 더 남기고 새 세트를 만들면 더 나아집니다.', go: 'make', action: '새 세트 만들러 가기' };
     return { st, now };
@@ -549,8 +549,8 @@
     return api('POST', '/api/rules', body);
   }
 
-  // The problem page: ① 원본 분석 (the result, then this problem's 분석 학습) and ② 변형 문제 (the sets, this
-  // problem's 생성 학습, a new set). Every-problem learning lives on 전체 학습 and 지침.
+  // The problem page in three tabs: 분석 (the result, then this problem's 분석 학습), 문제 생성 (this problem's
+  // 생성 학습, a new set) and 문제 리스트 (the sets made). Every-problem learning lives on 전체 학습 and 지침.
   function renderMaterial(m, editing) {
     const n = m.steps.length;
     const gens = setsOf(m);
@@ -563,7 +563,7 @@
     let stage = '';
     try { stage = localStorage.getItem(key) || ''; } catch { /* no storage */ }
     if (editing) stage = 'read';
-    if (!['read', 'make'].includes(stage)) stage = gens.length ? 'make' : 'read';
+    if (!['read', 'make', 'list'].includes(stage)) stage = gens.length ? 'list' : 'read';
     view.innerHTML = `<div class="lt">
       <div class="lt-title" id="m-name">
         <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><button class="small" id="name-edit">✏️ 제목 수정</button></div>
@@ -576,8 +576,9 @@
       </div>
       <div class="flow" id="m-flow"></div>
       <nav class="stage-tabs" role="tablist">
-        <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>원본 분석</b><small id="st-read"></small></span></button>
-        <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>변형 문제</b><small id="st-make"></small></span></button>
+        <button type="button" role="tab" data-stage-tab="read"><span class="stage-no">1</span><span class="stage-txt"><b>분석</b><small id="st-read"></small></span></button>
+        <button type="button" role="tab" data-stage-tab="make"><span class="stage-no">2</span><span class="stage-txt"><b>문제 생성</b><small id="st-make"></small></span></button>
+        <button type="button" role="tab" data-stage-tab="list"><span class="stage-no">3</span><span class="stage-txt"><b>문제 리스트</b><small id="st-list"></small></span></button>
       </nav>
       <div class="stage" data-pane="read">
         <section class="lt-sec">
@@ -595,10 +596,6 @@
       </div>
       <div class="stage" data-pane="make">
         <section class="lt-sec">
-          <div class="lt-sec-head"><h2>만든 세트</h2><p>세트를 열어 문제마다 👍 채택하거나 ✏️ 고칠 점을 남기세요. 고칠 점은 아래 생성 학습에 들어가고, 채택한 문제는 본보기가 됩니다.</p></div>
-          <div class="panel lt-list" id="variants"></div>
-        </section>
-        <section class="lt-sec">
           <div class="lt-sec-head"><h2>생성 학습</h2><p>이 문제로 변형을 만들 때 AI가 지킬 점입니다. 다음 세트부터 들어갑니다.</p></div>
           <div class="fb-wrap">
             <div class="panel lt-list" id="g-learn"></div>
@@ -609,6 +606,12 @@
         <section class="lt-sec">
           <div class="lt-sec-head"><h2>새 세트 만들기</h2><p>정답은 서버가 계산으로 확인하고, 문제만 보고 다시 풀어 대조합니다.</p></div>
           <div class="panel" id="generate"></div>
+        </section>
+      </div>
+      <div class="stage" data-pane="list">
+        <section class="lt-sec">
+          <div class="lt-sec-head"><h2>만든 세트</h2><p>문제를 눌러 열고 👍 채택하거나 ✏️ 고칠 점을 남기세요. 고칠 점은 생성 학습이 되고, 채택한 문제는 다음 세트의 본보기가 됩니다.</p></div>
+          <div id="variants"></div>
         </section>
       </div>
       <div class="lt-foot"><button class="small danger" id="del">이 문제 삭제</button></div>
@@ -656,7 +659,9 @@
         + (ex.length ? `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">본보기 ${ex.length}개</span><span class="lt-sub lt-wrap">채택한 문제 · ${ex.map((e) => `<a href="#/j/${e.jobId}?item=${e.index}">세트 ${e.setNo} ${esc(e.label)}</a>`).join(', ')}</span></div></div>` : '');
       bindLearnRows($('#g-learn'), g, opened, side);
       $('#st-read').textContent = `STEP ${m.steps.length}개 · 학습 ${on(a).length}개`;
-      $('#st-make').textContent = `세트 ${gens.length}개 · 학습 ${on(g).length}개`;
+      $('#st-make').textContent = `생성 학습 ${on(g).length}개${ex.length ? ` · 본보기 ${ex.length}개` : ''}`;
+      const review = gens.filter((j) => !isBusy(j)).flatMap((j) => j.items || []).filter((it) => !it.adopted && it.status === 'needs_review').length;
+      $('#st-list').innerHTML = gens.some(isBusy) ? '<span class="run">만드는 중</span>' : `세트 ${gens.length}개${review ? ` · <span class="warn">검토 필요 ${review}</span>` : ''}`;
       variantsPanel(m, gens, on(g), L);
       carryLine(m, n, on(g).length, on(L.generation.items).length - on(g).length, ex.length);
     };
@@ -687,39 +692,56 @@
     paintFlow(m);
   }
 
-  // The sets made from this problem, newest first: when and with what each was made, how far its review got, and its
-  // problems one line each (opened in place). A set made before later feedback says how much of it is missing.
+  // The sets made from this problem, newest first, one card each: when and with what it was made, how far its
+  // review got, and its problems in staircase order, each one line that opens it. A set made before later feedback
+  // says how much of it is missing.
   const SET_ITEM = { adopted: ['채택', 'ok'], needs_review: ['검토 필요', 'bad'], warning: ['확인할 점', 'warn'], passed: ['통과', ''], failed: ['못 만듦', 'bad'], generating: ['만드는 중', 'run'], verifying: ['검증 중', 'run'], repairing: ['고치는 중', 'run'], pending: ['대기', ''] };
   function variantsPanel(m, gens, on, learning) {
     const el = $('#variants');
     if (!el) return;
-    if (!gens.length) { el.innerHTML = '<div class="lt-row lt-plain"><span class="muted">아직 만든 세트가 없습니다.</span></div>'; return; }
-    const opened = openSet(m.id);
+    if (!gens.length) {
+      el.innerHTML = '<div class="panel set-empty"><p>아직 만든 세트가 없습니다.</p><button class="small primary" data-go-make>문제 생성으로 가기</button></div>';
+      $('[data-go-make]', el).addEventListener('click', () => $('[data-stage-tab="make"]')?.click());
+      return;
+    }
     const stats = new Map(learning.sets.map((s) => [s.id, s]));
-    const row = (j, i) => {
-      const s = stats.get(j.id) || { no: gens.length - i, feedbackBefore: 0, examples: 0 };
-      const busy = ['queued', 'running'].includes(j.status);
+    const card = (j, i) => {
+      const s = stats.get(j.id) || { no: gens.length - i, examples: 0 };
+      const busy = isBusy(j);
       const items = j.items || [];
-      const count = (st) => items.filter((it) => !it.adopted && it.status === st).length;
-      const adopted = items.filter((it) => it.adopted).length;
+      const n = (pick) => items.filter(pick).length;
+      const adopted = n((it) => it.adopted);
+      const review = n((it) => !it.adopted && it.status === 'needs_review');
+      const failed = n((it) => !it.adopted && it.status === 'failed');
+      const made = n((it) => ['passed', 'warning', 'needs_review', 'failed'].includes(it.status));
       const later = on.filter((r) => r.createdAt > j.createdAt).length;
-      const made = items.filter((it) => ['passed', 'warning', 'needs_review', 'failed'].includes(it.status)).length;
-      const fact = busy ? `<span class="run">만드는 중 ${made}/${items.length}</span>`
-        : [`채택 ${adopted}/${items.length}`, count('needs_review') && `<span class="bad">검토 필요 ${count('needs_review')}</span>`, count('failed') && `<span class="bad">못 만듦 ${count('failed')}</span>`].filter(Boolean).join(' · ');
-      return `<div class="lt-row lt-set${opened.has('s:' + j.id) ? ' open' : ''}" data-row="s:${j.id}">
-        <div class="lt-main"><a class="lt-name" href="#/j/${j.id}">세트 ${s.no} · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'}</a>
-          <span class="lt-sub lt-wrap">${fmtTime(j.createdAt)} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · 학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''}로 만듦${s.kept + s.broken ? ` · 지킴 ${s.kept}/${s.kept + s.broken}` : ''}${later ? ` · <span class="warn">그 뒤 가르친 ${later}개는 빠져 있음</span>` : ''}</span></div>
-        <div class="lt-fact">${fact}</div>
-        <button class="small lt-open" data-open>문제 보기</button>
-        <div class="lt-more"><div class="lt-items">${items.map((it) => {
+      const tally = busy
+        ? `<span class="set-pill run"><i class="spin"></i>${j.status === 'queued' ? '순서 기다리는 중' : `만드는 중 ${made}/${items.length}`}</span>`
+        : [`<span class="set-pill${adopted ? ' ok' : ''}">채택 ${adopted}/${items.length}</span>`,
+          review && `<span class="set-pill bad">검토 필요 ${review}</span>`,
+          failed && `<span class="set-pill bad">못 만듦 ${failed}</span>`].filter(Boolean).join('');
+      const meta = [fmtTime(j.createdAt), esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'),
+        `학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''} 반영`,
+        s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : ''].filter(Boolean).join(' · ');
+      return `<article class="panel set-card${busy ? ' busy' : ''}">
+        <header class="set-head">
+          <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
+          <div class="set-tally">${tally}</div>
+        </header>
+        ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
+        <ol class="set-items">${items.map((it, k) => {
           const [t, c] = SET_ITEM[it.adopted ? 'adopted' : it.status] || [it.status, ''];
-          return `<a class="lt-item" href="#/j/${j.id}?item=${it.index}"><b>${esc(it.label)}</b><span class="lt-item-text">${it.preview ? inlineRich(it.preview) : ''}</span><span class="lt-state ${c}">${t}</span></a>`;
-        }).join('')}</div></div>
-      </div>`;
+          const last = it.stage?.kind === 'twin' || k === items.length - 1;
+          return `<li><a class="set-item" href="#/j/${j.id}?item=${it.index}">
+            <span class="si-no${last ? ' last' : ''}">${k + 1}</span>
+            <span class="si-main"><b>${esc(it.label)}</b><span class="si-text">${it.preview ? inlineRich(it.preview) : '<span class="muted">아직 내용이 없습니다</span>'}</span></span>
+            <span class="set-pill ${c}">${c === 'run' ? '<i class="spin"></i>' : ''}${t}</span></a></li>`;
+        }).join('')}</ol>
+      </article>`;
     };
-    const rows = gens.map(row);
-    el.innerHTML = rows.slice(0, 5).join('') + (rows.length > 5 ? `<details class="lt-off"><summary>이전 세트 ${rows.length - 5}개 더 보기</summary>${rows.slice(5).join('')}</details>` : '');
-    rowToggles(el, opened);
+    const cards = gens.map(card);
+    el.innerHTML = `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
+      + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
   }
 
   function showAnalysis(m) {
@@ -882,6 +904,7 @@
     $('#go').addEventListener('click', guard(async () => {
       $('#go').disabled = true;
       const r = await api('POST', '/api/generations', { materialId: m.id, stages, mode: 'integrated', perStage: 1, effort: value('effort'), provider: value('genProvider') });
+      try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
       location.hash = '#/j/' + r.jobId;
     }));
   }
