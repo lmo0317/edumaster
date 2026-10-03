@@ -26,7 +26,7 @@
       : i.status === 'failed' ? `<span class="review-flag">[검증 미완료: ${esc(i.error || '')}]</span>` : '');
     doc.innerHTML = `
       <h1>${esc(m.title)} — 단계별 연습 ${items.length}문제</h1>
-      <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${job.options.mode === 'integrated' ? '통합 변형' : '수치 변형'} · 모델: ${esc(job.modelLabel || { deepseek: 'DeepSeek V4 Flash', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5' }[job.options.provider] || 'DeepSeek V4 Flash')} · ${new Date(job.createdAt).toLocaleDateString('ko-KR')}</p>
+      <p class="muted small">${esc([m.subject, m.topic].filter(Boolean).join(' · '))} · ${job.options.mode === 'integrated' ? '통합 변형' : '쌍둥이'} · ${new Date(job.createdAt).toLocaleDateString('ko-KR')}</p>
       ${withOriginal ? `
         <h2>원본 문제</h2>
         <img class="orig-img" src="api/files/${m.images.problem}" alt="원본 문제">

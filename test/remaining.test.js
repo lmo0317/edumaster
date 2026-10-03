@@ -167,3 +167,31 @@ test('subscription and PC jobs have no token cap; a paid API keeps it', () => {
   assert.equal(cap('relay', 'analyze').maxTokens, config.budget.analyzeTokens);
   assert.equal(cap('agy-cli', 'generate').maxCalls, 60, 'the call cap still holds');
 });
+
+// 요구서 1: students have no calculator; a set can flip which case STEP 1 assumes; more problems get more calls.
+test('clean numbers, assumption direction, and the call cap per set size', () => {
+  const harness = require('../server/harness');
+  const item = (text, work = '') => ({ stage: { kind: 'twin' }, problem: { text, choices: [], answer: 1 }, solution: { steps: [{ step: 1, title: 't', work }] } });
+  const clean = (t) => harness.inspectItem({ steps: [], problem: { text: '', choices: [] } }, item(t), 'integrated').find((c) => c.id === 'clean-numbers').state;
+  assert.deepEqual(['0.125 mol', '22.4 L', '1.732', '0.333 g'].map(clean), ['pass', 'pass', 'fail', 'fail']);
+  const material = { steps: [{ title: 't', work: String.raw`만약 Ⅰ에서 $\ce{A}$가 모두 반응했다면 … 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 B이다.` }, { title: 'u', work: '' }] };
+  const dir = (work, d) => harness.checkDirection(material, item('', work), d)[0]?.state;
+  assert.equal(dir('만약 Ⅱ에서 B가 모두 반응했다면 … 맞지 않다.', 'flip'), 'pass');
+  assert.equal(dir('만약 Ⅱ에서 A가 모두 반응했다면 … 맞지 않다.', 'flip'), 'fail');
+  assert.equal(dir('만약 Ⅱ에서 A가 모두 반응했다면 … 맞지 않다.', 'same'), 'pass');
+  assert.equal(dir('가정 없이 바로 구한다.', 'flip'), undefined, 'not checked when the variant does not say');
+  assert.equal(harness.checkDirection(material, item('', '만약 A가 모두 반응했다면'), '').length, 0, 'not asked');
+
+  const { buildItems, normalizeStages } = require('../server/plan');
+  const stages = normalizeStages([{ kind: 'twin' }, { kind: 'focus', step: 3 }, { kind: 'upto', upto: 1 }], 3);
+  assert.deepEqual(buildItems(stages, 3, 2, 'numeric').map((i) => i.label), ['STEP 1 연습 (1)', 'STEP 1 연습 (2)', 'STEP 3 집중 연습 (앞 단계 결과 제공) (1)', 'STEP 3 집중 연습 (앞 단계 결과 제공) (2)', '쌍둥이 문제 (1)', '쌍둥이 문제 (2)']);
+
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { createJobs } = require('../server/jobs');
+  const config = require('../server/config');
+  const { openStore } = require('../server/store');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-calls-'));
+  const jobs = createJobs({ store: openStore(dataDir), llm: { json: async () => { throw new Error('not called'); } }, config: { ...config, dataDir } });
+  const calls = (n) => jobs.generate({ material: { id: 'b'.repeat(24), title: 'm' }, items: Array.from({ length: n }, (_, i) => ({ index: i })), rules: [], options: { provider: 'deepseek' } }).budget.maxCalls;
+  assert.deepEqual([calls(3), calls(6), calls(12)], [60, 120, 150], 'the 하네스 cap is per three problems, up to the ceiling');
+});

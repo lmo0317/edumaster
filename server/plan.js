@@ -2,10 +2,10 @@
 // Which problems a generation set contains. The number of STEPs comes from the teacher's solution,
 // never from a fixed template.
 
-function stageLabel(stage, total) {
+function stageLabel(stage, total, mode = 'integrated') {
   if (stage.kind === 'upto') return stage.upto === total ? '전체 STEP 연습' : stage.upto === 1 ? 'STEP 1 연습' : `STEP 1~${stage.upto} 연습`;
   if (stage.kind === 'focus') return `STEP ${stage.step} 집중 연습 (앞 단계 결과 제공)`;
-  return '최종 문제';
+  return mode === 'integrated' ? '최종 문제' : '쌍둥이 문제';
 }
 
 /** Default set: STEP 1, STEP 1~2, … STEP 1~(n-1), then the final problem. */
@@ -35,7 +35,7 @@ function normalizeStages(input, stepCount) {
   return out.sort((a, b) => order(a) - order(b));
 }
 
-function buildItems(stages, stepCount, perStage) {
+function buildItems(stages, stepCount, perStage, mode = 'integrated') {
   const count = Math.min(Math.max(Number.parseInt(perStage, 10) || 1, 1), 3);
   const items = [];
   for (const stage of stages) {
@@ -44,7 +44,7 @@ function buildItems(stages, stepCount, perStage) {
         index: items.length,
         stage,
         variantNo: v,
-        label: stageLabel(stage, stepCount) + (count > 1 ? ` (${v})` : ''),
+        label: stageLabel(stage, stepCount, mode) + (count > 1 ? ` (${v})` : ''),
         status: 'pending',
       });
     }

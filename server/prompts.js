@@ -269,8 +269,14 @@ function examplesBlock(examples) {
     ].filter(Boolean).join('\n')).join('\n\n');
 }
 
-function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [] }) {
+const DIRECTION = {
+  same: '[가정 방향] 원본 STEP 1과 같은 쪽을 가정해 모순을 보인다 (원본이 \'A가 모두 반응했다면 … 맞지 않다\'면 이 문제도 A를 가정해 모순, 결론은 원본과 같은 쪽).',
+  flip: '[가정 방향] 원본 STEP 1과 반대로 만든다. 원본에서 결론이던 쪽을 가정하면 모순이 되고, 원본에서 모순이던 쪽이 결론이 되게 수치를 잡는다 (원본이 \'A가 모두 반응했다면 모순 → B가 모두 반응\'이면 이 문제는 \'B가 모두 반응했다면 모순 → A가 모두 반응\'). 해설의 가정도 그 쪽으로 쓴다.',
+};
+
+function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '' }) {
   const parts = [materialBlock(material), stageInstruction(stage, total, mode), priorBlock(prior), rulesBlock(rules), examplesBlock(examples)];
+  if (DIRECTION[direction] && (stage.kind !== 'focus')) parts.push('\n' + DIRECTION[direction]);
   if (usedRows.length) {
     parts.push('\n[이미 쓴 실험 수치 — 표의 어느 행에서도 이 (반응 전 두 값) 조합을 다시 쓰지 않는다]\n' + usedRows.join(' / '));
   }

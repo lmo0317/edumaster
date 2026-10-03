@@ -61,6 +61,27 @@ function checkHelpers(material, item) {
 
 const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하지|성립하지|불가능/.test(t);
 
+/** The case a solution first assumes and rules out ("만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다"): "A", or '' when none. */
+function assumedCase(text) {
+  const m = /만약[^.\n]*?([A-Z])(?:\s*\([a-z]\))?\s*(?:가|이)\s*모두\s*반응했다면/.exec(plain(text));
+  return m ? m[1] : '';
+}
+
+/**
+ * 가정 방향 (요구서 1): asked to keep or flip which case the teacher's STEP 1 assumes and rules out, the variant's first
+ * STEP must assume the same case (same) or the other one (flip). Not checked when either solution does not say.
+ */
+function checkDirection(material, item, direction) {
+  if (!['same', 'flip'].includes(direction) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
+  const original = assumedCase(material.steps[0]?.work);
+  const variant = assumedCase((item.solution?.steps || []).filter((s) => s.step === 1).map((s) => s.work).join('\n'));
+  if (!original || !variant) return [];
+  const ok = direction === 'same' ? variant === original : variant !== original;
+  return [result('assumption-direction', '가정 방향', ok, ok ? '' : direction === 'same'
+    ? `원본처럼 ${original}가 모두 반응했다고 가정해 모순을 보이는 구조여야 하는데, 이 문제는 ${variant}를 가정합니다. 수치를 다시 잡아야 합니다.`
+    : `원본과 반대로 원본에서 결론이던 쪽(${original}가 아닌 물질)을 가정해 모순을 보이는 구조여야 하는데, 이 문제도 ${variant}를 가정합니다. 어느 쪽이 모두 반응하는지가 원본과 바뀌게 수치를 다시 잡아야 합니다.`)];
+}
+
 function checkAssumption(material, item) {
   const first = material.steps[0];
   if (!first || !assumes(first.work + first.technique) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
@@ -278,6 +299,22 @@ function checkUnusedCoefficient(item) {
     unused.length ? `반응식의 계수 ${unused.join(', ')}가 발문에도 해설에도 쓰이지 않습니다. 풀이에 쓰이지 않는 조건이므로 계수 관계를 필요한 만큼만 문장으로 주거나 묻는 값에 쓰이게 해야 합니다.` : '')];
 }
 
+/**
+ * Students have no calculator (요구서 1). A decimal in the problem or its choices that is not a simple fraction (1.732,
+ * 0.333 — as against 0.125 = 1/8 or 22.4) makes the problem one to redesign with friendlier numbers.
+ */
+function checkCleanNumbers(item) {
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const text = plain([item.problem.text, ...(item.problem.choices || [])].join('\n'));
+  const bad = [...new Set((text.match(/\d+\.\d+/g) || []).filter((d) => {
+    const [whole, frac] = d.split('.');
+    const num = Number(whole + frac), den = 10 ** frac.length;
+    return den / gcd(num, den) > 60;
+  }))];
+  return [result('clean-numbers', '손계산 수치', !bad.length,
+    bad.length ? `계산기 없이 다루기 어려운 수가 문제에 있습니다: ${bad.slice(0, 5).join(', ')}. 작은 정수나 분모가 작은 분수가 되게 수치를 다시 잡아야 합니다.` : '')];
+}
+
 function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
@@ -293,6 +330,7 @@ function inspectItem(material, item, mode) {
     ...checkSameShape(material, item, mode),
     ...checkClueLeak(material, item),
     ...checkFormat(item),
+    ...checkCleanNumbers(item),
   ];
 }
 
@@ -375,4 +413,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { assumedCase, checkDirection, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

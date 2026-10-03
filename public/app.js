@@ -323,7 +323,7 @@
   const jobEntry = (j, no) => {
     const st = setStatus(j);
     return `<a class="set-row" href="#/j/${j.id}">
-      <div class="set-main"><b>${no ? `문제 세트 ${no}` : esc(j.title || '문제 세트')}</b><span class="muted small">${j.items.length}문제 · ${j.options?.mode === 'integrated' ? '통합 변형' : '수치 변형'} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · ${fmtTime(j.createdAt)}</span></div>
+      <div class="set-main"><b>${no ? `문제 세트 ${no}` : esc(j.title || '문제 세트')}</b><span class="muted small">${j.items.length}문제 · ${j.options?.mode === 'integrated' ? '통합 변형' : '쌍둥이'} · ${esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek')} · ${fmtTime(j.createdAt)}</span></div>
       <div class="set-state"><span class="chip ${st.tone}">${esc(st.label)}</span>${st.detail ? `<span class="muted small">${esc(st.detail)}</span>` : ''}</div></a>`;
   };
 
@@ -915,10 +915,20 @@
   const carryCounts = new Map();
   async function generatePanel(m, n) {
     const el = $('#generate');
-    // A set is always the whole staircase: STEP 1 연습, STEP 1~2 연습, …, and the final problem using every STEP,
-    // made as a new structure (never numbers only).
-    const stages = [...Array.from({ length: n - 1 }, (_, i) => ({ kind: 'upto', upto: i + 1 })), { kind: 'twin' }];
-    const stageName = (s) => (s.kind === 'twin' ? `최종 문제 (STEP 1~${n})` : s.upto === 1 ? 'STEP 1 연습' : `STEP 1~${s.upto} 연습`);
+    // What the set holds (요구서 1): the staircase (STEP 1, STEP 1~2, …) by default, STEP n alone with the earlier STEPs'
+    // results given, and a final problem using every STEP — a new structure (통합) or the same structure with new
+    // numbers (쌍둥이) — with up to three problems per kind, at most 12 in a set.
+    const practice = [
+      ...Array.from({ length: n - 1 }, (_, i) => ({ kind: 'upto', upto: i + 1 })),
+      ...Array.from({ length: n - 1 }, (_, i) => ({ kind: 'focus', step: i + 2 })),
+    ];
+    const keyOf = (s) => (s.kind === 'upto' ? `u${s.upto}` : `f${s.step}`);
+    const order = (s) => (s.kind === 'twin' ? 1000 : s.kind === 'upto' ? s.upto * 2 : s.step * 2 + 1);
+    const stageName = (s, mode) => (s.kind === 'twin' ? (mode === 'numeric' ? `쌍둥이 (STEP 1~${n})` : `최종 문제 (STEP 1~${n})`)
+      : s.kind === 'focus' ? `STEP ${s.step} 집중` : s.upto === 1 ? 'STEP 1 연습' : `STEP 1~${s.upto} 연습`);
+    const MAX_PROBLEMS = 12;
+    // 가정 방향: offered when the teacher's STEP 1 assumes a case and rules it out ("만약 A가 모두 반응했다면 … 맞지 않다").
+    const assumed = /만약[^.\n]*?([A-Z])(?:\s*\([a-z]\))?\s*(?:가|이)\s*모두\s*반응했다면/.exec(String(m.steps?.[0]?.work || '').replace(/\\(?:ce|text|mathrm)\s*\{([^{}]*)\}/g, '$1').replace(/\$/g, ''))?.[1] || '';
     try { await loadStatus(); } catch { /* the choices fall back to DeepSeek only */ }
     if (!$('#generate')) return;
     const providers = statusCache?.providers || { deepseek: { label: 'DeepSeek V4 Flash', available: true, note: '' } };
@@ -926,7 +936,15 @@
     const opt = (name, value, label, on, attrs = '') => `<label class="opt"><input type="radio" name="${name}" value="${value}" ${on ? 'checked' : ''} ${attrs}><span>${label}</span></label>`;
     el.innerHTML = `
       <div class="gen-form">
-        <div class="gen-row"><span class="gen-k">세트 구성</span><div class="gen-v">${stages.map(stageName).join(' → ')}</div></div>
+        <div class="gen-row"><span class="gen-k">연습 문제</span><div class="opts">
+          ${practice.map((st) => `<label class="opt" title="${st.kind === 'focus' ? `STEP 1~${st.step - 1}의 결과를 문제에서 주고 STEP ${st.step}의 로직만 연습` : `원본 STEP 1${st.upto > 1 ? '~' + st.upto : ''}만 써서 풀리는 문제`}"><input type="checkbox" name="stage" value="${keyOf(st)}" ${st.kind === 'upto' ? 'checked' : ''}><span>${stageName(st)}</span></label>`).join('')}</div></div>
+        <div class="gen-row"><span class="gen-k">최종 문제</span><div class="opts">
+          ${opt('final', 'integrated', '통합 변형 (원본과 다른 구조)', true)}${opt('final', 'numeric', '쌍둥이 (같은 구조, 수치를 새로)', false)}${opt('final', 'none', '만들지 않음', false)}</div></div>
+        ${assumed ? `<div class="gen-row"><span class="gen-k">가정 방향</span><div class="opts" title="원본 STEP 1은 ${assumed}가 모두 반응했다고 가정해 모순을 보입니다">
+          ${opt('direction', '', '자유', true)}${opt('direction', 'same', `원본과 같게 (${assumed} 가정 → 모순)`, false)}${opt('direction', 'flip', '원본과 반대로', false)}</div></div>` : ''}
+        <div class="gen-row"><span class="gen-k">종류마다</span><div class="opts">
+          ${[1, 2, 3].map((k) => opt('perStage', k, `${k}문제`, k === 1)).join('')}</div></div>
+        <div class="gen-row"><span class="gen-k">구성</span><div class="gen-v" id="gen-plan"></div></div>
         <div class="gen-row"><span class="gen-k">모델</span><div class="opts">
           ${Object.entries(providers).map(([key, p]) => opt('genProvider', key, esc(p.label), key === def, p.available ? '' : 'disabled')).join('')}</div></div>
         <div class="gen-row" id="effort-box"><span class="gen-k">사고 강도</span><div class="opts">
@@ -936,7 +954,17 @@
       </div>
       <div class="gen-go"><span id="estimate"></span><button class="primary" id="go">세트 만들기</button></div>`;
     const value = (name) => $(`[name=${name}]:checked`, el)?.value;
+    const plan = () => {
+      const keys = new Set($$('[name=stage]:checked', el).map((x) => x.value));
+      const final = value('final') || 'integrated';
+      const stages = [...practice.filter((st) => keys.has(keyOf(st))), ...(final === 'none' ? [] : [{ kind: 'twin' }])].sort((a, b) => order(a) - order(b));
+      const per = Number(value('perStage')) || 1;
+      return { stages, mode: final === 'numeric' ? 'numeric' : 'integrated', per, count: stages.length * per };
+    };
     const summary = () => {
+      const p = plan();
+      $('#gen-plan').innerHTML = p.stages.length ? `${p.stages.map((st) => stageName(st, p.mode)).join(' → ')}${p.per > 1 ? ` · 종류마다 ${p.per}문제` : ''}${p.count > MAX_PROBLEMS ? ` <span class="bad">— 한 세트는 ${MAX_PROBLEMS}문제까지입니다</span>` : ''}` : '<span class="bad">만들 문제를 하나 이상 고르세요</span>';
+      $('#go').disabled = !p.count || p.count > MAX_PROBLEMS;
       const chosen = value('genProvider') || 'deepseek';
       // Each model's own reasoning setting: DeepSeek's here, Claude's from the LLM tab, none for the PC model.
       $('#effort-box').hidden = chosen !== 'deepseek';
@@ -944,14 +972,15 @@
       if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[providers['claude-cli']?.effort] || '자동';
       $('#gen-hint').textContent = providers[chosen]?.note || '';
       const c = carryCounts.get(m.id);
-      $('#estimate').textContent = [`${stages.length}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', providers[chosen]?.label || ''].filter(Boolean).join(' · ');
+      $('#estimate').textContent = [`${p.count}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', providers[chosen]?.label || ''].filter(Boolean).join(' · ');
     };
     el.summary = summary;
     $$('input', el).forEach((x) => x.addEventListener('change', summary));
     summary();
     $('#go').addEventListener('click', guard(async () => {
       $('#go').disabled = true;
-      const r = await api('POST', '/api/generations', { materialId: m.id, stages, mode: 'integrated', perStage: 1, effort: value('effort'), provider: value('genProvider') });
+      const p = plan();
+      const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider') });
       try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
       location.hash = '#/j/' + r.jobId;
     }));
@@ -1033,7 +1062,7 @@
       : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">확인 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
-      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 수치 변형' : ''}</h1>
+      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
         <div class="name-btns"><a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
@@ -1534,7 +1563,7 @@
     ['maxRewrites', '해설 다시 쓰기', '해설만 선생님 해설과 다를 때 문제는 두고 해설만 다시 쓰는 횟수 (설계마다)'],
     ['maxRepairs', '문제 수정', '문제에 결함이 있을 때 고치게 하는 횟수 (설계마다). 같은 지적이 되풀이되면 일찍 멈춘다'],
     ['maxDesigns', '설계 횟수', '고쳐도 남으면 처음부터 새로 설계한다. 첫 설계를 포함한 최대 횟수 (문제마다)'],
-    ['setCalls', '세트당 AI 호출 상한', '한 세트가 쓸 수 있는 AI 호출 수. 뒤 문제를 만들 몫은 남겨 두고 고친다'],
+    ['setCalls', '세트당 AI 호출 상한', '문제 3개짜리 세트가 쓸 수 있는 AI 호출 수 (문제가 더 많으면 그만큼 늘어남). 뒤 문제를 만들 몫은 남겨 두고 고친다'],
   ];
   async function harnessView(pane) {
     pane.innerHTML = '<p class="muted">불러오는 중…</p>';

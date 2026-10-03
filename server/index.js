@@ -484,8 +484,8 @@ function createApp(options = {}) {
     const material = getMaterial(body.materialId);
     if (material.status !== 'ready') throw fail(409, '분석이 끝난 자료만 생성할 수 있습니다.');
     const stages = normalizeStages(body.stages, material.steps.length);
-    const items = buildItems(stages, material.steps.length, body.perStage);
     const mode = body.mode === 'integrated' ? 'integrated' : 'numeric';
+    const items = buildItems(stages, material.steps.length, body.perStage, mode);
     const effort = ['low', 'high'].includes(body.effort) ? body.effort : 'low';
     const provider = await chooseProvider(body.provider);
     // Mixed run: another model writes the problems (designWith: design + repairs) or only the repairs (repairWith);
@@ -497,7 +497,9 @@ function createApp(options = {}) {
     const lean = Boolean(body.lean && designWith) || undefined;
     const rules = pipeline.pickRules(store, material);
     const { images, ...snapshot } = material;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, perStage: items.length / stages.length } });
+    // 가정 방향: keep or flip which case STEP 1 assumes and rules out (only for an original whose STEP 1 does that).
+    const direction = ['same', 'flip'].includes(body.direction) && harness.assumedCase(material.steps[0]?.work) ? body.direction : undefined;
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {

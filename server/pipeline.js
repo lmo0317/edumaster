@@ -725,7 +725,9 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const invalid = [];
   let adjudication = keep?.adjudication || null;
   if (code.status === 'fail') invalid.push(...code.reasons.map((r) => '코드 검산: ' + r));
-  soft.push(...(code.warnings || []));
+  // A value the program computes that a student could not do by hand is a design fault (요구서 1), not just a note.
+  const handNotes = (code.warnings || []).filter((w) => /손으로 계산/.test(w)).map((w) => `손계산 수치: ${w}. 수치를 손으로 계산하기 쉽게 다시 잡아야 합니다.`);
+  soft.push(...(code.warnings || []).filter((w) => !/손으로 계산/.test(w)));
   const mismatch = !item.problem.choices.length ? ''
     : !blind.answer ? '독립 풀이가 정답을 고르지 못했습니다: ' + blind.solution.slice(0, 300)
     : blind.answer !== item.problem.answer ? `독립 풀이의 정답은 ${blind.answer}번(${blind.answerValue})인데 표시된 정답은 ${item.problem.answer}번입니다. 독립 풀이 요약: ${blind.solution.slice(0, 600)}`
@@ -748,7 +750,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     soft.push(...cov.notes);
   }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
-  const codeChecks = harness.inspectItem(material, item, mode);
+  const codeChecks = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)];
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
     if (solutionOnly(c) && c.severity !== 'hard') rewriteNotes.push(`${c.label}: ${c.evidence}`);
@@ -764,6 +766,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
     ...failed.filter((c) => c.severity === 'design' && !solutionOnly(c)).map((c) => `${c.label}: ${c.evidence}`),
+    ...handNotes,
   ];
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
@@ -810,7 +813,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   const { data, shapeFixes: generateShape = [] } = await ctx.llm.json({
     purpose: 'generate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
     system: prompts.GENERATE_SYSTEM,
-    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples) }) + (lean ? prompts.LEAN_DESIGN : ''),
+    text: prompts.generateText({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples), direction: ctx.direction }) + (lean ? prompts.LEAN_DESIGN : ''),
   });
   if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
   Object.assign(item, normalizeGenerated(data));
@@ -1041,6 +1044,8 @@ const SYSTEM_CHECKS = {
     { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문·보기가 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair', match: /수치\(|질문이 같|선택지가 같/ },
     { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 본다.', onFail: 'repair', match: /가정→모순 판정 유지|보조 문자 유지|풀이 순서/ },
     { label: '결론 노출·표기 형식', how: '추론할 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 본다.', onFail: 'repair', match: /결론을 표에|표기 형식/ },
+    { label: '손계산 수치', how: '계산기 없이 풀 수 있는지 본다. 검산 프로그램의 값에 분모가 큰 분수가 나오거나, 문제·선택지에 간단한 분수가 아닌 소수(1.732, 0.333)가 있으면 수치를 다시 잡게 한다.', onFail: 'repair', match: /^손계산 수치/ },
+    { label: '가정 방향', how: '세트에서 가정 방향(원본과 같게 / 반대로)을 정했으면, 해설 STEP 1이 가정해 모순을 보이는 쪽이 원본과 같은지·바뀌었는지 본다.', onFail: 'repair', match: /^가정 방향/ },
     { label: '해설 대조', how: '별도 검토자가 변형 해설을 선생님 해설과 이 문제의 STEP 범위 안에서 STEP별로 비교해, 다른 논리·문장 틀·표 구성을 찾는다. 범위 밖 STEP으로 쓴 정답 계산은 서버가 마지막 STEP에 합친다.', onFail: 'rewrite', match: /해설이 선생님 해설과 다름|STEP 제목/ },
     { label: '지침·학습 준수', how: '생성 모델이 지침·학습마다 적용 방법을 적고, 문제에 관한 것은 독립 풀이가, 해설에 관한 것은 해설 검토자가 다시 판정한다.', onFail: 'repair', match: /교사 지침 미준수/ },
   ],
