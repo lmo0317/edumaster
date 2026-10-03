@@ -709,3 +709,16 @@ a.lt-name:hover { color: var(--accent); }
 .set-acts { display: flex; gap: 6px; align-items: center; margin-left: auto; }
 a.btn.set-open { font-weight: 600; color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
 a.btn.set-open:hover { border-color: var(--accent); }
+/* 로그인 · 계정 */
+.login-box label { display: block; margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
+.acc-link { font-weight: 600; }
+.acc-form { display: grid; gap: 10px; max-width: 520px; }
+.acc-form label { display: block; margin: 0 0 4px; font-size: 13px; }
+.acc-form p { margin: 0; }
+.acc-add { margin-top: 10px; }
+.acc-row { grid-template-columns: minmax(0, 1fr) auto; }
+.acc-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.acc-reset { grid-column: 1 / -1; display: flex; gap: 6px; }
+.acc-reset[hidden] { display: none; }
+.acc-reset input { max-width: 260px; }
+@media (max-width: 640px) { .acc-row { grid-template-columns: minmax(0, 1fr); } .acc-acts { justify-content: flex-start; } }

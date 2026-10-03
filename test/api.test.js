@@ -6,12 +6,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createApp } = require('../server');
+const { createUsers } = require('../server/users');
 
 const image = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(300, 7)]).toString('base64');
 
 async function start() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
-  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'mock' });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -37,8 +38,8 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
   const s = await start();
   try {
     assert.equal((await s.call('GET', '/api/materials')).status, 401);
-    assert.equal((await s.call('POST', '/api/login', { code: 'wrong' })).status, 401);
-    assert.equal((await s.call('POST', '/api/login', { code: 'test-code' })).status, 200);
+    assert.equal((await s.call('POST', '/api/login', { username: 'admin', password: 'wrong-pass' })).status, 401);
+    assert.equal((await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' })).status, 200);
 
     const created = await s.call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
     assert.equal(created.status, 200, JSON.stringify(created.data));
@@ -108,7 +109,7 @@ test('budget stops a job instead of overspending', async () => {
   const s = await start();
   try {
     s.app.config.budget.generateCalls = 2;
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const created = await s.call('POST', '/api/materials', { problemImage: image });
     await s.waitJob(created.data.jobId);
     const gen = await s.call('POST', '/api/generations', { materialId: created.data.material.id });
@@ -124,7 +125,7 @@ test('budget stops a job instead of overspending', async () => {
 test('model choice: Gemma runs every call of the job and is free; refused while the PC is off', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const status = (await s.call('GET', '/api/status')).data;
     assert.equal(status.providers.gemma.available, true);
     const created = await s.call('POST', '/api/materials', { problemImage: image, provider: 'gemma' });
@@ -144,12 +145,12 @@ test('model choice: Gemma runs every call of the job and is free; refused while 
 
   // Real (non-mock) mode with the Gemma tunnel down: the choice is refused before anything runs.
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
-  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'deepseek', gemma: { endpoint: 'http://127.0.0.1:9/v1', timeoutMs: 1000, maxOutputTokens: 100 } });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   try {
     const base = `http://127.0.0.1:${app.server.address().port}`;
-    const login = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'test-code' }) });
+    const login = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'test-pass-1' }) });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const st = await (await fetch(base + '/api/status', { headers: { cookie } })).json();
     assert.equal(st.providers.gemma.available, false);
@@ -162,7 +163,7 @@ test('model choice: Gemma runs every call of the job and is free; refused while 
 test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s step markers', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const created = await s.call('POST', '/api/materials', { problemImage: image });
     await s.waitJob(created.data.jobId);
     const id = created.data.material.id;
@@ -183,7 +184,7 @@ test('지침 and 전체 학습: the persona leads every call; every-problem anal
   const s = await start();
   try {
     assert.equal((await s.call('GET', '/api/learning')).status, 401, 'login required');
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     let d = (await s.call('GET', '/api/learning')).data;
     assert.deepEqual([d.persona, d.guides.analysis, d.guides.generation, d.lessons.analysis, d.lessons.generation], ['', [], [], [], []]);
     // 하네스: the checks with what happens on failure, how they fared, and settings kept within their range.
@@ -233,7 +234,7 @@ test('지침 and 전체 학습: the persona leads every call; every-problem anal
 test('model comparison list and one comparison', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const cmpList = (await s.call('GET', '/api/compare')).data;
     assert.ok(Array.isArray(cmpList));
     if (cmpList.length) { const one = (await s.call('GET', '/api/compare/' + cmpList[0].id)).data; assert.ok(one.original.problemImage.startsWith('data:image/') && one.models.length); }
@@ -259,7 +260,7 @@ test('the public comparison page needs no login and exposes only the comparison'
 
 test('mixed run: designWith sends problem design and repairs to that model; solving and review stay with the provider', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
-  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'mock', relay: { dir: path.join(dataDir, 'relay'), label: 'relay', timeoutMs: 1000 } });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -271,7 +272,7 @@ test('mixed run: designWith sends problem design and repairs to that model; solv
   };
   const wait = async (id) => { for (;;) { const j = await call('GET', `/api/jobs/${id}`); if (['done', 'failed'].includes(j.status)) return j; await new Promise((r) => setTimeout(r, 25)); } };
   try {
-    await call('POST', '/api/login', { code: 'test-code' });
+    await call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const created = await call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
     await wait(created.jobId);
     const gen = await call('POST', '/api/generations', { materialId: created.material.id, mode: 'integrated', designWith: 'relay' });
@@ -290,7 +291,7 @@ test('mixed run: designWith sends problem design and repairs to that model; solv
 
 test('lean mixed run end to end (mock): the designer writes and adjudicates, the provider writes the solution out, solves and reviews', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
-  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'test-code\n');
+  createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'mock', relay: { dir: path.join(dataDir, 'relay'), label: 'relay', timeoutMs: 1000 } });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -302,7 +303,7 @@ test('lean mixed run end to end (mock): the designer writes and adjudicates, the
   };
   const wait = async (id) => { for (;;) { const j = await call('GET', `/api/jobs/${id}`); if (['done', 'failed'].includes(j.status)) return j; await new Promise((r) => setTimeout(r, 25)); } };
   try {
-    await call('POST', '/api/login', { code: 'test-code' });
+    await call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const created = await call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
     await wait(created.jobId);
     const gen = await call('POST', '/api/generations', { materialId: created.material.id, mode: 'integrated', designWith: 'relay', lean: true });
@@ -324,7 +325,7 @@ test('lean mixed run end to end (mock): the designer writes and adjudicates, the
 test('problem feedback: written on the problem page or on a variant it belongs to that problem and reaches only its sets', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     const b = (await s.call('POST', '/api/materials', { title: 'B', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId); await s.waitJob(b.jobId);
@@ -352,7 +353,7 @@ test('problem feedback: written on the problem page or on a variant it belongs t
 test('a problem\'s analysis learning: typed with 다시 분석 or added alone, kept as items, and every re-analysis gets all of it', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const id = a.material.id;
@@ -380,7 +381,7 @@ test('a problem\'s analysis learning: typed with 다시 분석 or added alone, k
 test('a problem\'s generation learning: 지침, this problem, 전체 학습 in that order, with how each fared; moving up 문제 → 전체 학습 → 지침', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'P', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const id = a.material.id;
@@ -411,7 +412,7 @@ test('a problem\'s generation learning: 지침, this problem, 전체 학습 in t
 test('renaming a problem: the new name stays through a re-analysis and shows on its sets', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const id = a.material.id;
@@ -436,7 +437,7 @@ test('renaming a problem: the new name stays through a re-analysis and shows on 
 test('deleting a problem takes its sets and its own learning; learning moved up to 공통 학습 stays', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const id = a.material.id;
@@ -459,7 +460,7 @@ test('deleting a problem takes its sets and its own learning; learning moved up 
 test('analysis feedback beats the printed steps: a STEP count and an easier write-up survive merging, proofreading and printed titles', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: '피드백 반영', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
@@ -488,7 +489,7 @@ test('analysis feedback beats the printed steps: a STEP count and an easier writ
 test('LLM tab data: calls, tokens and cost per model from the ledger, today and over 30 days', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const { status, data } = await s.call('GET', '/api/llm');
@@ -504,7 +505,7 @@ test('LLM tab data: calls, tokens and cost per model from the ledger, today and 
 test('기본 모델: chosen on the LLM tab, it is what requests without a model use; a malformed DeepSeek key is refused', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     assert.equal((await s.call('GET', '/api/status')).data.defaultProvider, 'deepseek');
     assert.equal((await s.call('PUT', '/api/llm/default', { provider: 'nope' })).status, 400);
     assert.equal((await s.call('PUT', '/api/llm/default', { provider: 'gemma' })).data.defaultProvider, 'gemma');
@@ -522,7 +523,7 @@ test('기본 모델: chosen on the LLM tab, it is what requests without a model 
 test('Claude model and effort on the LLM tab: saved, validated, and shown by name', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     assert.equal((await s.call('PUT', '/api/llm/claude', { model: 'gpt-9', effort: 'low' })).status, 400);
     assert.equal((await s.call('PUT', '/api/llm/claude', { model: 'claude-opus-5-5', effort: 'turbo' })).status, 400);
     const r = (await s.call('PUT', '/api/llm/claude', { model: 'claude-sonnet-5-5', effort: 'medium' })).data;
@@ -539,7 +540,7 @@ test('Claude model and effort on the LLM tab: saved, validated, and shown by nam
 test('variant review: 채택 is saved and listed; a tag pressed on two variants is one feedback; a regenerated variant is reviewed afresh', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const job = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
@@ -560,7 +561,7 @@ test('variant review: 채택 is saved and listed; a tag pressed on two variants 
 test('learning: an adopted variant is shown as an example to the next set of the same stage, and a regenerated variant gets feedback added after its set was made', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const set1 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);
@@ -580,7 +581,7 @@ test('learning: an adopted variant is shown as an example to the next set of the
 test('학습 현황: per set (made, passed, adopted, feedback then, kept/broken) and per feedback (checked on how many variants, kept or broken)', async () => {
   const s = await start();
   try {
-    await s.call('POST', '/api/login', { code: 'test-code' });
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const a = (await s.call('POST', '/api/materials', { title: 'A', problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     const set1 = await s.waitJob((await s.call('POST', '/api/generations', { materialId: a.material.id, mode: 'integrated' })).data.jobId);

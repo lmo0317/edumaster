@@ -81,7 +81,15 @@
   const PROVIDER_LABEL = { deepseek: 'DeepSeek', gemma: 'PC 모델', relay: 'Claude Opus 5.5', claude: 'Claude Opus 5.5', 'claude-cli': 'Claude Opus 5.5 (구독)', 'agy-cli': 'Gemini (구독)', 'codex-cli': 'GPT (구독)' };
   // Model picker: DeepSeek is always there; Gemma only while the teacher's PC is on.
   let statusCache = null;
-  const loadStatus = async () => { statusCache = await api('GET', '/api/status'); paintModelState(statusCache); return statusCache; };
+  const loadStatus = async () => { statusCache = await api('GET', '/api/status'); paintModelState(statusCache); paintAccount(statusCache.user); return statusCache; };
+  function paintAccount(user) {
+    const a = $('#account');
+    if (!a) return;
+    a.hidden = !user;
+    a.textContent = user ? user.username : '';
+    a.title = user ? `${user.username} · ${user.role === 'admin' ? '관리자' : '선생님'} — 계정` : '';
+    $('#logout').hidden = !user;
+  }
   // Header: the 기본 모델 (links to the LLM tab), and when it cannot be used right now, what is used instead.
   function paintModelState(status) {
     const el = $('#model-state');
@@ -116,21 +124,30 @@
     if ($('.overlay.login')) return;
     const el = document.createElement('div');
     el.className = 'overlay login';
-    el.innerHTML = `<form class="box"><h2>EduMaster 접속</h2><p class="muted small">관리자에게 받은 접속 코드를 입력하세요.</p>
-      <input type="password" name="code" autocomplete="current-password" placeholder="접속 코드" required>
-      <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="primary">접속</button></div></form>`;
+    el.innerHTML = `<form class="box login-box"><h2>EduMaster 로그인</h2>
+      <label for="login-name">아이디</label><input type="text" id="login-name" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label for="login-pw">비밀번호</label><input type="password" id="login-pw" name="password" autocomplete="current-password" required>
+      <p class="bad small" id="login-error" hidden></p>
+      <div class="row" style="margin-top:12px"><span class="muted small">계정은 관리자에게 받으세요.</span><span class="spacer"></span><button class="primary">로그인</button></div></form>`;
     document.body.appendChild(el);
     $('input', el).focus();
-    $('form', el).addEventListener('submit', guard(async (e) => {
+    $('form', el).addEventListener('submit', async (e) => {
       e.preventDefault();
-      await api('POST', '/api/login', { code: e.target.code.value });
+      const err = $('#login-error', el);
+      err.hidden = true;
+      try {
+        await api('POST', '/api/login', { username: e.target.username.value, password: e.target.password.value });
+      } catch (x) {
+        err.textContent = x.message; err.hidden = false;
+        e.target.password.value = ''; e.target.password.focus();
+        return;
+      }
       el.remove();
-      $('#logout').hidden = false;
-      loadStatus().catch(() => {});
+      await loadStatus().catch(() => {});
       route();
-    }));
+    });
   }
-  $('#logout').addEventListener('click', guard(async () => { await api('POST', '/api/logout'); location.hash = '#/'; $('#model-state').textContent = ''; showLogin(); }));
+  $('#logout').addEventListener('click', guard(async () => { await api('POST', '/api/logout'); location.hash = '#/'; $('#model-state').textContent = ''; paintAccount(null); showLogin(); }));
 
   // ------------------------------------------------------------------ images
   async function readImage(file) {
@@ -205,6 +222,7 @@
       else if (hash.startsWith('#/learn') || hash.startsWith('#/rules')) { location.replace('#/learn/problems'); return; }
       else if (hash.startsWith('#/system')) { location.replace('#/llm'); return; }
       else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView(); }
+      else if (hash.startsWith('#/account')) { setNav(''); await accountView(); }
       else { setNav('home'); await materialsView(); }
     } catch (e) {
       if (alive() && e.message !== '로그인이 필요합니다.') {
@@ -1700,12 +1718,82 @@
     await paintModels(false);
   }
 
+  // ------------------------------------------------------------------ 계정
+  const ROLE_TXT = { admin: '관리자', teacher: '선생님' };
+  async function accountView() {
+    const me = await api('GET', '/api/me');
+    const isAdmin = me.role === 'admin';
+    view.innerHTML = `<div class="lt">
+      <div class="lt-title"><h1>계정</h1><p class="lt-meta">${esc(me.username)} · ${ROLE_TXT[me.role]}${me.lastLoginAt ? ` · 마지막 로그인 ${fmtTime(me.lastLoginAt)}` : ''}</p></div>
+      <section class="lt-sec"><div class="lt-sec-head"><h2>비밀번호 바꾸기</h2><p>바꾸면 이 기기를 뺀 다른 기기에서는 로그아웃됩니다.</p></div>
+        <form class="panel acc-form" id="pw-form">
+          <div><label for="pw-cur">지금 비밀번호</label><input type="password" id="pw-cur" autocomplete="current-password" required></div>
+          <div><label for="pw-new">새 비밀번호 (8자 이상)</label><input type="password" id="pw-new" autocomplete="new-password" minlength="8" required></div>
+          <div><label for="pw-new2">새 비밀번호 확인</label><input type="password" id="pw-new2" autocomplete="new-password" minlength="8" required></div>
+          <p class="bad small" id="pw-error" hidden></p>
+          <div class="lt-actions"><span class="spacer"></span><button class="small primary">비밀번호 바꾸기</button></div>
+        </form></section>
+      ${isAdmin ? `<section class="lt-sec"><div class="lt-sec-head"><h2>계정 관리</h2><p>선생님 계정은 문제·학습·LLM을 모두 쓰고, 관리자 계정은 계정 관리도 합니다.</p></div>
+        <div class="panel lt-list" id="acc-list"></div>
+        <form class="panel acc-form acc-add" id="acc-add">
+          <div><label for="add-name">아이디</label><input type="text" id="add-name" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="영문 소문자·숫자" required></div>
+          <div><label for="add-pw">처음 비밀번호 (8자 이상)</label><input type="password" id="add-pw" autocomplete="new-password" minlength="8" required></div>
+          <div><label for="add-role">역할</label><select id="add-role"><option value="teacher">선생님</option><option value="admin">관리자</option></select></div>
+          <p class="bad small" id="add-error" hidden></p>
+          <div class="lt-actions"><span class="muted small">처음 비밀번호를 알려 주고, 로그인한 뒤 바꾸게 하세요.</span><span class="spacer"></span><button class="small primary">계정 추가</button></div>
+        </form></section>` : ''}
+    </div>`;
+    const showErr = (id, m) => { const e = $(id); e.textContent = m; e.hidden = !m; };
+    $('#pw-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if ($('#pw-new').value !== $('#pw-new2').value) return showErr('#pw-error', '새 비밀번호 두 칸이 서로 다릅니다.');
+      try { await api('PUT', '/api/me/password', { current: $('#pw-cur').value, next: $('#pw-new').value }); }
+      catch (x) { return showErr('#pw-error', x.message); }
+      showErr('#pw-error', ''); e.target.reset(); toast('비밀번호를 바꿨습니다.');
+    });
+    if (!isAdmin) return;
+    const paintList = async () => {
+      const list = await api('GET', '/api/users');
+      $('#acc-list').innerHTML = list.map((u) => `<div class="lt-row lt-plain acc-row${u.disabled ? ' off' : ''}" data-user="${u.id}">
+        <div class="lt-main"><span class="lt-name">${esc(u.username)}<span class="lt-tag">${ROLE_TXT[u.role]}</span>${u.disabled ? '<span class="chip">꺼짐</span>' : ''}${u.id === me.id ? '<span class="chip">나</span>' : ''}</span>
+          <span class="lt-sub">${u.lastLoginAt ? `마지막 로그인 ${fmtTime(u.lastLoginAt)}` : '아직 로그인하지 않음'}</span></div>
+        ${u.id === me.id ? '<span></span>' : `<div class="acc-acts">
+          <button class="small" data-a="reset">비밀번호 초기화</button>
+          <button class="small" data-a="role">${u.role === 'admin' ? '선생님으로' : '관리자로'}</button>
+          <button class="small" data-a="toggle">${u.disabled ? '켜기' : '끄기'}</button>
+          <button class="small danger" data-a="del">삭제</button></div>`}
+        <form class="acc-reset" hidden><input type="password" autocomplete="new-password" minlength="8" placeholder="새 비밀번호 (8자 이상)" required><button class="small primary">초기화</button><button type="button" class="small" data-a="cancel">취소</button></form>
+      </div>`).join('');
+      $$('#acc-list [data-user]').forEach((row) => {
+        const id = row.dataset.user;
+        const u = list.find((x) => x.id === id);
+        const form = $('.acc-reset', row);
+        $('[data-a=reset]', row)?.addEventListener('click', () => { form.hidden = false; $('input', form).focus(); });
+        $('[data-a=cancel]', row)?.addEventListener('click', () => { form.hidden = true; form.reset(); });
+        form?.addEventListener('submit', guard(async (e) => { e.preventDefault(); await api('PUT', '/api/users/' + id, { password: $('input', form).value }); toast(`${u.username}의 비밀번호를 바꿨습니다. 그 계정은 다시 로그인해야 합니다.`); await paintList(); }));
+        $('[data-a=role]', row)?.addEventListener('click', guard(async () => { await api('PUT', '/api/users/' + id, { role: u.role === 'admin' ? 'teacher' : 'admin' }); await paintList(); }));
+        $('[data-a=toggle]', row)?.addEventListener('click', guard(async () => { await api('PUT', '/api/users/' + id, { disabled: !u.disabled }); toast(u.disabled ? '계정을 켰습니다.' : '계정을 껐습니다. 그 계정은 바로 로그아웃됩니다.'); await paintList(); }));
+        // Deleting asks in the row itself (the page cannot show confirm dialogs everywhere).
+        $('[data-a=del]', row)?.addEventListener('click', guard(async (e) => {
+          if (e.target.dataset.sure !== '1') { e.target.dataset.sure = '1'; e.target.textContent = '정말 삭제'; return; }
+          await api('DELETE', '/api/users/' + id); toast(`${u.username} 계정을 삭제했습니다.`); await paintList();
+        }));
+      });
+    };
+    await paintList();
+    $('#acc-add').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { await api('POST', '/api/users', { username: $('#add-name').value, password: $('#add-pw').value, role: $('#add-role').value }); }
+      catch (x) { return showErr('#add-error', x.message); }
+      showErr('#add-error', ''); e.target.reset(); toast('계정을 추가했습니다.'); await paintList();
+    });
+  }
+
   // ------------------------------------------------------------------ boot
   (async () => {
     try {
       const status = await loadStatus();
       if (!status.authenticated) return showLogin();
-      $('#logout').hidden = false;
     } catch { /* shown per view */ }
     route();
   })();

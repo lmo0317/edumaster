@@ -43,11 +43,17 @@ async function main() {
   const dataDir = path.join(__dirname, '.work', stamp);
   process.env.EDUMASTER_KEEP_RAW = '1'; // every model answer is kept under .work/<stamp>/llm-raw
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(path.join(dataDir, 'access-code.txt'), 'eval\n');
+  require('../server/users').createUsers(dataDir).create({ username: 'eval', password: 'eval-harness', role: 'admin' });
   const keyFile = args.key || path.join(root, 'data', 'deepseek-api-key.txt');
   if (fs.existsSync(keyFile)) fs.copyFileSync(keyFile, path.join(dataDir, 'deepseek-api-key.txt'));
   const claudeKeyFile = args['claude-key'] || path.join(root, 'data', 'anthropic-api-key.txt');
   if (fs.existsSync(claudeKeyFile)) fs.copyFileSync(claudeKeyFile, path.join(dataDir, 'anthropic-api-key.txt'));
+  // The Claude subscription (claude-cli): the server's login token and the LLM tab's model/effort choice come along,
+  // so --providers claude-cli measures the model the teacher actually uses.
+  for (const [arg, file] of [['claude-token', 'claude-oauth-token.txt'], ['llm-settings', 'llm-settings.json']]) {
+    const from = args[arg] || path.join(root, 'data', file);
+    if (fs.existsSync(from)) { fs.copyFileSync(from, path.join(dataDir, file)); fs.chmodSync(path.join(dataDir, file), 0o600); }
+  }
   // Measure the system as it runs: the teacher's approved rules and reading corrections come along (RAG).
   // --no-learning measures the bare prompts, so the two runs show what retrieval adds.
   const learningFrom = args['learning-from'] || path.join(root, 'data');
@@ -77,7 +83,7 @@ async function main() {
       await new Promise((r) => setTimeout(r, 3000));
     }
   };
-  await call('POST', '/api/login', { code: 'eval' });
+  await call('POST', '/api/login', { username: 'eval', password: 'eval-harness' });
   // The PC provider serves whichever local model is loaded; keep its name so runs of different models differ.
   const status = await call('GET', '/api/status');
   const modelOf = (provider) => (provider === 'gemma' ? status.providers?.gemma?.model || 'gemma' : provider);

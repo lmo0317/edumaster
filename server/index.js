@@ -10,6 +10,7 @@ const { createLlm, PROVIDERS, Budget, pcModelLabel, pcModelKey, claudeCliReady, 
 const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSummary } = require('./scoring');
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
+const { createUsers } = require('./users');
 const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, analysisLearning, selectRules, layerOf, stageOf } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const pipeline = require('./pipeline');
@@ -30,12 +31,9 @@ function createApp(options = {}) {
   if (migrated) console.log(`[learning] ${migrated}개 항목을 하나의 학습 저장소로 옮겼습니다.`);
   let apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
   const claudeKey = readSecret(path.join(cfg.dataDir, 'anthropic-api-key.txt'));
-  let accessCode = readSecret(path.join(cfg.dataDir, 'access-code.txt'));
-  if (!accessCode) {
-    accessCode = crypto.randomBytes(6).toString('base64url');
-    fs.writeFileSync(path.join(cfg.dataDir, 'access-code.txt'), accessCode + '\n', { mode: 0o600 });
-    console.log(`접속 코드를 새로 만들었습니다: ${path.join(cfg.dataDir, 'access-code.txt')}`);
-  }
+  // Accounts (server/users.js). The first one is made on the server: node scripts/user.js add <name>.
+  const users = createUsers(cfg.dataDir);
+  if (!users.count()) console.log('[계정] 아직 계정이 없습니다. 서버에서 node scripts/user.js add <아이디> 로 관리자 계정을 만드세요.');
   const llm = createLlm({ config: cfg, store, apiKey, claudeKey, mock });
   const jobs = createJobs({ store, llm, config: cfg });
 
@@ -46,14 +44,22 @@ function createApp(options = {}) {
   const saveSessions = () => fs.writeFileSync(sessionFile, JSON.stringify(sessions), { mode: 0o600 });
   const SESSION_DAYS = 30;
   const cookieName = 'em2_session';
+  // A session belongs to an account; one from the access-code days (no account) or of an account that was switched
+  // off or deleted no longer counts. Returns the session's key (the token's hash).
   const sessionOf = (req) => {
     const token = /(?:^|;\s*)em2_session=([A-Za-z0-9_-]{20,})/.exec(req.headers.cookie || '')?.[1];
     if (!token) return null;
     const hash = crypto.createHash('sha256').update(token).digest('hex');
     const s = sessions[hash];
-    return s && s.expires > Date.now() ? hash : null;
+    if (!s || s.expires <= Date.now() || !s.userId) return null;
+    const u = users.get(s.userId);
+    return u && !u.disabled ? hash : null;
   };
+  const userOf = (req) => { const h = sessionOf(req); return h ? users.get(sessions[h].userId) : null; };
+  // Failed logins: 10 per address and 5 per name in 10 minutes, then wait.
   const attempts = new Map();
+  const failedFor = (key) => (attempts.get(key) || []).filter((t) => t > Date.now() - 10 * 60000);
+  const endSessionsOf = (userId, keep) => { for (const [k, v] of Object.entries(sessions)) if (v.userId === userId && k !== keep) delete sessions[k]; saveSessions(); };
 
   // ------------------------------------------------------------ helpers
   const security = {
@@ -98,7 +104,7 @@ function createApp(options = {}) {
   route('GET', /^\/api\/status$/, async (req) => {
     const gemma = await llm.gemmaStatus();
     return {
-      version: VERSION, authenticated: Boolean(sessionOf(req)), llm: cfg.llmMode,
+      version: VERSION, authenticated: Boolean(sessionOf(req)), user: userOf(req), llm: cfg.llmMode,
       deepseekConfigured: Boolean(apiKey), visionModel: cfg.deepseek.visionModel, textModel: cfg.deepseek.textModel,
       providers: {
         deepseek: { label: PROVIDERS.deepseek.label, available: Boolean(apiKey) || cfg.llmMode === 'mock', note: '항상 사용 가능 · 유료 · 빠름' },
@@ -153,24 +159,59 @@ function createApp(options = {}) {
 
   route('POST', /^\/api\/login$/, async (req, res) => {
     const ip = req.headers['x-real-ip'] || req.socket.remoteAddress;
-    const recent = (attempts.get(ip) || []).filter((t) => t > Date.now() - 10 * 60000);
-    if (recent.length >= 10) throw fail(429, '로그인 시도가 너무 많습니다. 10분 뒤 다시 시도해 주세요.');
-    const { code } = await readBody(req, 4096);
-    const given = Buffer.from(String(code || '').trim());
-    const expected = Buffer.from(accessCode);
-    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
-      attempts.set(ip, [...recent, Date.now()]);
-      throw fail(401, '접속 코드가 맞지 않습니다.');
+    const { username, password } = await readBody(req, 4096);
+    const name = String(username || '').trim().toLowerCase();
+    const byIp = failedFor('ip:' + ip);
+    const byName = failedFor('name:' + name);
+    if (byIp.length >= 10 || byName.length >= 5) throw fail(429, '로그인 시도가 너무 많습니다. 10분 뒤 다시 시도해 주세요.');
+    if (!users.count()) throw fail(503, '아직 계정이 없습니다. 서버에서 관리자 계정을 먼저 만들어 주세요.');
+    const user = users.verify(name, password);
+    if (!user) {
+      attempts.set('ip:' + ip, [...byIp, Date.now()]);
+      attempts.set('name:' + name, [...byName, Date.now()]);
+      throw fail(401, '아이디 또는 비밀번호가 올바르지 않습니다.');
     }
+    attempts.delete('name:' + name);
     const token = crypto.randomBytes(32).toString('base64url');
     const hash = crypto.createHash('sha256').update(token).digest('hex');
-    for (const [k, v] of Object.entries(sessions)) if (v.expires < Date.now()) delete sessions[k];
-    sessions[hash] = { created: Date.now(), expires: Date.now() + SESSION_DAYS * 86400000 };
+    for (const [k, v] of Object.entries(sessions)) if (v.expires < Date.now() || !v.userId) delete sessions[k];
+    sessions[hash] = { created: Date.now(), expires: Date.now() + SESSION_DAYS * 86400000, userId: user.id };
     saveSessions();
     const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
     res.setHeader('Set-Cookie', `${cookieName}=${token}; Path=${cfg.cookiePath}; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`);
-    return { ok: true };
+    return { ok: true, user };
   }, { open: true });
+
+  // The signed-in account, changing one's own password (other devices are signed out), and — for an admin — the
+  // accounts: add, reset a password, change the role, switch off, delete. One admin always remains.
+  route('GET', /^\/api\/me$/, (req) => userOf(req));
+  route('PUT', /^\/api\/me\/password$/, async (req) => {
+    const me = userOf(req);
+    const { current, next } = await readBody(req, 4096);
+    if (!users.verify(me.username, current)) throw fail(400, '지금 비밀번호가 맞지 않습니다.');
+    users.setPassword(me.id, next);
+    endSessionsOf(me.id, sessionOf(req));
+    return { ok: true };
+  });
+  const adminOnly = (req) => { const me = userOf(req); if (me?.role !== 'admin') throw fail(403, '관리자만 할 수 있습니다.'); return me; };
+  route('GET', /^\/api\/users$/, (req) => { adminOnly(req); return users.list(); });
+  route('POST', /^\/api\/users$/, async (req) => { adminOnly(req); const b = await readBody(req, 4096); return users.create({ username: b.username, password: b.password, role: b.role }); });
+  route('PUT', /^\/api\/users\/([a-f0-9]+)$/, async (req, res, [id]) => {
+    const me = adminOnly(req);
+    const b = await readBody(req, 4096);
+    if (id === me.id && (b.disabled || (b.role && b.role !== 'admin'))) throw fail(409, '자기 계정은 끄거나 관리자에서 내릴 수 없습니다.');
+    if (b.password !== undefined) { users.setPassword(id, b.password); endSessionsOf(id, id === me.id ? sessionOf(req) : null); }
+    const u = users.update(id, { role: b.role, disabled: b.disabled });
+    if (u.disabled) endSessionsOf(id, null);
+    return u;
+  });
+  route('DELETE', /^\/api\/users\/([a-f0-9]+)$/, (req, res, [id]) => {
+    const me = adminOnly(req);
+    if (id === me.id) throw fail(409, '자기 계정은 지울 수 없습니다.');
+    users.remove(id);
+    endSessionsOf(id, null);
+    return { ok: true };
+  });
 
   route('POST', /^\/api\/logout$/, (req, res) => {
     const hash = sessionOf(req);

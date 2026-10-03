@@ -1,12 +1,12 @@
 'use strict';
 // Real-model end-to-end check against a running EduMaster server (makes paid DeepSeek calls).
-// usage: node scripts/e2e-real.js <baseUrl> <accessCodeFile> <problem.png> [solution.png] [mode]
+// usage: node scripts/e2e-real.js <baseUrl> <username:passwordFile> <problem.png> [solution.png] [mode]
 const fs = require('node:fs');
 const path = require('node:path');
 
 const [base, codeFile, problemPath, solutionPath, mode = 'numeric'] = process.argv.slice(2);
 const provider = process.env.EDUMASTER_E2E_PROVIDER || 'deepseek'; // deepseek | gemma
-if (!base || !codeFile || !problemPath) { console.error('usage: node scripts/e2e-real.js <baseUrl> <accessCodeFile> <problem> [solution] [mode]'); process.exit(2); }
+if (!base || !codeFile || !problemPath) { console.error('usage: node scripts/e2e-real.js <baseUrl> <username:passwordFile> <problem> [solution] [mode]'); process.exit(2); }
 let cookie = '';
 async function call(method, url, body) {
   const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined });
@@ -28,7 +28,8 @@ async function wait(id) {
 }
 
 (async () => {
-  await call('POST', '/api/login', { code: fs.readFileSync(codeFile, 'utf8').trim() });
+  const [username, passwordFile] = codeFile.split(':');
+  await call('POST', '/api/login', { username, password: fs.readFileSync(passwordFile, 'utf8').trim() });
   const created = await call('POST', '/api/materials', { title: process.env.EDUMASTER_E2E_TITLE || 'e2e 몰질량', problemImage: dataUrl(problemPath), solutionImage: solutionPath ? dataUrl(solutionPath) : null, problemViews: views(problemPath), solutionViews: solutionPath ? views(solutionPath) : [], provider });
   const analysis = await wait(created.jobId);
   console.log('\nanalysis:', analysis.status, analysis.error || '', JSON.stringify(analysis.usage));
