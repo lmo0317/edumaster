@@ -61,6 +61,20 @@ function normalizeMaterial(data) {
 
 const STEP_COUNT_NOTE = /^(해설의 단계 표시는|교정 단계에서 해설의 STEP 표시를|선생님 피드백의 STEP 수는)/;
 const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[^0-9]/g, ''), 10) || 0;
+// A heading as read: the step marker in front of it ("step3", "STEP 3.") is dropped, but a heading that begins by
+// referring to another step ("step 2에서 구한 …", 2026-10-03: read as "에서 구한 …") keeps that reference — a marker
+// is only one that carries this heading's own number and is not followed by a particle.
+// A premise that makes the situation hold ("모든 기체는 반응하지 않는다", "X~Z는 임의의 원소 기호이다") is never used in a
+// calculation and is not an unneeded condition (2026-10-03: the practice problems lost it after being told it was).
+const isPremise = (t) => /반응하지\s*않|임의의\s*원소\s*기호/.test(String(t || ''));
+function cleanHeading(h) {
+  const title = str(h?.title ?? h, 300);
+  const own = markerNumber(h?.marker);
+  const m = /^\s*(?:step|STEP)\s*(\d+)\s*[.:)·]?\s*/.exec(title);
+  const after = m ? title.slice(m.index + m[0].trimEnd().length) : '';
+  const isMarker = m && (!own || Number(m[1]) === own) && !/^[가-힣]/.test(after) && !/^\s*(?:에서|의|와|과|을|를|에|로|으로)\s/.test(after);
+  return (isMarker ? title.slice(m[0].length) : title).replace(/[.。]\s*$/, '');
+}
 
 /** How many STEPs the analysis should have: the count the teacher's analysis feedback asked for, else the solution's step markers. */
 function targetStepCount(material) {
@@ -314,7 +328,6 @@ async function focusedReread(ctx, result, byRole, hasSolution) {
     }
     return out;
   };
-  const cleanHeading = (h) => str(h?.title ?? h, 300).replace(/^\s*(?:step|STEP)\s*\d+\s*[.:)·]?\s*/, '').replace(/[.。]\s*$/, '');
   const questions = (await read('reread-question', prompts.REREAD_QUESTION_SYSTEM, hinted(ctx, '발문만 JSON으로 반환하라.'), byRole.problem)).map((d) => str(d.question, 2000));
   const headingReads = hasSolution
     ? (await read('reread-headings', prompts.REREAD_HEADINGS_SYSTEM, hinted(ctx, '단계 제목만 JSON으로 반환하라.'), byRole.solution)).map((d) => arr(d.steps).filter((s) => s?.marker || s?.title).map(cleanHeading).filter(Boolean))
@@ -741,7 +754,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   rewriteNotes.push(...reviewNotes);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
-    ...(lean ? [] : blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
+    ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
     ...(!lean && integratedFinal && blind.variation === 'numbers-only' ? [`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim()] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...numbersReused(item, prior, material),
@@ -1050,4 +1063,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };
+  harnessStats, ON_FAIL, cleanHeading, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, coverage };

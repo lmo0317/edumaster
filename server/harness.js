@@ -166,8 +166,8 @@ function checkSolutionTables(material, item) {
 }
 
 /** All code checks for one generated problem. */
-/** The solution keeps the teacher's STEP titles; only the experiment numbers (Ⅰ, Ⅱ, Ⅲ) may change. */
-const titleKey = (t) => plain(t).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
+/** The solution keeps the teacher's STEP titles; only the experiments or containers named ((Ⅰ~Ⅲ), (가)~(다)) follow the problem. */
+const titleKey = (t) => plain(t).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/\([가-하]\)\s*(?:~|와|과|및|,)?\s*/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
 function checkStepTitles(material, item) {
   const out = [];
   for (const s of item.solution?.steps || []) {
@@ -357,4 +357,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
