@@ -110,3 +110,15 @@ test('a session from the access-code days (no account) no longer signs anyone in
     assert.equal(res.status, 401);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+test('the server-side tool makes the first account from a password given on stdin', async () => {
+  const { spawnSync } = require('node:child_process');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-auth-'));
+  const run = (args, input) => spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'user.js'), ...args], { input, env: { ...process.env, EDUMASTER_DATA_DIR: dataDir }, encoding: 'utf8' });
+  assert.equal(run(['add', 'admin', 'admin'], 'first-pass-1\n').status, 0);
+  assert.match(run(['list']).stdout, /admin\tadmin/);
+  assert.ok(createUsers(dataDir).verify('admin', 'first-pass-1'), 'the piped password is the one stored');
+  assert.notEqual(run(['add', 'other', 'teacher'], 'short\n').status, 0, 'too short is refused');
+  assert.equal(run(['passwd', 'admin'], 'second-pass-2\n').status, 0);
+  assert.ok(createUsers(dataDir).verify('admin', 'second-pass-2'));
+});

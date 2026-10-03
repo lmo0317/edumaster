@@ -17,7 +17,8 @@ function readPassword() {
   return new Promise((resolve) => {
     if (process.stdin.isTTY) process.stdout.write('비밀번호: ');
     const rl = readline.createInterface({ input: process.stdin, terminal: false });
-    rl.once('line', (line) => { rl.close(); resolve(line.replace(/\r$/, '')); });
+    // Resolved before close(): close() emits 'close' at once, which would otherwise answer with an empty password.
+    rl.once('line', (line) => { resolve(line.replace(/\r$/, '')); rl.close(); });
     rl.once('close', () => resolve(''));
   });
 }
