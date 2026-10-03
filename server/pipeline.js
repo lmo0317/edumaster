@@ -625,7 +625,7 @@ function repeatsPrior(item, prior) {
 // shortcuts, numbers-only, STEP coverage, problem-rule checks) stay in the record but do not send the problem back —
 // a weak solver raised them falsely (Qwen 3.6, 2026-09-30: three of four repairs); an answer mismatch is first put
 // to the designer, who decides whether the problem or the solver is wrong. Code checks stay as they are.
-const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'source-step-titles', 'source-tables']);
+const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'explanation-complete', 'source-step-titles', 'source-tables']);
 const solutionOnly = (c) => SOLUTION_CHECKS.has(c.id) || (c.id === 'format' && c.evidence.split('; ').every((e) => e.startsWith('해설')));
 
 const flat = (s) => harness.plain(s).replace(/\\left|\\right|\s/g, '');
@@ -1026,6 +1026,7 @@ const SYSTEM_CHECKS = {
     { label: '코드 검산', how: '생성 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행해, 정답 값이 선택지 하나와만 맞는지와 설계 조건(가정→모순 등)이 참인지 본다.', onFail: 'answer', match: /^코드 검산/ },
     { label: '독립 풀이', how: '정답을 모르는 별도 호출이 문제만 보고 풀어 정답을 대조하고, 모호·모순·조건 부족·결론 노출을 지적한다.', onFail: 'answer', match: /독립 풀이(의 정답|가 정답| 지적)/ },
     { label: '보기·정답 연결', how: '보기 수·중복·정답 번호, ㄱㄴㄷ 해설의 참 판정과 정답 보기가 맞는지 코드로 본다.', onFail: 'answer', match: /^(보기·정답|해설 O\/X)/ },
+    { label: '해설 보기 분석', how: '선생님 해설이 ㄱㄴㄷ을 하나씩 판정하면, 변형 해설도 STEP 안에서 보기마다 ○/× 판정을 하고 정답 번호로 끝나는지 코드로 본다.', onFail: 'rewrite', match: /^해설 보기 분석/ },
     { label: 'STEP 범위', how: '독립 풀이에 원본 STEP 기법 중 무엇이 꼭 필요했는지로, 목표 범위(STEP 1, STEP 1~2, 전체)와 맞는지, 기법 없이 풀리는 지름길이 없는지 본다.', onFail: 'repair', match: /^STEP 범위|로직 없이|핵심 기법 없이|목표 범위 밖/ },
     { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 쓰이지 않은 조건·문자 계수가 있으면 설계 결함이다.', onFail: 'repair', match: /쓰이지 않는 조건|문자 계수/ },
     { label: '통합 변형 여부', how: '최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 표 구조 비교) 본다.', onFail: 'repair', match: /숫자만 바뀌|통합 변형/ },

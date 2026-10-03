@@ -82,19 +82,37 @@ function checkChoices(material, item) {
     ok ? '' : `보기 ${p.choices.length}개(원본 ${want}개), 서로 다른 보기 ${new Set(norm).size}개, 정답 번호 ${p.answer}`, 'hard')];
 }
 
-/** ㄱ·ㄴ·ㄷ problems: the solution's O/X judgments must match the answer's combination. */
-function checkOxConsistency(item) {
-  const markers = [...new Set([...item.problem.text.matchAll(/(?:^|\n)\s*([ㄱ-ㄹ])\s*\./g)].map((m) => m[1]))];
-  if (markers.length < 2 || !item.problem.answer) return [];
-  const text = plain((item.solution?.steps || []).map((s) => s.work).join('\n') + '\n' + (item.solution?.summary || ''));
+/** Which of ㄱ·ㄴ·ㄷ a text judges, and how: "ㄱ. … (○)", "ㄴ은 옳지 않다". */
+function judgments(raw) {
+  const text = plain(raw);
   const judged = {};
   for (const m of text.matchAll(/([ㄱ-ㄹ])\s*[.)]?[^\n]{0,120}?\((O|X|○|×|o|x)\)/g)) judged[m[1]] = /O|○|o/.test(m[2]);
   for (const m of text.matchAll(/([ㄱ-ㄹ])\s*(?:은|는)\s*(옳지\s*않|옳|틀리|거짓|참|맞)/g)) judged[m[1]] = /^(옳|참|맞)$/.test(m[2].replace(/\s/g, '')) || m[2] === '옳';
-  if (!markers.every((k) => k in judged)) return [];
+  return judged;
+}
+
+/**
+ * ㄱ·ㄴ·ㄷ problems. When the teacher's solution judges each statement, the variant's solution does too, inside its
+ * STEPs (the summary does not count; 2026-10-03 a STEP 1~2 practice solution stopped at a mass ratio and never judged
+ * ㄱ, ㄴ, ㄷ), and names the answer — else the solution is rewritten. The judgments must match the answer's combination.
+ */
+function checkOxConsistency(material, item) {
+  const markers = [...new Set([...item.problem.text.matchAll(/(?:^|\n)\s*([ㄱ-ㄹ])\s*\./g)].map((m) => m[1]))];
+  if (markers.length < 2 || !item.problem.answer) return [];
+  const steps = (item.solution?.steps || []).map((s) => s.work).join('\n');
+  const inSteps = judgments(steps);
+  const teacherJudges = Object.keys(judgments((material?.steps || []).map((s) => s.work).join('\n'))).length >= 2;
+  const unjudged = markers.filter((k) => !(k in inSteps));
+  const named = /정답/.test(steps);
+  const out = teacherJudges ? [result('explanation-complete', '해설 보기 분석', !unjudged.length && named,
+    unjudged.length ? `해설 STEP에 보기 ${unjudged.join(', ')}의 판정(○/×와 근거)이 없습니다. 선생님 해설처럼 마지막 STEP 끝에서 보기마다 판정하고 정답 번호로 끝내야 합니다.`
+      : named ? '' : '해설 STEP이 정답 번호로 끝나지 않습니다. 마지막 STEP을 "정답은 …이다."로 끝내야 합니다.')] : [];
+  const judged = { ...judgments(item.solution?.summary || ''), ...inSteps };
+  if (!markers.every((k) => k in judged)) return out;
   const claimed = new Set([...plain(item.problem.choices[item.problem.answer - 1] || '').matchAll(/[ㄱ-ㄹ]/g)].map((m) => m[0]));
   const trueSet = new Set(markers.filter((k) => judged[k]));
   const same = claimed.size === trueSet.size && [...claimed].every((k) => trueSet.has(k));
-  return [result('explanation-consistency', '해설 O/X 판정과 정답', same,
+  return [...out, result('explanation-consistency', '해설 O/X 판정과 정답', same,
     same ? '' : `해설의 참 판정은 ${[...trueSet].join(', ') || '없음'}인데 정답 보기는 ${[...claimed].join(', ') || '없음'}입니다.`, 'hard')];
 }
 
@@ -263,7 +281,7 @@ function checkUnusedCoefficient(item) {
 function inspectItem(material, item, mode) {
   return [
     ...checkChoices(material, item),
-    ...checkOxConsistency(item),
+    ...checkOxConsistency(material, item),
     ...checkHelpers(material, item),
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),

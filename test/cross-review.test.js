@@ -22,3 +22,21 @@ test('premises that make the situation hold are not unused conditions', () => {
   assert.ok(isPremise('(단, X~Z는 임의의 원소 기호이고, 모든 기체는 반응하지 않는다.)'));
   assert.ok(!isPremise('(단, 온도와 압력은 일정하다.)'));
 });
+
+// Claude's review of the same set: the STEP 1~2 practice solution stopped at the mass ratio and never judged ㄱ, ㄴ, ㄷ.
+const { inspectItem } = require('../server/harness');
+test('a solution must judge every statement in its STEPs and name the answer when the teacher does', () => {
+  const material = { problem: { text: '', choices: [] }, steps: [{ title: 'a', work: 'ㄱ. 2배이다. (×)\nㄴ. 3배이다. (○)\nㄷ. 9:4이다. (○)\n정답은 ④이다.' }] };
+  const item = (work, summary = '') => ({
+    stage: { kind: 'upto', upto: 1 },
+    problem: { text: '이에 대한 설명으로 옳은 것만을 <보기>에서 있는 대로 고른 것은?\nㄱ. 가\nㄴ. 나\nㄷ. 다', choices: ['ㄱ', 'ㄴ', 'ㄱ, ㄷ', 'ㄴ, ㄷ', 'ㄱ, ㄴ, ㄷ'], answer: 4 },
+    solution: { steps: [{ step: 1, title: 'a', work }], summary },
+  });
+  const check = (it) => inspectItem(material, it, 'integrated').find((c) => c.id === 'explanation-complete');
+  const missing = check(item('질량비는 45:42이다.', 'ㄱ. (×) ㄴ. (○) ㄷ. (○) 정답은 ④'));
+  assert.equal(missing.state, 'fail', 'judgments only in the summary do not count');
+  assert.match(missing.evidence, /ㄱ, ㄴ, ㄷ/);
+  assert.equal(check(item('ㄱ. 1배이다. (×)\nㄴ. 5:3이다. (○)\nㄷ. 15:14이다. (○)')).state, 'fail', 'no answer named');
+  assert.equal(check(item('ㄱ. 1배이다. (×)\nㄴ. 5:3이다. (○)\nㄷ. 15:14이다. (○)\n정답은 ④ ㄴ, ㄷ이다.')).state, 'pass');
+  assert.equal(inspectItem({ ...material, steps: [{ title: 'a', work: '정답은 ④이다.' }] }, item('질량비는 45:42이다.'), 'integrated').some((c) => c.id === 'explanation-complete'), false, 'not asked when the teacher does not judge them');
+});
