@@ -706,3 +706,6 @@ a.lt-name:hover { color: var(--accent); }
 .lt-row.lt-llm .lt-more { padding-top: 10px; }
 @media (max-width: 640px) { .lt-row.lt-llm .lt-fact { grid-column: 2 / -1; grid-row: 2; } }
 .cli-code { font-size: 20px; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+.set-acts { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+a.btn.set-open { font-weight: 600; color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
+a.btn.set-open:hover { border-color: var(--accent); }

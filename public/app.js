@@ -747,7 +747,7 @@
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
           <div class="set-tally">${tally}</div>
-          ${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}
+          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
