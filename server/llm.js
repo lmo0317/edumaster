@@ -128,6 +128,9 @@ function fixShape(data, shape) {
 
 const cli = require('./cli-models');
 
+/** Providers that cost nothing per call (the teacher's subscriptions, the PC model): their jobs have no token cap. */
+const PER_CALL_FREE = new Set(['claude-cli', 'agy-cli', 'codex-cli', 'gemma']);
+
 const PROVIDERS = {
   deepseek: { label: 'DeepSeek V4 Flash' },
   gemma: { label: 'PC 모델' },
@@ -620,4 +623,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

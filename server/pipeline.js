@@ -841,8 +841,9 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     if (lastRepair && same(repairReasons(check), lastRepair)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
     if (ctx.budget.affords && !ctx.budget.affords(3 + (ctx.reserveCalls || 0))) {
-      ctx.log(`${item.label}: 남은 문제를 만들 토큰을 남기려고 수정을 건너뜁니다`);
-      check.soft.push('토큰 상한 때문에 자동 수정을 더 하지 못했습니다.');
+      const byCalls = ctx.budget.calls + 3 + (ctx.reserveCalls || 0) > ctx.budget.maxCalls;
+      ctx.log(`${item.label}: 남은 문제를 만들 ${byCalls ? '호출' : '토큰'}을 남기려고 수정을 건너뜁니다`);
+      check.soft.push(byCalls ? '세트당 AI 호출 상한 때문에 자동 수정을 더 하지 못했습니다 (학습 › 하네스에서 늘릴 수 있습니다).' : '세트 토큰 상한 때문에 자동 수정을 더 하지 못했습니다.');
       break;
     }
     round++;

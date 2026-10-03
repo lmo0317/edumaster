@@ -93,6 +93,10 @@ module.exports = {
     generateTokens: int('EDUMASTER_GENERATE_TOKENS', 1600000),
     regenerateCalls: int('EDUMASTER_REGENERATE_CALLS', 25),
     regenerateTokens: int('EDUMASTER_REGENERATE_TOKENS', 600000),
+    // The token caps above keep a paid API's cost down. A model that costs nothing per call (a subscription, the PC
+    // model) is held by the call cap instead; this is only a guard against a runaway job (2026-10-03: a Gemini set
+    // stopped fixing at 1.6M tokens after 9 calls — agy counts its whole agent turn, ~180k tokens a call).
+    perCallFreeTokens: int('EDUMASTER_PER_CALL_FREE_TOKENS', 100000000),
   },
   // USD per million tokens, for the cost estimate on the 모델 비교 page (checked 2026-09-29: DeepSeek's own
   // price list, claude.com/pricing for Opus 5.5). Gemma runs free on the teacher's PC.

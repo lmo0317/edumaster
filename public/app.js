@@ -1045,7 +1045,7 @@
       ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 이 원본으로 다음 세트를 만들 때 같은 단계 문제의 본보기(좋은 예시)로 AI에게 보여 줍니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
-        <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
+        <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회${job.budget.maxTokens < 1e7 ? ` / ${Number(job.budget.maxTokens).toLocaleString()}토큰` : ''}${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
         <p class="small"><b>붙인 피드백·지침 ${job.rules.length}개</b></p>
         ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : ''}
         <p class="small"><b>진행 기록</b></p>

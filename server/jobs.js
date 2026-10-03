@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits, PER_CALL_FREE } = require('./llm');
 const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
@@ -161,10 +161,12 @@ function createJobs({ store, llm, config }) {
     return job;
   }
 
+  // A paid API is held by tokens and calls; a model that costs nothing per call by calls (config.budget.perCallFreeTokens).
+  const tokenCap = (provider, budgetKey) => (PER_CALL_FREE.has(provider) ? config.budget.perCallFreeTokens : config.budget[budgetKey + 'Tokens']);
   function create(type, fields, budgetKey) {
     return enqueue({
       id: newId(), type, createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
-      budget: { maxCalls: budgetKey === 'generate' ? Math.min(harnessSettings(config.dataDir).setCalls, config.budget.generateCalls) : config.budget[budgetKey + 'Calls'], maxTokens: config.budget[budgetKey + 'Tokens'] },
+      budget: { maxCalls: budgetKey === 'generate' ? Math.min(harnessSettings(config.dataDir).setCalls, config.budget.generateCalls) : config.budget[budgetKey + 'Calls'], maxTokens: tokenCap(fields.options?.provider, budgetKey) },
       usage: { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 },
       ...fields,
     });
@@ -186,7 +188,7 @@ function createJobs({ store, llm, config }) {
       if (!['interrupted', 'failed', 'cancelled'].includes(job.status) || job.type !== 'generate') throw Object.assign(new Error('이어서 진행할 수 없는 작업입니다.'), { status: 409 });
       for (const item of job.items) if (!['passed', 'warning', 'needs_review'].includes(item.status)) item.status = 'pending';
       // A resumed job gets a fresh allowance on top of what it already spent.
-      job.budget = { maxCalls: (job.usage?.calls || 0) + Math.min(harnessSettings(config.dataDir).setCalls, config.budget.generateCalls), maxTokens: (job.usage?.total || 0) + config.budget.generateTokens };
+      job.budget = { maxCalls: (job.usage?.calls || 0) + Math.min(harnessSettings(config.dataDir).setCalls, config.budget.generateCalls), maxTokens: (job.usage?.total || 0) + tokenCap(job.options?.provider, 'generate') };
       job.error = '';
       return enqueue(job);
     },

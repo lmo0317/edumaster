@@ -148,3 +148,22 @@ test('a STEP beyond the practice range is folded into the range\'s last STEP', (
   const final = { stage: { kind: 'twin' }, solution: { steps: [{ step: 1, work: 'a' }, { step: 3, work: 'b' }] } };
   assert.equal(fitSolutionToStage(final), false, 'a final problem keeps every STEP');
 });
+
+// A Gemini set stopped fixing at 1.6M tokens after 9 calls (2026-10-03): a model that costs nothing per call is held
+// by the call cap only; a paid API keeps its token cap.
+test('subscription and PC jobs have no token cap; a paid API keeps it', () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { createJobs } = require('../server/jobs');
+  const config = require('../server/config');
+  const { openStore } = require('../server/store');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-cap-'));
+  const store = openStore(dataDir);
+  const jobs = createJobs({ store, llm: { json: async () => { throw new Error('not called'); } }, config: { ...config, dataDir } }); // the jobs start and fail at once (no such material): only their caps are read
+  const material = { id: 'a'.repeat(24), title: 'm' };
+  const cap = (provider, kind) => (kind === 'analyze' ? jobs.analyze(material, provider) : jobs.generate({ material, items: [], rules: [], options: { provider } })).budget;
+  for (const p of ['agy-cli', 'claude-cli', 'codex-cli', 'gemma']) assert.equal(cap(p, 'generate').maxTokens, config.budget.perCallFreeTokens, p);
+  assert.equal(cap('agy-cli', 'analyze').maxTokens, config.budget.perCallFreeTokens);
+  assert.equal(cap('deepseek', 'generate').maxTokens, config.budget.generateTokens);
+  assert.equal(cap('relay', 'analyze').maxTokens, config.budget.analyzeTokens);
+  assert.equal(cap('agy-cli', 'generate').maxCalls, 60, 'the call cap still holds');
+});
