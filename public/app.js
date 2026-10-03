@@ -503,7 +503,7 @@
     if (x.status !== 'approved') return '꺼짐';
     if (x.stage === 'analysis') {
       if (x.inAnalysis === undefined) return '모든 분석에 들어감';
-      return x.inAnalysis ? (x.how ? `반영: ${esc(x.how)}` : '반영됨') : '<span class="warn">다시 분석하면 반영</span>';
+      return x.inAnalysis ? (x.how ? `반영: ${inlineRich(x.how)}` : '반영됨') : '<span class="warn">다시 분석하면 반영</span>';
     }
     const judged = x.kept + x.broken;
     return judged ? `지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 검토 전';
@@ -513,7 +513,7 @@
     const from = ['fix', 'auto'].includes(x.from) && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
     return `<div class="lt-row lt-pick${x.status === 'approved' ? '' : ' off'}${opened.has(key) ? ' open' : ''}" data-row="${key}" data-learn="${x.id}">
         <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="적용">
-        <div class="lt-main"><span class="lt-name lt-clamp">${esc(x.text)}</span>
+        <div class="lt-main"><span class="lt-name lt-clamp">${inlineRich(x.text)}</span>
           <span class="lt-sub lt-wrap">${[fmtTime(x.createdAt), from, learnEffect(x)].filter(Boolean).join(' · ')}</span></div>
         <button class="small lt-open" data-open>편집</button>
         <div class="lt-more"><textarea data-f="text" rows="3">${esc(x.text)}</textarea>
@@ -1028,7 +1028,7 @@
       <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
         <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회 / ${Number(job.budget.maxTokens).toLocaleString()}토큰${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
         <p class="small"><b>붙인 피드백·지침 ${job.rules.length}개</b></p>
-        ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${esc(r.text)}</li>`).join('')}</ul>` : ''}
+        ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : ''}
         <p class="small"><b>진행 기록</b></p>
         <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>
       </div></details>
@@ -1065,7 +1065,7 @@
       ${quotaLine ? `<p class="muted">이 세트가 쓴 구독 한도: ${quotaLine}. 같은 시간에 이 구독을 쓴 다른 작업이 있었다면 그 몫도 들어 있습니다.</p>` : ''}
       ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 문제마다 아래 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
       ${learned ? (learned.length ? `<div class="jt-learned"><b>이번 세트에서 배운 학습 ${learned.length}개</b> — 다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.
-        <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${esc(l.text)}${l.why ? ` <span class="muted">— ${esc(l.why)}</span>` : ''} <a href="#/learn/${l.scope === 'common' ? 'common' : 'problems'}">보기</a></li>`).join('')}</ul></div>`
+        <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''} <a href="#/learn/${l.scope === 'common' ? 'common' : 'problems'}">보기</a></li>`).join('')}</ul></div>`
         : '<p class="muted">이번 세트에서 새로 추가할 학습은 없었습니다.</p>') : ''}
     </section>`;
   }
@@ -1139,7 +1139,7 @@
       unsure.length && `<div><b>정답이 맞지 않은 이유</b>${list(unsure.map((x) => inlineRich(x)))}</div>`,
       inProblem.length && `<div><b>문제에 남은 점</b>${list(inProblem.map((x) => inlineRich(x)))}</div>`,
       inSolution.length && `<div><b>해설에 남은 점</b>${list(inSolution.map((x) => inlineRich(x)))}</div>`,
-      ok + bad.length && `<div><b>학습 지킴 ${ok}/${ok + bad.length}</b>${bad.length ? list(bad.map((r) => `어김: ${esc(r.text)}${r.judged.note ? ` <span class="muted">— ${esc(r.judged.note)}</span>` : ''}`)) : ''}</div>`,
+      ok + bad.length && `<div><b>학습 지킴 ${ok}/${ok + bad.length}</b>${bad.length ? list(bad.map((r) => `어김: ${inlineRich(r.text)}${r.judged.note ? ` <span class="muted">— ${inlineRich(r.judged.note)}</span>` : ''}`)) : ''}</div>`,
     ].filter(Boolean);
     return `<div class="jt-report-item ${tone}"><p>${head}</p>${body.length ? `<details data-k="check"><summary>리포트 보기</summary><div class="jt-check-in">${body.join('')}</div></details>` : ''}</div>`;
   }
@@ -1189,7 +1189,7 @@
         ${made.length ? `<p class="small muted">${made.join(' · ')}</p>` : ''}
         ${item.designNote ? `<h3>설계 의도</h3><div class="rich">${rich(item.designNote)}</div>` : ''}
         <h3>자동 검토</h3>${verificationHtml(v)}
-        <h3>피드백을 지켰는지 (${v?.rules?.length || 0})</h3>${v?.rules?.length ? `<div class="table-wrap"><table class="rules"><tr><th>피드백·지침</th><th>AI가 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${esc(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table></div>` : '<p class="muted small">붙인 피드백이 없습니다.</p>'}
+        <h3>피드백을 지켰는지 (${v?.rules?.length || 0})</h3>${v?.rules?.length ? `<div class="table-wrap"><table class="rules"><tr><th>피드백·지침</th><th>AI가 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${inlineRich(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table></div>` : '<p class="muted small">붙인 피드백이 없습니다.</p>'}
         ${item.history?.length ? `<h3>이전 버전 (${item.history.length})</h3>${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 남긴 점: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}` : ''}
       </div></details>` : ''}
     </div>`;
