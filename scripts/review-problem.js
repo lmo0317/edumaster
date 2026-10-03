@@ -11,6 +11,7 @@ const { openStore } = require('../server/store');
 const { createLlm, Budget, claudeCliReady } = require('../server/llm');
 const cli = require('../server/cli-models');
 const { mock } = require('../server/mock-llm');
+const { selectRules, analysisLearning, layerOf } = require('../server/learning');
 
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : ''; };
@@ -42,15 +43,31 @@ const imgs = (label, original, views) => {
 const range = (st) => (st?.kind === 'upto' ? `원본 STEP 1${st.upto > 1 ? '~' + st.upto : ''}만 쓰는 연습 문제` : st?.kind === 'twin' ? `원본 STEP 1~${m.steps.length}을 모두 쓰는 최종 통합 문제 (원본과 다른 구조여야 함)` : '');
 const choices = (p) => (p.choices || []).map((c, i) => `${'①②③④⑤'[i]} ${c}`).join('  ');
 
-const system = `너는 고등학교 ${m.subject || '과학'} 문항을 검토하는 출제 전문가다. AI가 정리한 분석 결과와 AI가 만든 변형 문제를 원본과 대조해 독립적으로 검토한다.
+// What the reviewers check: the recorded criteria (scripts/review-criteria.md, from past failures and the colleague's
+// review) and the learning that applies to this problem now (지침, this problem's own, 공통 학습).
+const criteria = fs.readFileSync(path.join(__dirname, 'review-criteria.md'), 'utf8').replace(/^[\s\S]*?(?=## A\.)/, '');
+const KIND = { guide: '지침', problem: '이 문제', lesson: '공통 학습' };
+const ruleLines = (list) => list.map((r) => `- [${KIND[layerOf(r)]}] ${r.text}`).join('\n') || '없음';
+const learnedA = analysisLearning(store.rules.all(), m);
+const learnedG = selectRules(store.rules.all(), m);
+const RULE_NAMES = '판독, 용어, STEP 수와 순서, STEP 제목, 풀이 방식, 정답, STEP 범위, 결론 노출, 조건, 단서, 수치, 형식, 구조, STEP 전부 필요, 범위, 보기 분석, 덧붙임, 표기';
+const system = `너는 고등학교 ${m.subject || '과학'} 문항을 검토하는 출제 전문가다. AI가 정리한 분석 결과와 AI가 만든 변형 문제를 원본 이미지와 대조해 독립적으로 검토한다.
 - 변형 문제는 반드시 네가 직접 끝까지 풀어서 정답을 확인한다. 표시된 정답이나 해설을 믿지 않는다.
-- 실제 결함만 적는다. 표현 취향은 결함이 아니다. 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓴다.
-- 검토 기준: 정답과 선택지, 목표 STEP 범위(연습 문제가 그 STEP만으로 풀리고 뒤 STEP이 필요 없는지), 풀이에 필요한 조건이 빠지거나 불필요한 조건이 있는지, 원본의 단서(예: 반응하지 않는다)가 빠졌는지, 해설이 선생님 해설의 STEP 제목·순서·풀이 방식을 따르는지, 최종 문제가 원본과 다른 구조인지, 표기.
-- severity: high(정답이 틀리거나 문제가 성립하지 않음), mid(목표 STEP 범위 어긋남, 불필요·부족한 조건, 원본 풀이 방식과 다른 해설, 계산 실수), low(표기·표현).
+- 아래 [검수 기준]과 [이 문제에 적용되는 학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
+- 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. 학습을 어겼으면 rule은 "학습"이고 detail 앞에 그 학습 문장을 인용한다.
 - 한국어로 쓴다. JSON만 출력한다.
+
+[검수 기준]
+${criteria}
+[이 문제에 적용되는 학습 — 분석]
+${ruleLines([...learnedA.guides, ...learnedA.own, ...learnedA.lessons])}
+
+[이 문제에 적용되는 학습 — 변형 문제와 해설]
+${ruleLines(learnedG)}
+
 반환 형식:
-{"analysis":{"verdict":"ok|issues","issues":[{"severity":"high|mid|low","where":"문제/STEP n","detail":"..."}]},
- "items":[{"label":"...","myAnswer":"내가 푼 정답 번호와 핵심 값","markedAnswer":3,"answerOk":true,"verdict":"use|fix|reject","issues":[{"severity":"...","detail":"..."}]}],
+{"analysis":{"verdict":"ok|issues","issues":[{"severity":"high|mid|low","rule":"...","where":"문제/STEP n","detail":"..."}]},
+ "items":[{"label":"...","myAnswer":"내가 푼 정답 번호와 핵심 값","markedAnswer":3,"answerOk":true,"verdict":"use|fix|reject","issues":[{"severity":"high|mid|low","rule":"...","detail":"..."}]}],
  "summary":"전체 평가 두세 문장"}`;
 const items = (set?.items || []).filter((it) => it.problem);
 const text = [
