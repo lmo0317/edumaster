@@ -1345,7 +1345,7 @@
       const on = items.filter((x) => x.status === 'approved');
       const count = (n) => on.filter(lmFilter(n)).length;
       const dotOf = (list) => (list.some((x) => ['warn', 'bad'].includes(lmState(x, pairIds)[1])) ? 'warn' : list.some((x) => lmState(x, pairIds)[1] === 'ok') ? 'ok' : '');
-      const leaf = (id, label, depth, n = count(id)) => `<button type="button" class="lm-node d${depth}${node === id ? ' on' : ''}" data-node="${id}"><span class="lm-dot ${dotOf(items.filter(lmFilter(id)))}"></span><span class="lm-label">${esc(label)}</span><span class="n">${n || ''}</span></button>`;
+      const leaf = (id, label, depth, n = count(id)) => `<button type="button" class="lm-node d${depth}${node === id ? ' on' : ''}" data-node="${id}" title="${esc(label)}"><span class="lm-dot ${dotOf(items.filter(lmFilter(id)))}"></span><span class="lm-label">${esc(label)}</span><span class="n">${n || ''}</span></button>`;
       const tree = [
         leaf('all', '전체', 0, on.length),
         `<div class="lm-group">지침</div>`, leaf('persona', '페르소나', 1, d.persona ? 1 : 0), leaf('guide-a', '분석 지침', 1), leaf('guide-g', '생성 지침', 1),
@@ -1441,7 +1441,7 @@
         </div>`;
       // On a phone the tree is one scrolling row: keep the chosen branch in view.
       const tr = $('.lm-tree', pane), onNode = $('.lm-node.on', pane);
-      if (tr && onNode && tr.scrollWidth > tr.clientWidth) tr.scrollLeft = onNode.offsetLeft - (tr.clientWidth - onNode.offsetWidth) / 2;
+      if (tr && onNode && getComputedStyle(tr).display === 'flex' && tr.scrollWidth > tr.clientWidth) tr.scrollLeft = onNode.offsetLeft - (tr.clientWidth - onNode.offsetWidth) / 2;
       $$('[data-node]', pane).forEach((b) => b.addEventListener('click', () => {
         lmOpen.item = lmOpen.edit = null;
         history.replaceState(null, '', '#/learn/map/' + b.dataset.node);

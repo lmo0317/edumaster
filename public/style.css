@@ -735,7 +735,7 @@ a.btn.set-open:hover { border-color: var(--accent); }
 .lm-meter i { display: block; height: 100%; background: var(--accent); }
 .lm-tile.warn .lm-meter i { background: #d99a1e; }
 .lm-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
-.lm-tree { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; display: grid; gap: 1px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.lm-tree { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr); overflow-x: hidden; gap: 1px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; }
 .lm-group { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 8px 4px; letter-spacing: .02em; }
 .lm-none { margin: 0; padding: 4px 22px; font-size: 13px; color: var(--muted); }
 .lm-node { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: 7px; background: none; text-align: left; width: 100%; font-size: 14px; }
