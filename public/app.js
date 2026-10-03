@@ -216,6 +216,7 @@
       else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
       else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
+      else if (hash.startsWith('#/guide')) { setNav('guide'); await window.EMGuide.mount(view, api); }
       else if ((m = /^#\/learn\/(map|harness)(?:\/([a-z0-9-]+))?/.exec(hash))) { setNav('learn'); await learnView(m[1], m[2]); }
       // The older 학습 tabs are branches of 학습 지도.
       else if ((m = /^#\/(?:learn\/)?(problems|common|guides|lessons|rules)/.exec(hash))) { location.replace('#/learn/map/' + ({ lessons: 'common', rules: 'problems' }[m[1]] || m[1])); return; }
