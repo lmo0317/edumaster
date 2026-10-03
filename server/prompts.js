@@ -387,6 +387,23 @@ function solutionReviewText({ item, material, rules }) {
 // After a set: the faults the checks found (and fixed or not) become at most three learning items, so the next set
 // avoids them from the start. Only what would have prevented a fault that really happened; nothing the learning
 // already says.
+// 학습 › 정리 후보: whether two items whose wording overlaps are one item, and the sentence that keeps both.
+const MERGE_SYSTEM = `너는 변형 문제 출제 AI에게 주는 학습 항목을 정리하는 사람이다. 표현이 겹치는 두 학습 항목이 사실상 같은 지시인지 판단한다.
+- same: 한쪽이 다른 쪽을 포함하거나 두 항목이 같은 실수를 막아서, 한 항목으로 합쳐도 잃는 지시가 없으면 true.
+- 다루는 대상이 다르거나(문제 설계와 해설 쓰기, 서로 다른 STEP이나 실험), 한쪽에만 있는 구체적 지시가 합치면 흐려지면 false. 표현이 비슷한 것만으로는 같은 항목이 아니다.
+- same이 true이면 text에 두 항목의 지시를 빠짐없이 담은 한두 문장을 쓴다. '…한다' 또는 '…하지 않는다'로 끝내고, 괄호 예시는 필요한 것만 남긴다. false이면 text는 빈 문자열.
+- why에는 판단 이유를 한 문장으로 쓴다.
+${FORMAT}
+반환 JSON 형식:
+{"same":true,"text":"...","why":"..."}`;
+const mergeText = ({ a, b }) => `[학습 A]
+${a}
+
+[학습 B]
+${b}
+
+JSON만 반환하라.`;
+
 const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같은 실수를 하지 않도록 학습 항목을 정리하는 사람이다.
 [이번 세트에서 나온 실수]는 자동 검토가 찾아내 고치거나 끝내 남은 것이다. 이 중 다음 세트에서 처음부터 피하면 수정·재설계가 줄어드는 것만 학습 항목으로 만든다.
 - 최대 3개. 필요 없으면 빈 배열.
@@ -492,7 +509,7 @@ const PROMPT_VERSION = require('node:crypto').createHash('sha256')
   .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
 
 module.exports = {
-  SYSTEMS, PROMPT_VERSION,
+  SYSTEMS, PROMPT_VERSION, MERGE_SYSTEM, mergeText,
   ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
   GENERATE_SYSTEM, generateText,
   SOLVE_SYSTEM, solveText,

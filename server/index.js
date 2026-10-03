@@ -13,6 +13,7 @@ const { createJobs, FINISHED } = require('./jobs');
 const { createUsers } = require('./users');
 const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, analysisLearning, selectRules, layerOf, stageOf } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
+const learningMap = require('./learning-map');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
 const harness = require('./harness');
@@ -351,12 +352,13 @@ function createApp(options = {}) {
   // How each generation item fared over every variant judged so far: kept / broken.
   function keptByRule() {
     const out = new Map();
+    const alias = learningMap.aliasesOf(store.rules.all()); // a merged item keeps the record of the ones merged into it
     for (const it of store.jobs.all().filter((j) => j.type === 'generate').flatMap((j) => j.items || [])) {
       for (const r of it.verification?.rules || []) {
         if (!r.judged) continue;
-        const k = out.get(r.id) || { kept: 0, broken: 0 };
+        const k = out.get(alias(r.id)) || { kept: 0, broken: 0 };
         if (r.judged.ok) k.kept++; else k.broken++;
-        out.set(r.id, k);
+        out.set(alias(r.id), k);
       }
     }
     return out;
@@ -792,6 +794,7 @@ function createApp(options = {}) {
     }).filter((p) => p.analysis.length + p.generation.length).sort((a, b) => b.latest.localeCompare(a.latest));
     return {
       problems,
+      map: learningMapView(kept),
       materials: store.materials.all().length,
       persona: llmSettings(cfg.dataDir).persona || '',
       guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
@@ -799,6 +802,75 @@ function createApp(options = {}) {
       corrections: store.corrections.all().sort((a, b) => b.count - a.count),
       // How results are checked is on 학습 › 하네스 (/api/harness).
     };
+  });
+  // 학습 지도: every item with how many problems carried it, its mark on the recent sets and what it was learned from;
+  // the summary (how many, how many lately, what one problem gets against the cap); the pairs the AI found to be one
+  // item (정리 후보), checked a few at a time in the background as items come in.
+  const mergesFile = path.join(cfg.dataDir, 'learning-merges.json');
+  const readMerges = () => { try { return JSON.parse(fs.readFileSync(mergesFile, 'utf8')); } catch { return {}; } };
+  const saveMerge = (key, decision) => fs.writeFileSync(mergesFile, JSON.stringify({ ...readMerges(), [key]: { ...decision, at: new Date().toISOString() } }, null, 1));
+  let mergeCheck = null;
+  const MERGE_CHECKS = 6;
+  function checkMergePairs() {
+    if (mergeCheck) return;
+    const todo = learningMap.mergePairs(store.rules.all(), readMerges()).filter((p) => !p.decision).slice(0, MERGE_CHECKS);
+    const provider = cfg.llmMode === 'mock' ? 'deepseek' : claudeCliReady(cfg) ? 'claude-cli' : apiKey ? 'deepseek' : '';
+    if (!todo.length || !provider) return;
+    const budget = new Budget({ maxCalls: todo.length * 2, maxTokens: 200000 });
+    mergeCheck = (async () => {
+      for (const p of todo) {
+        const { data } = await llm.json({ provider, purpose: 'merge', budget, effort: 'low', maxTokens: 3000, system: prompts.MERGE_SYSTEM, text: prompts.mergeText({ a: p.a.text, b: p.b.text }) });
+        const text = String(data?.text || '').trim().slice(0, 1500);
+        saveMerge(p.key, { decision: data?.same === true && text.length > 8 ? 'same' : 'distinct', text, why: String(data?.why || '').trim().slice(0, 300), by: 'ai' });
+      }
+    })().catch((e) => console.log(`[learning] 정리 후보 확인 실패: ${e.message}`)).finally(() => { mergeCheck = null; });
+  }
+  function learningMapView(kept) {
+    const all = store.rules.all();
+    const jobsAll = store.jobs.all();
+    const marks = learningMap.setMarks(jobsAll, all);
+    const jobsById = new Map(jobsAll.map((j) => [j.id, j]));
+    const materials = store.materials.all();
+    const analysisUses = (id) => materials.filter((m) => (m.learningUsed || []).some((x) => x.id === id)).length;
+    const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
+      ...itemView(r, kept), scope: r.scope, materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
+      uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
+      marks: stageOf(r) === 'analysis' ? null : marks.marks(r.id), evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
+    }));
+    const pairs = learningMap.mergePairs(all, readMerges());
+    if (pairs.some((p) => !p.decision)) checkMergePairs();
+    // What the next set of the problem worked on last gets, against the cap (learning.selectRules).
+    const lastSet = jobsAll.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    const last = (lastSet && store.materials.get(lastSet.materialId)) || materials.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    const picked = last ? selectRules(all, last) : [];
+    const week = new Date(Date.now() - 7 * 864e5).toISOString();
+    const lately = all.filter((r) => r.createdAt >= week);
+    return {
+      items, sets: marks.sets,
+      recent: { added: lately.length, auto: lately.filter((r) => r.source?.from === 'auto').length },
+      load: last ? { materialId: last.id, title: last.title, items: picked.length, chars: picked.reduce((n, r) => n + r.text.length, 0), limit: 24, maxChars: 6000 } : null,
+      candidates: pairs.filter((p) => p.decision?.decision === 'same').map((p) => ({ key: p.key, a: { id: p.a.id, text: p.a.text, layer: layerOf(p.a) }, b: { id: p.b.id, text: p.b.text, layer: layerOf(p.b) }, text: p.decision.text, why: p.decision.why })),
+      checking: pairs.filter((p) => !p.decision).length,
+    };
+  }
+  // Merging a candidate: the item that stays (지침 over 공통 학습 over a problem's, then the older) takes the merged
+  // sentence and keeps both originals; the other is removed. Skipping keeps both and does not ask again.
+  const pairOf = (key) => learningMap.mergePairs(store.rules.all()).find((p) => p.key === key) || (() => { throw fail(409, '두 학습 중 하나가 그새 바뀌었습니다. 새로 고쳐 주세요.'); })();
+  route('POST', /^\/api\/learning\/merge$/, async (req) => {
+    const body = await readBody(req, 16 * 1024);
+    const p = pairOf(String(body.key || ''));
+    const [keep, drop] = learningMap.keeperOf(p.a, p.b);
+    const next = updateRule(keep, { text: body.text });
+    next.mergedFrom = [...(keep.mergedFrom || []), ...(drop.mergedFrom || []), ...[keep, drop].map((r) => ({ id: r.id, text: r.text, from: r.source?.from || 'input', createdAt: r.createdAt }))];
+    store.rules.put(next);
+    store.rules.remove(drop.id);
+    saveMerge(p.key, { decision: 'merged', text: next.text, by: 'teacher' });
+    return { id: next.id };
+  });
+  route('POST', /^\/api\/learning\/skip$/, async (req) => {
+    const p = pairOf(String((await readBody(req, 4096)).key || ''));
+    saveMerge(p.key, { decision: 'distinct', by: 'teacher' });
+    return { ok: true };
   });
   // 하네스 (학습 › 하네스): how results are checked and fixed, how that went on the recent sets, and the counts the teacher
   // can change. A change applies to sets started after it.

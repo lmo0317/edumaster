@@ -139,6 +139,12 @@ function mock(messages) {
     const first = /\n- \(([^)]*)\) (.+)/.exec(text.split('[이번 세트에서 나온 실수]')[1] || '');
     data = { items: first ? [{ text: `모의 학습: ${first[2].slice(0, 60)} 같은 실수를 처음부터 피한다.`, scope: 'problem', target: 'problem', why: first[2].slice(0, 80) }] : [] };
   }
+  // Two items are one when they share their first five characters (a real model reads them).
+  else if (system === prompts.MERGE_SYSTEM) {
+    const [a, b] = ['A', 'B'].map((k) => new RegExp(`\\[학습 ${k}\\]\\n(.*)`).exec(text)?.[1] || '');
+    const same = a.slice(0, 5) === b.slice(0, 5);
+    data = { same, text: same ? `${a} (모의 합침)` : '', why: '모의 판정' };
+  }
   else data = generated(text);
   const content = JSON.stringify(data);
   return new Promise((resolve) => setTimeout(() => resolve({
