@@ -77,7 +77,7 @@
     const bars = rows.map(([t, k], r) => `<text x="${x0 - 12}" y="${y0 + r * rh + 27}" class="gd-axis end">${t}</text>
       <rect x="${x0 + 4}" y="${y0 + r * rh + 8}" width="${k * cw - 8}" height="${rh - 16}" rx="6" class="gd-bar${k === 3 ? ' final' : ''}"/>
       <text x="${x0 + k * cw - 14}" y="${y0 + r * rh + 28}" class="gd-bar-t">${k === 3 ? '모든 STEP · 원본과 다른 구조' : `STEP ${k === 1 ? '1' : '1~2'}만으로 풀림`}</text>`).join('');
-    return `<svg viewBox="0 0 820 200" class="gd-svg" role="img" aria-label="세트의 STEP 범위">${cols}${grid}${bars}
+    return `<svg viewBox="0 0 820 222" class="gd-svg" role="img" aria-label="세트의 STEP 범위">${cols}${grid}${bars}
       <text x="${x0}" y="${y0 + rows.length * rh + 26}" class="gd-note">원본 해설이 STEP 3개일 때. 연습 문제에 뒤 STEP의 기법·값이 필요하거나, 기법 없이 풀리면 실패로 봅니다.</text></svg>`;
   }
 
