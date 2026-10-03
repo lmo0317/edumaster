@@ -3,7 +3,7 @@
 교사가 준 문제(필수)와 해설(선택)을 읽고, **그 해설의 풀이 로직을 그대로 쓰는** 단계별 변형 문제를 만든다.
 STEP 1 연습 → STEP 1~2 누적 → … → 최종 쌍둥이(수치 변형 또는 앞 문제 아이디어를 엮은 통합 변형).
 
-서버: https://minohlee.mooo.com/edumaster/ (접속 코드는 서버 `data/access-code.txt`). 모델 비교 공개 페이지: https://minohlee.mooo.com/edumaster/compare.html
+서버: https://minohlee.mooo.com/edumaster/ (계정으로 로그인. 첫 관리자 계정은 서버에서 `node scripts/user.js add <아이디>`로 만들고, 다른 계정은 화면의 계정 메뉴에서 관리한다). 모델 비교 공개 페이지: https://minohlee.mooo.com/edumaster/compare.html
 
 ## 설계
 
@@ -31,7 +31,7 @@ STEP 1 연습 → STEP 1~2 누적 → … → 최종 쌍둥이(수치 변형 또
 
 ```
 server/
-  index.js        HTTP 서버 (정적 파일 + JSON API, 접속 코드 → 쿠키 세션)
+  index.js        HTTP 서버 (정적 파일 + JSON API, 계정 로그인 → 쿠키 세션)
   config.js       환경 변수 / 작업별 호출·토큰 상한
   store.js        JSON 파일 저장소 (data/)
   llm.js          DeepSeek 호출, 사용량 기록, 예산
@@ -55,7 +55,7 @@ scripts/          dev-mock.js (로컬 모의 실행), e2e-real.js (실제 모델
 ```bash
 npm install
 npm test                     # 유료 호출 없음
-node scripts/dev-mock.js     # http://127.0.0.1:18390, 접속 코드 dev, 모의 모델
+node scripts/dev-mock.js     # http://127.0.0.1:18390, 로컬 계정 admin / devadmin, 모의 모델
 ```
 
 실제 모델: `data/deepseek-api-key.txt`에 키를 두고 `node server/index.js` (기본 127.0.0.1:18290).
@@ -67,7 +67,7 @@ bash deploy/deploy.sh        # Git Bash에서. 서버 data/는 보존
 ```
 
 - 서버 경로 `~/apps/edumaster`, 사용자 서비스 `edumaster`, 포트 127.0.0.1:18290
-- DeepSeek 키와 접속 코드는 서버 `data/`에 있다 (저장소에 넣지 않는다).
+- DeepSeek 키, 구독 로그인 정보, 계정(`data/users.json`, 비밀번호는 scrypt 해시)은 서버 `data/`에 있다 (저장소에 넣지 않는다).
 - nginx 경로 설정은 sudo가 필요하다: `sudo bash ~/apps/edumaster/deploy/nginx-edumaster.sh` — `/edumaster/`를 이 서버로, 예전 주소 `/edumasterv2/…`·`/edumasterv1/…`는 `/edumaster/…`로 넘긴다.
 
 ## PC 로컬 모델

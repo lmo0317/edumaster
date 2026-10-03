@@ -50,7 +50,7 @@ const KIND = { guide: '지침', problem: '이 문제', lesson: '공통 학습' }
 const ruleLines = (list) => list.map((r) => `- [${KIND[layerOf(r)]}] ${r.text}`).join('\n') || '없음';
 const learnedA = analysisLearning(store.rules.all(), m);
 const learnedG = selectRules(store.rules.all(), m);
-const RULE_NAMES = '판독, 용어, STEP 수와 순서, STEP 제목, 풀이 방식, 정답, STEP 범위, 결론 노출, 조건, 단서, 수치, 형식, 구조, STEP 전부 필요, 범위, 보기 분석, 덧붙임, 표기';
+const RULE_NAMES = '판독, 용어, STEP 수와 순서, STEP 제목, 풀이 방식, 정답, STEP 범위, 결론 노출, 조건, 단서, 수치, 용기·실험 구성, 형식, 구조, STEP 전부 필요, 범위, 보기 분석, 덧붙임, 표기';
 const system = `너는 고등학교 ${m.subject || '과학'} 문항을 검토하는 출제 전문가다. AI가 정리한 분석 결과와 AI가 만든 변형 문제를 원본 이미지와 대조해 독립적으로 검토한다.
 - 변형 문제는 반드시 네가 직접 끝까지 풀어서 정답을 확인한다. 표시된 정답이나 해설을 믿지 않는다.
 - 아래 [검수 기준]과 [이 문제에 적용되는 학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
