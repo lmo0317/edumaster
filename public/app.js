@@ -1299,6 +1299,8 @@
     'lesson-s': { stage: 'generation', layer: 'lesson', target: 'solution', hint: '예: 해설의 비례식은 선생님 해설과 같은 순서로 쓴다.' },
     'lesson-all': { stage: 'generation', layer: 'lesson', target: 'all', hint: '예: 연습 문제와 해설 모두 목표 STEP 밖의 값을 쓰지 않는다.' },
   };
+  // The subject tags in use (set on each paint): the 과목 branches are subj-<index>.
+  let lmSubjects = [];
   const lmFilter = (node) => {
     const gen = (x) => x.stage === 'generation';
     const f = {
@@ -1312,6 +1314,8 @@
     }[node];
     if (f) return f;
     if (node.startsWith('p-')) return (x) => x.layer === 'problem' && x.materialId === node.slice(2);
+    if (node === 'subj-all') return (x) => x.layer !== 'problem' && !x.subject;
+    if (node.startsWith('subj-')) return (x) => x.layer !== 'problem' && x.subject === lmSubjects[Number(node.slice(5))];
     return () => false;
   };
   const LM_FROM = { input: '직접 입력', check: '확인할 곳에서', fix: '고칠 점에서', auto: '세트 자동', migrated: '옮겨 옴', promote: '올림', merge: '합침' };
@@ -1330,7 +1334,7 @@
     if (!x.kept && !x.broken) return ['판정 전', 'idle'];
     return ['잘 지킴', 'ok'];
   }
-  const lmOpen = { item: null, edit: null, cand: null };
+  const lmOpen = { item: null, edit: null, cand: null, heat: false };
   async function learnMap(pane, node = 'all') {
     pane.innerHTML = '<p class="muted">불러오는 중…</p>';
     let polls = 0;
@@ -1339,6 +1343,8 @@
       if (!pane.isConnected) return;
       const M = d.map;
       const items = M.items;
+      lmSubjects = M.subjects || [];
+      const subjectOptions = (sel) => `<option value="">전 과목</option>${lmSubjects.map((x) => `<option value="${esc(x)}"${x === sel ? ' selected' : ''}>${esc(x)}만</option>`).join('')}`;
       const pairIds = new Set(M.candidates.flatMap((c) => [c.a.id, c.b.id]));
       const titleOf = new Map(d.problems.map((p) => [p.id, p.title]));
       const problemIds = [...new Set(items.filter((x) => x.layer === 'problem').map((x) => x.materialId))];
@@ -1352,10 +1358,11 @@
         `<div class="lm-group">지침</div>`, leaf('persona', '페르소나', 1, d.persona ? 1 : 0), leaf('guide-a', '분석 지침', 1), leaf('guide-g', '생성 지침', 1),
         `<div class="lm-group">공통 학습</div>`, leaf('lesson-a', '원본 읽기', 1), leaf('corr', '읽기 교정', 1, d.corrections.length),
         leaf('lesson-p', '문제 만들기', 1), leaf('lesson-s', '해설 쓰기', 1), leaf('lesson-all', '문제와 해설', 1),
+        ...(lmSubjects.length ? [`<div class="lm-group">과목 (지침·공통 학습)</div>`, leaf('subj-all', '전 과목', 1), ...lmSubjects.map((x, i) => leaf('subj-' + i, `${x}만`, 1))] : []),
         `<div class="lm-group">문제별 학습</div>`, ...problemIds.map((id) => leaf('p-' + id, titleOf.get(id) || '삭제된 문제', 1)),
         problemIds.length ? '' : '<p class="lm-none">아직 없습니다</p>',
       ].join('');
-      const label = { all: '전체', persona: '페르소나', 'guide-a': '분석 지침', 'guide-g': '생성 지침', 'lesson-a': '원본 읽기', corr: '읽기 교정', 'lesson-p': '문제 만들기', 'lesson-s': '해설 쓰기', 'lesson-all': '문제와 해설', guides: '지침', common: '공통 학습', problems: '문제별 학습' }[node] || titleOf.get(node.slice(2)) || '';
+      const label = { all: '전체', persona: '페르소나', 'guide-a': '분석 지침', 'guide-g': '생성 지침', 'lesson-a': '원본 읽기', corr: '읽기 교정', 'lesson-p': '문제 만들기', 'lesson-s': '해설 쓰기', 'lesson-all': '문제와 해설', guides: '지침', common: '공통 학습', problems: '문제별 학습', 'subj-all': '전 과목' }[node] || (node.startsWith('subj-') ? `${lmSubjects[Number(node.slice(5))] || ''}만` : titleOf.get(node.slice(2))) || '';
       const NOTE = {
         all: '모든 학습입니다. 왼쪽에서 분류를 고르면 그 분류만 보고, 새 학습을 넣을 수 있습니다.',
         persona: '분석·생성·검토, 모든 AI 호출의 맨 앞에 붙는 AI의 역할입니다.',
@@ -1364,15 +1371,21 @@
         'lesson-a': '모든 문제를 분석할 때 들어가는 교훈입니다. 한 문제의 학습과 부딪히면 그 문제의 것을 따릅니다.',
         corr: '사진에서 잘못 읽은 단어입니다. 분석 결과를 고치면 자동으로 쌓이고, 다음 분석부터 그 단어를 주의해서 읽습니다.',
         'lesson-p': '모든 문제의 변형을 설계할 때 들어갑니다.', 'lesson-s': '모든 문제의 해설을 쓸 때 들어갑니다.', 'lesson-all': '모든 문제의 변형과 해설에 함께 들어갑니다.',
-      }[node] || (node.startsWith('p-') ? '이 문제에만 들어가는 학습입니다. 새 학습은 문제 페이지에서 결과를 보며 넣습니다.' : '');
+        'subj-all': '과목 태그가 없는 지침·공통 학습입니다. 모든 과목의 문제에 들어갑니다. 고치기에서 과목을 정하면 그 과목 문제에만 들어갑니다.',
+      }[node] || (node.startsWith('p-') ? '이 문제에만 들어가는 학습입니다. 새 학습은 문제 페이지에서 결과를 보며 넣습니다.'
+        : node.startsWith('subj-') ? `${lmSubjects[Number(node.slice(5))] || ''} 문제에만 들어가는 지침·공통 학습입니다. 다른 과목 문제의 한도를 차지하지 않습니다.` : '');
       const list = items.filter(lmFilter(node));
       const often = list.filter((x) => lmState(x, pairIds)[0] === '자주 어김').length;
       const sets = M.sets;
-      const markCells = (x) => (x.marks ? `<span class="lm-cells" aria-label="최근 세트">${x.marks.map((k, i) => `<i class="${k}" title="${esc(lmSetName(sets[i]))} · ${LM_MARK[k] || '없던 학습'}"></i>`).join('')}</span>` : '<span class="lm-cells"></span>');
+      const LIST_SETS = 6;
+      const recent = sets.slice(-LIST_SETS);
+      const tail = (marks) => marks.slice(-LIST_SETS);
+      const markCells = (x) => (x.marks ? `<span class="lm-cells" aria-label="최근 세트">${tail(x.marks).map((k, i) => `<i class="${k}" title="${esc(lmSetName(recent[i]))} · ${LM_MARK[k] || '없던 학습'}"></i>`).join('')}</span>` : '<span class="lm-cells"></span>');
       const chips = (x) => [
         node === 'all' || node === 'problems' ? `<span class="lm-chip">${x.layer === 'problem' ? esc(titleOf.get(x.materialId) || '문제별') : LM_LAYER[x.layer]}</span>` : '',
         `<span class="lm-chip${x.from === 'auto' ? ' auto' : ''}">${LM_FROM[x.from] || '직접 입력'} · ${lmDay(x.createdAt)}</span>`,
         x.merged ? `<span class="lm-chip">${x.merged}개를 합침</span>` : '',
+        x.subject ? `<span class="lm-chip subj">${esc(x.subject)}만</span>` : '',
         node === 'all' || node.startsWith('p-') || node === 'problems' ? `<span class="lm-chip">${x.stage === 'analysis' ? '분석' : `생성 · ${TARGET_TXT[x.target] || '전체'}`}</span>` : '',
         x.stage === 'generation' ? `<span class="lm-chip">${x.uses}번 쓰임</span>` : '',
       ].join('');
@@ -1380,7 +1393,7 @@
         const [st, cls] = lmState(x, pairIds);
         const open = lmOpen.item === x.id;
         const editing = lmOpen.edit === x.id;
-        const used = x.marks ? x.marks.map((k, i) => (k === '-' ? '' : `<a href="#/j/${sets[i].id}">${esc(lmSetName(sets[i]))}</a> ${LM_MARK[k]}`)).filter(Boolean).join(' · ') : '';
+        const used = x.marks ? tail(x.marks).map((k, i) => (k === '-' ? '' : `<a href="#/j/${recent[i].id}">${esc(lmSetName(recent[i]))}</a> ${LM_MARK[k]}`)).filter(Boolean).join(' · ') : '';
         const moves = [['guide', '지침'], ['lesson', '공통 학습'], ...(x.fromProblem ? [['problem', '이 문제만']] : [])].filter(([k]) => k !== x.layer);
         return `<div class="lm-item${open ? ' open' : ''}${x.status === 'approved' ? '' : ' off'}" data-item="${x.id}">
           <button type="button" class="lm-row" data-toggle aria-expanded="${open}">
@@ -1389,7 +1402,7 @@
           </button>
           ${open ? `<div class="lm-detail">
             ${editing ? `<div class="lm-edit"><textarea data-f="text" rows="3">${esc(x.text)}</textarea>
-              <div class="lt-actions">${x.stage === 'generation' ? `<label class="fb-target-label">대상</label><select data-f="target">${targetOptions(x.target === 'design' ? 'problem' : x.target)}</select>` : ''}<span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div></div>` : ''}
+              <div class="lt-actions">${x.stage === 'generation' ? `<label class="fb-target-label">대상</label><select data-f="target">${targetOptions(x.target === 'design' ? 'problem' : x.target)}</select>` : ''}${x.layer !== 'problem' ? `<label class="fb-target-label">과목</label><select data-f="subject">${subjectOptions(x.subject)}</select>` : ''}<span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div></div>` : ''}
             <dl class="lm-kv">
               <dt>근거</dt><dd>${x.evidence.length ? x.evidence.map((e) => `<div class="lm-quote">${inlineRich(e)}</div>`).join('') : '<span class="muted">선생님이 직접 넣음</span>'}${x.from === 'auto' && x.jobId ? ` <a href="#/j/${x.jobId}">그 세트 보기</a>` : ''}</dd>
               ${x.stage === 'generation' ? `<dt>결과</dt><dd>${x.kept + x.broken ? `지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 판정 없음'}${used ? `<div class="muted small">최근 세트: ${used}</div>` : ''}</dd>` : `<dt>결과</dt><dd>${x.uses ? `분석 ${x.uses}번에 들어감` : '아직 이 학습으로 분석한 문제가 없습니다'}</dd>`}
@@ -1408,7 +1421,12 @@
       const corrections = () => d.corrections.map((c) => `<div class="lm-item" data-corr="${c.id}"><div class="lm-row lm-static">
           <span class="lm-txt"><strong>"${esc(c.wrong)}" → "${esc(c.right)}"</strong><span class="lm-chips"><span class="lm-chip">${c.count}번 고침</span>${c.subject ? `<span class="lm-chip">${esc(c.subject)}</span>` : ''}</span></span>
           <span></span><button class="small danger" data-act="del-corr">삭제</button></div></div>`).join('');
-      const body = node === 'persona' ? persona() : node === 'corr' ? corrections() : list.map(row).join('');
+      // 히트맵: every item of the branch that goes into sets, against every recent set (most often broken first).
+      const heatItems = list.filter((x) => x.marks).sort((a, b) => b.broken - a.broken || b.uses - a.uses);
+      const heatmap = () => `<div class="lm-heat"><table><thead><tr><th>학습</th>${sets.map((st) => `<th title="${esc(lmSetName(st))} ${esc(st.title)}"><span>${lmDay(st.at)}</span><small>${esc(LM_PROVIDER[st.provider] || '')}</small></th>`).join('')}<th>지킴 · 어김</th></tr></thead>
+        <tbody>${heatItems.map((x) => `<tr data-heat="${x.id}"><th><span>${inlineRich(x.text)}</span></th>${x.marks.map((k, i) => `<td class="${k}" title="${esc(lmSetName(sets[i]))} · ${LM_MARK[k] || '없던 학습'}"></td>`).join('')}<td class="lm-heat-n">${x.kept}${x.broken ? ` · <b class="bad">${x.broken}</b>` : ' · 0'}</td></tr>`).join('')}</tbody></table></div>`;
+      const heat = lmOpen.heat && heatItems.length && !['persona', 'corr'].includes(node);
+      const body = node === 'persona' ? persona() : node === 'corr' ? corrections() : heat ? heatmap() : list.map(row).join('');
       const empty = node === 'corr' ? '아직 읽기 교정이 없습니다.' : '이 분류에는 아직 학습이 없습니다.';
       const add = LM_ADD[node];
       const L = M.load;
@@ -1425,10 +1443,10 @@
           <nav class="lm-tree" aria-label="학습 분류">${tree}</nav>
           <div class="lm-main">
             <div class="lm-head"><div><h2>${esc(label)}</h2><p>${esc(NOTE)}${node.startsWith('p-') ? ` <a href="#/m/${node.slice(2)}">문제 열기</a>` : ''}</p></div>
-              ${list.some((x) => x.marks) && !['persona', 'corr'].includes(node) ? `<div class="lm-legend"><span><i class="k"></i>지킴</span><span><i class="b"></i>어김</span><span><i class="u"></i>판정 없음</span><span><i></i>없던 학습</span><span class="muted">· 칸은 최근 세트 ${sets.length}개</span></div>` : ''}</div>
+              ${list.some((x) => x.marks) && !['persona', 'corr'].includes(node) ? `<div class="lm-legend"><span><i class="k"></i>지킴</span><span><i class="b"></i>어김</span><span><i class="u"></i>판정 없음</span><span><i></i>없던 학습</span><span class="muted">· ${heat ? `세트 ${sets.length}개, 왼쪽이 오래된 것` : `칸은 최근 세트 ${recent.length}개`}</span>${heatItems.length ? `<button class="small" id="lm-heat">${heat ? '목록으로' : '히트맵'}</button>` : ''}</div>` : ''}</div>
             ${node === 'persona' || node === 'corr' ? '' : `<p class="lm-count">${list.length}개${often ? ` · <span class="bad">자주 어김 ${often}</span>` : ''}</p>`}
-            <div class="lm-list">${body || `<p class="lm-empty">${empty}</p>`}</div>
-            ${add ? `<div class="lm-add"><textarea id="lm-add-text" rows="2" placeholder="${esc(add.hint)}"></textarea><div class="lt-actions"><span class="muted small">${esc(label)}에 넣으면 ${add.layer === 'guide' ? '모든 문제에 가장 먼저 들어갑니다' : '모든 문제에 들어갑니다'}</span><span class="spacer"></span><button class="small primary" id="lm-add">추가</button></div></div>` : ''}
+            <div class="${heat ? 'lm-heat-wrap' : 'lm-list'}">${body || `<p class="lm-empty">${empty}</p>`}</div>
+            ${add ? `<div class="lm-add"><textarea id="lm-add-text" rows="2" placeholder="${esc(add.hint)}"></textarea><div class="lt-actions"><span class="muted small">${esc(label)}에 넣으면 ${add.layer === 'guide' ? '가장 먼저 들어갑니다' : '들어갑니다'}</span>${lmSubjects.length ? `<select id="lm-add-subject" class="lm-move" aria-label="과목">${subjectOptions('')}</select>` : ''}<span class="spacer"></span><button class="small primary" id="lm-add">추가</button></div></div>` : ''}
             <section class="lm-inbox" aria-label="정리 후보">
               <div class="lm-inbox-head"><b>정리 후보</b><span>AI가 같은 지시라고 본 학습입니다. 합치면 두 원문은 근거로 남습니다.</span></div>
               ${M.candidates.map((c) => `<div class="lm-cand" data-cand="${esc(c.key)}">
@@ -1448,6 +1466,8 @@
         history.replaceState(null, '', '#/learn/map/' + b.dataset.node);
         node = b.dataset.node; paint();
       }));
+      $('#lm-heat', pane)?.addEventListener('click', () => { lmOpen.heat = !lmOpen.heat; paint(); });
+      $$('[data-heat]', pane).forEach((tr) => tr.addEventListener('click', () => { lmOpen.heat = false; lmOpen.item = tr.dataset.heat; paint(); }));
       $$('.lm-item[data-item]', pane).forEach((el) => {
         const x = items.find((i) => i.id === el.dataset.item);
         $('[data-toggle]', el).addEventListener('click', () => { lmOpen.item = lmOpen.item === x.id ? null : x.id; lmOpen.edit = null; paint(); });
@@ -1455,7 +1475,7 @@
         act('edit', async () => { lmOpen.edit = x.id; await paint(); $('[data-f=text]', pane)?.focus(); });
         act('cancel', async () => { lmOpen.edit = null; await paint(); });
         act('save', async () => {
-          await api('PUT', '/api/rules/' + x.id, { text: $('[data-f=text]', el).value, ...($('[data-f=target]', el) ? { target: $('[data-f=target]', el).value } : {}) });
+          await api('PUT', '/api/rules/' + x.id, { text: $('[data-f=text]', el).value, ...($('[data-f=target]', el) ? { target: $('[data-f=target]', el).value } : {}), ...($('[data-f=subject]', el) ? { subject: $('[data-f=subject]', el).value } : {}) });
           lmOpen.edit = null; toast('저장했습니다.'); await paint();
         });
         act('onoff', async () => {
@@ -1485,7 +1505,7 @@
       $('#lm-add', pane)?.addEventListener('click', guard(async () => {
         const text = $('#lm-add-text', pane).value.trim();
         if (!text) throw new Error('내용을 적어 주세요.');
-        await teach({ text, stage: add.stage, scope: add.layer, target: add.target || 'all' });
+        await api('POST', '/api/rules', { text, stage: add.stage, target: add.target || 'all', scope: 'global', layer: add.layer, subject: $('#lm-add-subject', pane)?.value || '' });
         toast(add.layer === 'guide' ? '지침에 넣었습니다. 모든 문제에 가장 먼저 들어갑니다.' : '공통 학습에 넣었습니다. 모든 문제에 들어갑니다.');
         await paint();
       }));

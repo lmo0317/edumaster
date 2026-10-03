@@ -6,7 +6,8 @@
 const crypto = require('node:crypto');
 const { grams, overlap, stageOf } = require('./learning');
 
-const SET_COLUMNS = 6;
+// The recent sets an item's marks cover: the list shows the last 6, the heatmap all of them.
+const SET_COLUMNS = 12;
 const SIMILAR = 0.4;
 
 /** The id an item's judgements count toward: an item merged into another counts for the one it was merged into. */

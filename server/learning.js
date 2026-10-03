@@ -58,6 +58,10 @@ function updateRule(rule, patch, now = new Date()) {
   if (next.scope === 'global') next.layer = LAYERS.has(patch.layer) ? patch.layer : (next.layer || 'lesson');
   else delete next.layer;
   if (patch.scope === 'global' && rule.scope === 'material') next.promotedFrom = rule.source?.materialId || '';
+  // The subject tag of an every-problem item: set, it reaches only that subject's problems ('' = every subject). An item
+  // moved up from a problem starts with no tag, so a promotion reaches every problem unless the teacher tags it.
+  if (patch.subject !== undefined) next.subject = clean(patch.subject, 40);
+  else if (patch.scope === 'global' && rule.scope === 'material') next.subject = '';
   if (KINDS.has(patch.kind)) next.kind = patch.kind;
   if (TARGETS.has(patch.target)) next.target = patch.target;
   return next;
@@ -88,8 +92,11 @@ function selectRules(allRules, material, { limit = 24, maxChars = 6000, stage = 
   const approved = allRules.filter((r) => r.status === 'approved' && stageOf(r) === stage);
   const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const byTime = (a, b) => a.createdAt.localeCompare(b.createdAt);
-  const guides = approved.filter((r) => r.scope === 'global' && r.layer === 'guide').sort(byTime);
-  const lessons = approved.filter((r) => r.scope === 'global' && r.layer !== 'guide').sort(byTime);
+  // Every-problem items tagged with a subject reach only that subject (learning that keeps growing is not all sent to
+  // every problem); within the lessons, ones for this subject come before the untagged ones, so the cap drops those first.
+  const reaches = (r) => !r.subject || !material.subject || r.subject === material.subject;
+  const guides = approved.filter((r) => r.scope === 'global' && r.layer === 'guide' && reaches(r)).sort(byTime);
+  const lessons = approved.filter((r) => r.scope === 'global' && r.layer !== 'guide' && reaches(r)).sort((a, b) => Number(!a.subject) - Number(!b.subject) || byTime(a, b));
   const target = grams([material.subject, material.topic, material.problem?.text, ...(material.techniques || [])].join(' '));
   // A topic feedback belongs to its subject: shared exam wording ("조건", "자료") must not carry a 화학 note to 생명과학.
   const topical = approved.filter((r) => r.scope === 'topic' && !(r.subject && material.subject && r.subject !== material.subject)).map((r) => {

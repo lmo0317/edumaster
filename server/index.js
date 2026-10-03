@@ -544,12 +544,13 @@ function createApp(options = {}) {
       const job = store.jobs.get(source.jobId);
       const item = job?.items?.[source.itemIndex];
       if (job) source = { ...source, materialId: job.materialId, label: `${job.title} · ${item?.label || ''}`, excerpt: (item?.problem?.text || job.material?.problem?.text || '').slice(0, 600) };
-      if (job && !body.subject) { body.subject = job.material?.subject; body.topic = job.material?.topic; }
+      // A problem's own item records its subject; an every-problem item is tagged only when the teacher tags it.
+      if (job && !body.subject && body.scope !== 'global') { body.subject = job.material?.subject; body.topic = job.material?.topic; }
     } else if (source?.materialId && isId(source.materialId)) {
       // Feedback written on the problem page itself (on the original, its reading or the variants in general).
       const material = getMaterial(source.materialId);
       source = { materialId: material.id, label: material.title, from: source.from };
-      if (!body.subject) { body.subject = material.subject; body.topic = material.topic; }
+      if (!body.subject && body.scope !== 'global') { body.subject = material.subject; body.topic = material.topic; }
     }
     // Feedback on a problem belongs to that problem unless the teacher widens it.
     const scope = body.scope || (source?.materialId ? 'material' : 'global');
@@ -833,7 +834,7 @@ function createApp(options = {}) {
     const materials = store.materials.all();
     const analysisUses = (id) => materials.filter((m) => (m.learningUsed || []).some((x) => x.id === id)).length;
     const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
-      ...itemView(r, kept), scope: r.scope, materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
+      ...itemView(r, kept), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
       uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
       marks: stageOf(r) === 'analysis' ? null : marks.marks(r.id), evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
     }));
@@ -847,6 +848,8 @@ function createApp(options = {}) {
     const lately = all.filter((r) => r.createdAt >= week);
     return {
       items, sets: marks.sets,
+      // The subjects an every-problem item can be tagged with: those of the problems, and any already used.
+      subjects: [...new Set([...materials.map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort(),
       recent: { added: lately.length, auto: lately.filter((r) => r.source?.from === 'auto').length },
       load: last ? { materialId: last.id, title: last.title, items: picked.length, chars: picked.reduce((n, r) => n + r.text.length, 0), limit: 24, maxChars: 6000 } : null,
       candidates: pairs.filter((p) => p.decision?.decision === 'same').map((p) => ({ key: p.key, a: { id: p.a.id, text: p.a.text, layer: layerOf(p.a) }, b: { id: p.b.id, text: p.b.text, layer: layerOf(p.b) }, text: p.decision.text, why: p.decision.why })),

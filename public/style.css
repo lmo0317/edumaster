@@ -879,3 +879,21 @@ a.btn.set-open:hover { border-color: var(--accent); }
   .gd-fig:not(.gd-scroll) .gd-svg { min-width: 620px; }
   .gd-toc { top: 0; position: static; }
 }
+
+/* 학습 지도 › 히트맵: items of a branch against every recent set; the subject tag chip. */
+.lm-chip.subj { background: var(--ok-soft); color: var(--ok); }
+.lm-legend button { margin-left: 4px; }
+.lm-heat-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.lm-heat { overflow-x: auto; }
+.lm-heat table { border-collapse: separate; border-spacing: 3px; font-size: 12.5px; min-width: 100%; }
+.lm-heat thead th { font-weight: 600; color: var(--muted); padding: 4px 2px; text-align: center; white-space: nowrap; }
+.lm-heat thead th span, .lm-heat thead th small { display: block; line-height: 1.25; }
+.lm-heat thead th small { font-size: 10.5px; font-weight: 400; }
+.lm-heat thead th:first-child { text-align: left; padding-left: 8px; }
+.lm-heat tbody tr { cursor: pointer; }
+.lm-heat tbody tr:hover th { color: var(--accent); }
+.lm-heat tbody th { text-align: left; font-weight: 500; padding: 2px 8px; max-width: 360px; min-width: 200px; position: sticky; left: 0; background: var(--panel); }
+.lm-heat tbody th span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.lm-heat td { width: 26px; min-width: 26px; height: 22px; border-radius: 4px; background: #eef0f4; }
+.lm-heat td.k { background: var(--ok); } .lm-heat td.b { background: #d99a1e; } .lm-heat td.u { background: #b9c6ea; }
+.lm-heat td.lm-heat-n { background: none; width: auto; white-space: nowrap; color: var(--muted); padding: 0 8px; font-variant-numeric: tabular-nums; }

@@ -530,9 +530,14 @@ async function reviewSolution(ctx, item, material, rules) {
     if (e.name !== 'LlmFormatError') throw e;
     return { steps: [], rules: [], error: e.message };
   }
+  // Only what deviates comes back with words: the STEPs with issues, the rules broken (kept ones by id), which keeps
+  // the reviewer's answer short (2026-10-03: review and rewrite were about half of a set's tokens). The older shape
+  // (every STEP and rule with ok and a note) is still read.
+  const ruleList = Array.isArray(data?.rules) ? data.rules
+    : [...arr(data?.rules?.kept).map((id) => ({ id, ok: true })), ...arr(data?.rules?.broken).map((r) => ({ ...r, ok: false }))];
   return {
-    steps: arr(data?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, ok: s?.ok !== false, issues: arr(s?.issues).map((x) => str(x, 400)).filter(Boolean).slice(0, 6) })),
-    rules: arr(data?.rules).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id),
+    steps: arr(data?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, ok: s?.ok === true ? true : !arr(s?.issues).length, issues: arr(s?.issues).map((x) => str(x, 400)).filter(Boolean).slice(0, 6) })),
+    rules: ruleList.map((r) => (typeof r === 'string' ? { id: r, ok: true } : r)).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id),
   };
 }
 
@@ -966,6 +971,8 @@ async function learnFromSet(ctx) {
     const rule = makeRule({
       text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
       scope: common ? 'global' : 'material', layer: 'lesson',
+      // A common item about this subject's content reaches only this subject's problems.
+      subject: common && x?.subjectOnly === true ? material.subject || '' : common ? '' : material.subject || '',
       source: { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto' },
     });
     store.rules.put(rule);

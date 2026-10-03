@@ -97,3 +97,18 @@ test('학습 지도 over the API: the map, a candidate the AI merged, merging an
     assert.deepEqual([d.candidates.length, d.checking, d.items.length], [0, 0, 5]);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
+
+// Learning that keeps growing is not all sent to every problem: an every-problem item tagged with a subject reaches only
+// that subject, and the subject's own lessons come before untagged ones under the cap.
+test('a subject-tagged item reaches only that subject; promotion clears the tag', () => {
+  const { selectRules, updateRule } = require('../server/learning');
+  const r = (id, text, extra = {}) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: id, ...extra });
+  const rules = [r('a', '전 과목 교훈'), r('b', '화학 교훈', { subject: '화학' }), r('c', '생명 교훈', { subject: '생명과학' }), r('d', '화학 지침', { layer: 'guide', subject: '화학' })];
+  const ids = (m) => selectRules(rules, { id: 'm', subject: m }).map((x) => x.id);
+  assert.deepEqual(ids('화학'), ['d', 'b', 'a'], '지침 first, then this subject, then every subject');
+  assert.deepEqual(ids('생명과학'), ['c', 'a']);
+  assert.deepEqual(ids(''), ['d', 'b', 'c', 'a'], 'a problem without a subject gets everything');
+  const own = { ...r('e', '문제 학습'), scope: 'material', subject: '화학', source: { materialId: 'm' } };
+  assert.equal(updateRule(own, { scope: 'global' }).subject, '', 'moved up: reaches every subject until tagged');
+  assert.equal(updateRule(r('f', 'x'), { subject: '화학' }).subject, '화학');
+});

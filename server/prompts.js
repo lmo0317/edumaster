@@ -353,11 +353,11 @@ const SOLUTION_REVIEW_SYSTEM = `너는 교사의 해설 방식을 지키는지 �
   (3) 필요한 중간 단계를 건너뛴 것 (예: 문제가 질량비와 전체 질량을 주는데 각 물질의 질량으로 바꾸는 계산 없이 바로 씀).
 - 이탈이 아닌 것: 실험 번호나 실린더·대상 기호의 범위가 다름 (예: (가)~(다) 대신 (가)와 (나)), 문제 구조상 가정하는 실험이나 남는 물질이 바뀜, 문제에 반응식이 없어 계수 관계를 문장으로 씀, 교사 해설과 같은 흐름에서 수치만 다른 표, [이 문제의 범위] 밖의 교사 STEP이 변형 해설에 없음, 문제가 보조 문자나 값을 조건으로 주어 해설이 그것을 새로 도입하지 않음처럼 문제 설계 때문에 생긴 차이.
 - 교사 해설은 [이 문제의 범위] 안의 STEP만 비교한다.
-- steps에는 변형 해설의 STEP마다 ok와, 이탈이 있으면 issues에 무엇이 교사 해설과 어떻게 다른지 구체적으로 적는다.
-- rules: [판정할 해설 지침]이 있으면 지침마다 지켰는지 판정한다. 없으면 빈 배열.
+- steps에는 이탈이 있는 STEP만 넣고, issues에 무엇이 교사 해설과 어떻게 다른지 구체적으로 적는다. 이탈이 없는 STEP은 넣지 않는다 (모두 같으면 빈 배열).
+- rules: [판정할 해설 지침]을 하나씩 판정해, 지킨 지침은 kept에 id만, 어긴 지침은 broken에 id와 어떻게 어겼는지(note)를 넣는다. 지침이 없으면 둘 다 빈 배열.
 ${FORMAT}
 반환 JSON 형식:
-{"steps":[{"step":1,"ok":true,"issues":["..."]}],"rules":[{"id":"...","ok":true,"note":"..."}]}`;
+{"steps":[{"step":2,"issues":["..."]}],"rules":{"kept":["id"],"broken":[{"id":"...","note":"..."}]}}`;
 
 // The STEPs of the teacher's solution a variant is expected to follow.
 function stageScope(stage, total) {
@@ -379,7 +379,7 @@ function solutionReviewText({ item, material, rules }) {
     item.problem.choices?.length ? item.problem.choices.map((c, i) => `${'①②③④⑤⑥⑦⑧⑨'[i] || i + 1} ${c}`).join('  ') + `\n정답: ${'①②③④⑤⑥⑦⑧⑨'[item.problem.answer - 1] || item.problem.answer}` : '(서술형)',
     '\n[변형 문제의 해설]',
     (item.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
-    solutionRules.length ? '\n[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 해설 지침] 없음. rules는 빈 배열.',
+    solutionRules.length ? '\n[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 해설 지침] 없음. rules의 kept와 broken은 빈 배열.',
     '\nJSON만 반환하라.',
   ].join('\n');
 }
@@ -410,12 +410,13 @@ const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같�
 - [이미 있는 학습·지침]과 같은 뜻이면 만들지 않는다.
 - 만들지 않는 것: 검토자의 지적이 틀렸거나 문제 설계상 당연한 차이, 한 번 생긴 단순 계산 실수, 표·수식 표기 오류(서버가 고친다).
 - 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common".
+- common이면 subjectOnly: 이 과목의 내용(예: 화학의 기체 양적 관계, 생명과학의 흥분 전도)에 관한 것이면 true, 과목과 관계없는 출제·해설 원칙이면 false.
 - target: 문제 설계에 관한 것이면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
 - text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓰고, 필요하면 괄호에 짧은 예를 든다. 이번 문제의 수치를 그대로 옮기지 않는다.
 - why에는 이 항목이 막는 실수를 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
-{"items":[{"text":"...","scope":"problem","target":"problem","why":"..."}]}`;
+{"items":[{"text":"...","scope":"problem","target":"problem","subjectOnly":false,"why":"..."}]}`;
 
 function learnText({ material, faults, existing }) {
   return [

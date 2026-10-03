@@ -40,3 +40,16 @@ test('a solution must judge every statement in its STEPs and name the answer whe
   assert.equal(check(item('ㄱ. 1배이다. (×)\nㄴ. 5:3이다. (○)\nㄷ. 15:14이다. (○)\n정답은 ④ ㄴ, ㄷ이다.')).state, 'pass');
   assert.equal(inspectItem({ ...material, steps: [{ title: 'a', work: '정답은 ④이다.' }] }, item('질량비는 45:42이다.'), 'integrated').some((c) => c.id === 'explanation-complete'), false, 'not asked when the teacher does not judge them');
 });
+
+// The solution reviewer answers only with what deviates (2026-10-03 A/B: same findings, far fewer output tokens).
+test('the compact review answer is read as the full one', async () => {
+  const { reviewSolution } = require('../server/pipeline');
+  const answer = (data) => ({ llm: { json: async () => ({ data }) }, log() {}, job: { id: 'j' }, budget: {}, effort: { solve: 'low' } });
+  const item = { solution: { steps: [{ step: 1, title: 't', work: 'w' }, { step: 2, title: 't', work: 'w' }] }, problem: { text: '', choices: [] }, stage: { kind: 'twin' } };
+  const material = { steps: [{ title: 't', work: 'w' }, { title: 't', work: 'w' }] };
+  const r = await reviewSolution(answer({ steps: [{ step: 2, issues: ['순서가 다름'] }], rules: { kept: ['r1'], broken: [{ id: 'r2', note: '어김' }] } }), item, material, []);
+  assert.deepEqual(r.steps, [{ step: 2, ok: false, issues: ['순서가 다름'] }]);
+  assert.deepEqual(r.rules, [{ id: 'r1', ok: true, note: '' }, { id: 'r2', ok: false, note: '어김' }]);
+  const old = await reviewSolution(answer({ steps: [{ step: 1, ok: true, issues: [] }], rules: [{ id: 'r1', ok: true, note: '지킴' }] }), item, material, []);
+  assert.deepEqual([old.steps[0].ok, old.rules[0].ok], [true, true], 'the older shape still reads');
+});
