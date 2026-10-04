@@ -191,10 +191,10 @@ test('지침 and 전체 학습: the persona leads every call; every-problem anal
     const h = (await s.call('GET', '/api/harness')).data;
     assert.ok(h.checks.generation.length >= 10 && h.checks.analysis.length >= 5);
     assert.ok(h.checks.generation.every((c) => h.onFail[c.onFail]), 'every check says what happens on failure');
-    assert.deepEqual(h.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 3, setCalls: 60 });
+    assert.deepEqual(h.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 3, setCalls: 60, localCalls: 120 });
     assert.deepEqual(h.stats.checks.map((c) => c.label), h.checks.generation.map((c) => c.label));
     assert.equal((await s.call('PUT', '/api/harness', { maxDesigns: 9 })).status, 400);
-    assert.deepEqual((await s.call('PUT', '/api/harness', { maxDesigns: 2, setCalls: 80 })).data.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 2, setCalls: 80 });
+    assert.deepEqual((await s.call('PUT', '/api/harness', { maxDesigns: 2, setCalls: 80 })).data.settings, { maxRewrites: 2, maxRepairs: 2, maxDesigns: 2, setCalls: 80, localCalls: 120 });
     const made = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
     await s.waitJob(made.jobId);
     const job = (await s.call('POST', '/api/generations', { materialId: made.material.id, mode: 'integrated' })).data;

@@ -1347,7 +1347,7 @@
     if (node.startsWith('subj-')) return (x) => x.layer !== 'problem' && x.subject === lmSubjects[Number(node.slice(5))];
     return () => false;
   };
-  const LM_FROM = { input: '직접 입력', check: '확인할 곳에서', fix: '고칠 점에서', auto: '세트 자동', migrated: '옮겨 옴', promote: '올림', merge: '합침' };
+  const LM_FROM = { input: '직접 입력', check: '확인할 곳에서', fix: '고칠 점에서', auto: '세트 자동', migrated: '옮겨 옴', promote: '올림', merge: '합침', eval: '평가에서' };
   const LM_PROVIDER = { 'claude-cli': 'Claude', 'agy-cli': 'Gemini', 'codex-cli': 'GPT', deepseek: 'DeepSeek', relay: 'Claude', claude: 'Claude', gemma: 'PC' };
   const LM_MARK = { k: '지킴', b: '어김', u: '넣었지만 판정 없음' };
   const LM_LAYER = { guide: '지침', lesson: '공통 학습', problem: '문제별' };
@@ -1563,6 +1563,7 @@
     ['maxRewrites', '해설 다시 쓰기', '해설만 선생님 해설과 다를 때 문제는 두고 해설만 다시 쓰는 횟수 (설계마다)'],
     ['maxRepairs', '문제 수정', '문제에 결함이 있을 때 고치게 하는 횟수 (설계마다). 같은 지적이 되풀이되면 일찍 멈춘다'],
     ['maxDesigns', '설계 횟수', '고쳐도 남으면 처음부터 새로 설계한다. 첫 설계를 포함한 최대 횟수 (문제마다)'],
+    ['localCalls', 'PC 모델 세트당 호출 상한', 'PC 모델로 만드는 세트의 호출 상한 (문제 3개 기준). 호출마다 비용이 없고 빨라서 더 끝까지 고치게 높게 둔다'],
     ['setCalls', '세트당 AI 호출 상한', '문제 3개짜리 세트가 쓸 수 있는 AI 호출 수 (문제가 더 많으면 그만큼 늘어남). 뒤 문제를 만들 몫은 남겨 두고 고친다'],
   ];
   async function harnessView(pane) {

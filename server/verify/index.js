@@ -37,7 +37,8 @@ function normalize(verification, choiceCount) {
   // Python-style True/False (Gemma writes them) are mathjs true/false.
   // C-style && and || (Qwen writes them) are mathjs and / or.
   const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/&&/g, ' and ').replace(/\|\|/g, ' or ');
-  const program = list(verification.program).flatMap((s) => assignments(logic(s).trim())).filter(Boolean);
+  const uncomment = (s) => String(s ?? '').split(/\r?\n/).map((l) => l.replace(/(^|\s)(?:\/\/|#).*$/, '').trim()).filter(Boolean);
+  const program = list(verification.program).flatMap(uncomment).flatMap((s) => assignments(logic(s).trim())).filter(Boolean);
   if (!program.length) return { error: '검산 프로그램이 비어 있습니다.' };
   if (program.length > MAX_LINES) return { error: `검산 프로그램이 너무 깁니다 (${program.length}줄).` };
   const tooLong = [...program, verification.answer, ...list(verification.choices)].find((s) => String(s ?? '').length > MAX_CHARS);

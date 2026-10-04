@@ -181,9 +181,11 @@ function applyFixes(material, fixes) {
   return { applied, unresolved };
 }
 
+const ROMAN = { I: 'Ⅰ', II: 'Ⅱ', III: 'Ⅲ', IV: 'Ⅳ' };
+const stepTitle = (t) => str(t, 300).replace(/^\s*STEP\s*\d+\s*[.:)·]\s*/i, '').replace(/(^|[^A-Za-z])(IV|III|II|I)(?=$|[^A-Za-z])/g, (m, pre, r) => pre + ROMAN[r]);
 function normalizeSolution(solution) {
   return {
-    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: str(s?.title, 300), work: str(s?.work, 8000) })).filter((s) => s.work).slice(0, 12),
+    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: str(s?.work, 8000) })).filter((s) => s.work).slice(0, 12),
     summary: str(solution?.summary, 1000),
   };
 }

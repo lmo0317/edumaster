@@ -195,3 +195,21 @@ test('clean numbers, assumption direction, and the call cap per set size', () =>
   const calls = (n) => jobs.generate({ material: { id: 'b'.repeat(24), title: 'm' }, items: Array.from({ length: n }, (_, i) => ({ index: i })), rules: [], options: { provider: 'deepseek' } }).budget.maxCalls;
   assert.deepEqual([calls(3), calls(6), calls(12)], [60, 120, 150], 'the 하네스 cap is per three problems, up to the ceiling');
 });
+
+// From the gpt-oss run (2026-10-04): a set made by the PC model gets the PC call cap; a program line with comments or
+// several lines still runs; a solution title loses a "STEP 1." the model put in front and gets the original's numerals.
+test('PC call cap, commented program lines, and STEP titles as the teacher wrote them', () => {
+  const { normalize } = require('../server/verify');
+  assert.deepEqual(normalize({ program: ['a=1', '// n = m from equations\nn=1  // guess', '# note', 'b=a+n'], answer: 'b', choices: ['1', '2'] }, 2).spec.program, ['a=1', 'n=1', 'b=a+n']);
+  const { normalizeGenerated } = require('../server/pipeline');
+  const titles = normalizeGenerated({ problem: { text: '문제 본문입니다', choices: ['1', '2'], answer: 1 }, solution: { steps: [{ step: 1, title: 'STEP 1. I에서 한계 반응물을 구한다.', work: 'w' }, { step: 2, title: 'I ~ III에서 구한다', work: 'w' }] } }).solution.steps.map((s) => s.title);
+  assert.deepEqual(titles, ['Ⅰ에서 한계 반응물을 구한다.', 'Ⅰ ~ Ⅲ에서 구한다']);
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { createJobs } = require('../server/jobs');
+  const config = require('../server/config');
+  const { openStore } = require('../server/store');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-pc-'));
+  const jobs = createJobs({ store: openStore(dataDir), llm: { json: async () => { throw new Error('not called'); } }, config: { ...config, dataDir } });
+  const cap = (provider) => jobs.generate({ material: { id: 'c'.repeat(24), title: 'm' }, items: [{}, {}, {}], rules: [], options: { provider } }).budget.maxCalls;
+  assert.deepEqual([cap('gemma'), cap('claude-cli')], [120, 60]);
+});

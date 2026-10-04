@@ -168,6 +168,7 @@ const HARNESS_LIMITS = {
   maxRepairs: [0, 4, 2], // problem repairs per design
   maxDesigns: [1, 5, 3], // designs per problem (the first and fresh ones)
   setCalls: [20, 150, 60], // model calls one set may use
+  localCalls: [20, 150, 120], // the same for a set made by the PC model (free per call)
 };
 function harnessSettings(dataDir) {
   const saved = (dataDir && llmSettings(dataDir).harness) || {};

@@ -165,12 +165,15 @@ function createJobs({ store, llm, config }) {
   // A paid API is held by tokens and calls; a model that costs nothing per call by calls (config.budget.perCallFreeTokens).
   // The 하네스 call cap is for a set of three problems; a set with more problems gets proportionally more (up to the
   // configured ceiling), so the later problems are not left unfixed.
-  const callCap = (problems = 3) => Math.min(Math.round(harnessSettings(config.dataDir).setCalls * Math.max(problems, 3) / 3), config.budget.generateCalls);
+  const callCap = (problems = 3, provider = '') => {
+    const h = harnessSettings(config.dataDir);
+    return Math.min(Math.round((provider === 'gemma' ? h.localCalls : h.setCalls) * Math.max(problems, 3) / 3), config.budget.generateCalls);
+  };
   const tokenCap = (provider, budgetKey) => (PER_CALL_FREE.has(provider) ? config.budget.perCallFreeTokens : config.budget[budgetKey + 'Tokens']);
   function create(type, fields, budgetKey) {
     return enqueue({
       id: newId(), type, createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
-      budget: { maxCalls: budgetKey === 'generate' ? callCap(fields.items?.length) : config.budget[budgetKey + 'Calls'], maxTokens: tokenCap(fields.options?.provider, budgetKey) },
+      budget: { maxCalls: budgetKey === 'generate' ? callCap(fields.items?.length, fields.options?.provider) : config.budget[budgetKey + 'Calls'], maxTokens: tokenCap(fields.options?.provider, budgetKey) },
       usage: { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 },
       ...fields,
     });
@@ -192,7 +195,7 @@ function createJobs({ store, llm, config }) {
       if (!['interrupted', 'failed', 'cancelled'].includes(job.status) || job.type !== 'generate') throw Object.assign(new Error('이어서 진행할 수 없는 작업입니다.'), { status: 409 });
       for (const item of job.items) if (!['passed', 'warning', 'needs_review'].includes(item.status)) item.status = 'pending';
       // A resumed job gets a fresh allowance on top of what it already spent.
-      job.budget = { maxCalls: (job.usage?.calls || 0) + callCap(job.items.filter((it) => it.status === 'pending').length), maxTokens: (job.usage?.total || 0) + tokenCap(job.options?.provider, 'generate') };
+      job.budget = { maxCalls: (job.usage?.calls || 0) + callCap(job.items.filter((it) => it.status === 'pending').length, job.options?.provider), maxTokens: (job.usage?.total || 0) + tokenCap(job.options?.provider, 'generate') };
       job.error = '';
       return enqueue(job);
     },

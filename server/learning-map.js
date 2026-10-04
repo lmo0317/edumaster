@@ -55,6 +55,7 @@ function evidenceOf(rule, jobsById) {
     out.push(why ? `세트 리포트: ${why}` : `세트 리포트 (${s.label || '세트'})`);
   } else if (s.from === 'fix' || s.from === 'check') out.push(`${s.from === 'fix' ? '세트의 고칠 점' : '확인할 곳'}에서 선생님이 씀${s.label ? ` (${s.label})` : ''}`);
   else if (s.from === 'migrated') out.push('예전 지침·피드백에서 옮겨 옴');
+  else if (s.from === 'eval') out.push(`하네스 평가에서 반복된 실수${s.label ? ` (${s.label})` : ''}${s.excerpt ? `: ${s.excerpt}` : ''}`);
   else if (s.label) out.push(`선생님이 씀 (${s.label})`);
   for (const x of rule.mergedFrom || []) out.push(`합친 학습: ${x.text}`);
   return out;
