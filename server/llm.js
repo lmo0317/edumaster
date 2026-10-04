@@ -603,6 +603,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
 // The PC provider serves whichever local model is loaded; name it from the model id llama-server reports.
 function pcModelLabel(id) {
   const s = String(id || '').toLowerCase();
+  if (/qwen3\.8.*gsq/.test(s)) return 'Qwen 3.8-27B GSQ (PC)';
   if (/qwen3\.8/.test(s)) return 'Qwen 3.8-27B (PC)';
   if (/ornith/.test(s)) return 'Ornith 1.5-35B (PC)';
   if (/qwen3\.6/.test(s)) return 'Qwen 3.6-35B (PC)';
@@ -618,6 +619,7 @@ function pcModelKey(id) {
   if (!s || s === 'gemma' || /gemma-4-12b/.test(s)) return 'gemma12';
   if (/gemma-4-26b/.test(s)) return 'gemma26';
   if (/qwen3\.6/.test(s)) return 'qwen36';
+  if (/qwen3\.8.*gsq/.test(s)) return 'qwen38gsq';
   if (/qwen3\.8/.test(s)) return 'qwen38';
   if (/ornith/.test(s)) return 'ornith';
   return s.replace(/^edumaster-/, '');
