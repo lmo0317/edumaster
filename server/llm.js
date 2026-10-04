@@ -358,7 +358,9 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       model: status.model, messages, temperature: copying ? 0.2 : thinking ? 0.6 : 0.2, top_p: 0.95,
       ...(copying ? {} : { dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4 }),
       max_tokens: maxOut,
-      chat_template_kwargs: { enable_thinking: thinking },
+      // enable_thinking switches Qwen's and Gemma's thinking; gpt-oss always thinks and takes its depth from
+      // reasoning_effort instead (each template ignores the other's key).
+      chat_template_kwargs: { enable_thinking: thinking, reasoning_effort: !thinking ? 'low' : effort === 'high' ? 'high' : 'medium' },
       response_format: { type: 'json_object' },
     };
     if (thinking) {
@@ -603,6 +605,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
 // The PC provider serves whichever local model is loaded; name it from the model id llama-server reports.
 function pcModelLabel(id) {
   const s = String(id || '').toLowerCase();
+  if (/gpt-oss/.test(s)) return 'gpt-oss-20B (PC)';
   if (/qwen3\.8.*gsq/.test(s)) return 'Qwen 3.8-27B GSQ (PC)';
   if (/qwen3\.8/.test(s)) return 'Qwen 3.8-27B (PC)';
   if (/ornith/.test(s)) return 'Ornith 1.5-35B (PC)';
@@ -619,6 +622,7 @@ function pcModelKey(id) {
   if (!s || s === 'gemma' || /gemma-4-12b/.test(s)) return 'gemma12';
   if (/gemma-4-26b/.test(s)) return 'gemma26';
   if (/qwen3\.6/.test(s)) return 'qwen36';
+  if (/gpt-oss/.test(s)) return 'gptoss20';
   if (/qwen3\.8.*gsq/.test(s)) return 'qwen38gsq';
   if (/qwen3\.8/.test(s)) return 'qwen38';
   if (/ornith/.test(s)) return 'ornith';

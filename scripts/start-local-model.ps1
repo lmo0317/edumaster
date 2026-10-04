@@ -3,12 +3,13 @@
 #   pwsh start-local-model.ps1 -Name qwen38      # Qwen 3.8-27B (dense, 3-bit so it fits the GPU)
 #   pwsh start-local-model.ps1 -Name qwen38q4    # Qwen 3.8-27B (dense, 4-bit, spills a little to the CPU)
 #   pwsh start-local-model.ps1 -Name qwen38gsq   # Qwen 3.8-27B, ISTA-DASLab GSQ-RCO 3.5-bit (near-BF16 accuracy, wholly on the GPU)
+#   pwsh start-local-model.ps1 -Name gptoss20    # gpt-oss-20B (OpenAI, MoE, MXFP4; text only — the scans are read by another model)
 #   pwsh start-local-model.ps1 -Name ornith      # Ornith-1.5-35B-A3B (Qwen 3.6 MoE, further trained)
 #   pwsh start-local-model.ps1 -Name gemma26     # Gemma 4 26B-A4B (MoE)
 #   pwsh start-local-model.ps1 -Name gemma12     # Gemma 4 12B (previous default)
 # Thinking stays available (--reasoning auto); the server turns it on per request for design calls.
 # Model files: tools/models/ (not in git). The watcher (start-web.ps1) starts the name in local-model.txt.
-param([ValidateSet('qwen36', 'qwen38', 'qwen38q4', 'qwen38gsq', 'ornith', 'gemma26', 'gemma12')][string]$Name = 'qwen36', [int]$Ctx = 49152, [switch]$NoWait)
+param([ValidateSet('qwen36', 'qwen38', 'qwen38q4', 'qwen38gsq', 'gptoss20', 'ornith', 'gemma26', 'gemma12')][string]$Name = 'qwen36', [int]$Ctx = 49152, [switch]$NoWait)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path $PSScriptRoot -Parent
 $server = 'D:\work\dev\blog\windows\bin\llama-server.exe'
@@ -25,12 +26,15 @@ $models = @{
   qwen38q4 = @{ m = Join-Path $cand 'qwen38/Qwen3.8-27B-UD-IQ4_XS.gguf'; p = Join-Path $cand 'qwen38/mmproj-F16.gguf'; alias = 'edumaster-qwen3.8-27b-q4'; extra = @('--fit', 'on', '--fit-target', '2048') + $qwenImage }
   # GSQ-RCO picks a quantization per tensor: 11.8 GB at 3.5 bits/weight, scored like BF16 on its card (2026-10-04).
   qwen38gsq = @{ m = Join-Path $cand 'qwen38gsq/Qwen3.8-27B-GSQ-RCO-IQ3_S.gguf'; p = Join-Path $cand 'qwen38gsq/mmproj-Qwen3.8-27B-BF16.gguf'; alias = 'edumaster-qwen3.8-27b-gsq'; extra = @('--fit', 'off', '-ngl', '99', '-ctk', 'q8_0', '-ctv', 'q8_0') + $qwenImage }
+  # 95.7/100 on the 2026 수능 math paper (arXiv 2511.18649) at 3.6B active; 12.1 GB, wholly on the GPU. No image
+  # projector: analysis runs on another model.
+  gptoss20 = @{ m = Join-Path $cand 'gptoss/gpt-oss-20b-MXFP4.gguf'; p = $null; alias = 'edumaster-gpt-oss-20b'; extra = @('--fit', 'off', '-ngl', '99') }
   ornith   = @{ m = Join-Path $cand 'ornith/Ornith-1.5-35B-Q4_K_M.gguf'; p = Join-Path $cand 'ornith/mmproj-Ornith-1.5-35B-BF16.gguf'; alias = 'edumaster-ornith-1.5-35b-a3b'; extra = @('--fit', 'on', '--fit-target', '3072') + $qwenImage }
   gemma26  = @{ m = Join-Path $cand 'gemma-4-26B_q4_0-it.gguf'; p = Join-Path $cand 'gemma-4-26B-it-mmproj.gguf'; alias = 'edumaster-gemma-4-26b-a4b'; extra = @('--fit', 'on', '--fit-target', '3072', '--image-min-tokens', '1120', '--image-max-tokens', '1120') }
   gemma12  = @{ m = 'D:\work\dev\blog\windows\.models\gemma-4-12b-it-qat-q4_0.gguf'; p = Join-Path $workspace 'tools/models/gemma-vision/mmproj-gemma-4-12B-it-BF16.gguf'; alias = 'edumaster-gemma-4-12b-vision'; extra = @('-ngl', '99', '--image-min-tokens', '1120', '--image-max-tokens', '1120') }
 }
 $c = $models[$Name]
-foreach ($f in @($server, $c.m, $c.p)) { if (-not (Test-Path -LiteralPath $f)) { throw "없는 파일: $f" } }
+foreach ($f in @($server, $c.m, $c.p) | Where-Object { $_ }) { if (-not (Test-Path -LiteralPath $f)) { throw "없는 파일: $f" } }
 # The watcher (start-web.ps1) takes the same lock, so it cannot start its own model in the moment
 # between stopping the old one and starting this one. Re-entrant when the watcher itself calls this script.
 $mutex = [Threading.Mutex]::new($false, 'Local\EduMasterGemmaVisionStarter')
@@ -41,7 +45,7 @@ try {
   if ($listener) { Stop-Process -Id $listener.OwningProcess -Force; Start-Sleep -Seconds 2 }
   # -ub 2048: image prefill is non-causal and must fit one ubatch. --no-warmup: the multimodal warmup slowed
   # text generation ~10x in this llama.cpp build.
-  $arguments = @('-m', $c.m, '--mmproj', $c.p, '--host', '127.0.0.1', '--port', '8092', '--alias', $c.alias, '-c', "$Ctx", '-fa', 'on', '-np', '1',
+  $arguments = @('-m', $c.m) + $(if ($c.p) { @('--mmproj', $c.p) } else { @() }) + @('--host', '127.0.0.1', '--port', '8092', '--alias', $c.alias, '-c', "$Ctx", '-fa', 'on', '-np', '1',
     '-b', '2048', '-ub', '2048', '--no-warmup', '--jinja', '--reasoning', 'auto', '--reasoning-budget', '-1') + $c.extra
   $p = Start-Process $server -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $logs "local-$Name.log") -RedirectStandardOutput (Join-Path $logs "local-$Name-out.log")
   $p.Id | Set-Content (Join-Path $logs 'local-model-pid.txt')
