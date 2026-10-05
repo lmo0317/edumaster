@@ -153,3 +153,27 @@ test('a value both printed-only re-reads keep is a printed condition, not a leak
   assert.equal(r.checks.find((c) => c.id === 'derived-value-in-problem').state, 'pass');
   assert.ok(!r.uncertainties.some((u) => u.includes('1cm/ms')), r.uncertainties.join(' | '));
 });
+
+// Qwen 3.6, 2026-10-05: the first read had 몰질량 right, both question rereads read 물질량, and the harness "fixed"
+// the question and every STEP into the error — though the teacher had once corrected 물질량 → 몰질량 and the step
+// headings, read separately, said 몰질량. A reread may not undo a teacher's correction or contradict the headings.
+test('two agreeing rereads do not turn a word back into what a teacher corrected', async () => {
+  const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-an-')));
+  store.corrections.put({ id: 'a1b2c3d4e5f60718', wrong: '물질량', right: '몰질량', count: 1, lastAt: '2026-09-30T00:00:00Z' });
+  const img = store.files.saveDataUrl('data:image/png;base64,' + Buffer.alloc(300, 1).toString('base64'));
+  const material = { id: 'm1', note: '', images: { problem: img.id, solution: img.id, sameImage: false, views: { problem: [], solution: [] } } };
+  const right = JSON.parse(JSON.stringify(ANALYSIS).replace(/의 질량/g, '의 몰질량').replace(/물질량/g, '몰질량'));
+  const answers = {
+    [prompts.ANALYZE_SYSTEM]: () => right,
+    [prompts.PROOFREAD_SYSTEM]: () => ({ fixes: [], solutionStepCount: 3 }),
+    [prompts.REREAD_QUESTION_SYSTEM]: () => ({ question: QUESTION.replace(/몰질량/g, '물질량') }),
+    [prompts.REREAD_HEADINGS_SYSTEM]: () => JSON.parse(JSON.stringify(HEADINGS).replace(/물질량/g, '몰질량')),
+    [prompts.REGROUP_SYSTEM]: () => ({ groups: [{ steps: [1] }, { steps: [2] }, { steps: [3, 4] }] }),
+  };
+  const ctx = { store, job: { id: 'j' }, budget: new Budget({ maxCalls: 12, maxTokens: 1e6 }), log() {},
+    llm: { json: async ({ system }) => ({ data: JSON.parse(JSON.stringify((answers[system] || (() => ({})))())) }) } };
+  const r = await analyzeMaterial(ctx, material);
+  assert.ok(!r.problem.text.includes('물질량'), r.problem.text);
+  assert.ok(!r.steps.some((s) => (s.title + s.work).includes('물질량')), 'the solution keeps 몰질량');
+  assert.ok(r.proofread.some((p) => p.includes('어긋나')), 'the refused change is recorded');
+});

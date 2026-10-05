@@ -215,6 +215,7 @@ async function analyzeMaterial(ctx, material) {
   const corrections = store?.corrections?.all() || [];
   ctx.readingHint = readingHint(corrections);
   ctx.readingPairs = readingPairs(corrections);
+  ctx.readingCorrections = corrections;
   const withHint = (text) => hinted(ctx, text);
   // Prefer the browser-made reading views (upscaled, tiled with overlap) over a small original.
   const { images: src } = material;
@@ -348,7 +349,18 @@ async function focusedReread(ctx, result, byRole, hasSolution) {
   const qIndex = lines.map((l, i) => [i, harness.hangulFixes(l, a, b, ctx.readingPairs).length || 0, (harness.plain(l).match(/[가-힣]+/g) || []).length]).filter(([, , n]) => n > 0);
   const target = qIndex.map(([i]) => i).reverse().find((i) => /[?？]|은\?|는\?|것은|인가/.test(lines[i])) ?? qIndex.map(([i]) => i).pop();
   if (target === undefined) return;
-  const fixes = harness.hangulFixes(lines[target], a, b, ctx.readingPairs);
+  // Two agreeing rereads are not enough to undo what is known to be right (2026-10-05: the first read had 몰질량,
+  // both question rereads read 물질량, and the question and every STEP were "fixed" into the error): a change back
+  // to the wrong side of a teacher's correction is the same slip again, and a word the separately read solution
+  // headings show as the first read had it, against its confusable partner, stays.
+  const corrections = ctx.readingCorrections || [];
+  const reverts = (w, r) => corrections.some((c) => w.includes(c.right) && r === w.replace(c.right, c.wrong));
+  const headingWords = headingReads.flat().join(' ');
+  const contradicted = (w, r) => (ctx.readingPairs || []).some((p) => p.some((x) => w.startsWith(x) && p.some((y) => y !== x && r.startsWith(y) && headingWords.includes(x) && !headingWords.includes(y))));
+  const all = harness.hangulFixes(lines[target], a, b, ctx.readingPairs);
+  const kept = all.filter(([w, r]) => reverts(w, r) || contradicted(w, r));
+  if (kept.length) result.proofread.push(...kept.map(([w, r]) => `발문 재판독은 "${w}"를 "${r}"로 읽었지만 교사 교정·해설 단계 제목과 어긋나 "${w}"로 둠`));
+  const fixes = all.filter((f) => !kept.includes(f));
   if (!fixes.length) return;
   lines[target] = harness.applyWordFixes(lines[target], fixes);
   result.problem.text = lines.join('\n');
