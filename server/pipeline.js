@@ -477,6 +477,16 @@ async function sourceChecks(material) {
   } else {
     checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: 'unknown', evidence: '분석 결과에 검산 프로그램이 없습니다.' });
   }
+  // A ㄱㄴㄷ problem whose solution judges each statement (|보기 분석|): the transcription must keep those judgments in
+  // the last STEP, or every variant solution is compared with a teacher solution that has none (2026-10-05: Qwen's
+  // C38 analysis dropped them; the writer then added judgments and the reviewer called them extra).
+  const markers = [...new Set([...material.problem.text.matchAll(/(?:^|\n)\s*([ㄱ-ㄹ])\s*\./g)].map((m) => m[1]))];
+  if (markers.length >= 2) {
+    const judged = Object.keys(harness.judgments((material.steps || []).map((s) => s.work).join('\n')));
+    const missing = markers.filter((k) => !judged.includes(k));
+    checks.push({ id: 'source-choice-analysis', label: '해설의 보기 분석', state: missing.length ? 'fail' : 'pass',
+      evidence: missing.length ? `해설 STEP에 보기 ${missing.join(', ')}의 판정(○/×)이 없습니다. 해설에 보기 분석이 있다면 마지막 STEP 끝에 옮겨 적어야 변형 해설도 같은 형식으로 씁니다.` : '' });
+  }
   const leaks = derivedLeaks(material, material.problem.text).map((l) => `STEP ${l.step}에서 구하는 ${l.token}`);
   checks.push({ id: 'derived-value-in-problem', label: '해설에서 구하는 값이 문제에 없음', state: leaks.length ? 'fail' : 'pass',
     evidence: leaks.length ? `${[...new Set(leaks)].join(', ')}이(가) 문제 본문에 있습니다. 필기를 조건으로 옮긴 것일 수 있습니다.` : '' });
@@ -1045,6 +1055,7 @@ const SYSTEM_CHECKS = {
     { label: '발문 재판독 (2회)', how: '발문만 따로 두 번 읽어, 두 번 일치한 글자로 첫 판독을 고친다. 알려진·교사가 고친 혼동 단어는 해설까지 함께 고친다.', onFail: 'fix' },
     { label: '해설 단계 제목 재판독 (2회)', how: '해설에 인쇄된 step 제목을 두 번 읽어 STEP 수와 제목을 정한다.', onFail: 'fix' },
     { label: 'STEP 수 맞추기', how: '정리한 STEP이 해설의 단계 수보다 많으면 이웃한 STEP을 합친다 (선생님이 STEP 수를 정했으면 그대로 둔다).', onFail: 'fix' },
+    { label: '해설의 보기 분석', how: 'ㄱㄴㄷ 문제인데 옮겨 적은 해설에 보기마다의 판정(○/×)이 없으면 알린다. 선생님 해설의 보기 분석은 마지막 STEP 끝에 옮겨야 한다.', onFail: 'fix' },
     { label: '원본 정답 검산', how: '원본을 해설대로 계산하는 프로그램을 정확한 분수로 실행해 옮겨 적은 수치와 정답이 맞는지 본다. 프로그램이 실행되지 않으면 오류를 보여 주고 한 번 고치게 한다.', onFail: 'fix' },
   ],
   generation: [

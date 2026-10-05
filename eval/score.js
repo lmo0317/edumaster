@@ -1,4 +1,5 @@
 'use strict';
+const { isPremise } = require('../server/pipeline');
 // Scores one analysis (and optionally one generation set) against a case's expectations.
 // Every check returns { name, pass, detail } so reports can show exactly what failed.
 const { grams, overlap } = require('../server/learning');
@@ -57,7 +58,7 @@ function scoreGeneration(job) {
     // Teacher feedback, measured one by one: unused conditions, STEP range, the teacher's method, the rules.
     // Code checks count toward the item they are about (see server/harness.js ids).
     const failed = (ids) => (v.harness || []).filter((c) => c.state === 'fail' && ids.includes(c.id));
-    const unused = [...(v.blind?.conditions || []).filter((c) => !c.used).map((c) => c.text), ...failed(['source-equation', 'unused-coefficient']).map((c) => c.evidence)];
+    const unused = [...(v.blind?.conditions || []).filter((c) => !c.used && !isPremise(c.text)).map((c) => c.text), ...failed(['source-equation', 'unused-coefficient']).map((c) => c.evidence)];
     out.push(check(`${label}: 모든 조건이 풀이에 쓰임`, !unused.length, unused.join('; ')));
     const skipped = failed(['source-assumption-needed', 'stage-clue-leak']).map((c) => c.evidence);
     out.push(check(`${label}: 목표 STEP 범위로 풀림`, v.coverage?.status === 'pass' && !skipped.length, [...(v.coverage?.notes || []), ...skipped].join('; ')));

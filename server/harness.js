@@ -413,4 +413,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { assumedCase, checkDirection, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { judgments, assumedCase, checkDirection, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
