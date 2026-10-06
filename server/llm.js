@@ -634,11 +634,13 @@ function pcModelKey(id) {
 
 /**
  * Claude 혼합: within one Claude subscription, the calls that need judgment stay on the chosen model (Opus) and the
- * others go to cheaper ones — the subscription's limit fills by list price (Sonnet ½, Haiku ¼ of Opus).
+ * others go to Sonnet — the subscription's limit fills by list price (Sonnet ½ of Opus; ≈$5 list per 1% of the
+ * weekly limit, measured 2026-10-06). Measured on D76 and E37: the same or better harness scores for ~40% less.
  */
 const CLAUDE_MIX = {
   'review-solution': 'claude-sonnet-5-5', 'write-solution': 'claude-sonnet-5-5', solve: 'claude-sonnet-5-5', learn: 'claude-sonnet-5-5', proofread: 'claude-sonnet-5-5',
-  'reread-question': 'claude-haiku-4-5-20251001', 'reread-headings': 'claude-haiku-4-5-20251001', 'reread-problem': 'claude-haiku-4-5-20251001',
+  // The focused rereads stay on the chosen model: they decide the STEP count, and two agreeing Haiku rereads merged
+  // C32's three STEPs into one (2026-10-06) while saving ~$0.1 of a $14 run.
 };
 
 module.exports = { CLAUDE_MIX, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

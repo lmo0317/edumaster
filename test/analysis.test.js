@@ -177,3 +177,23 @@ test('two agreeing rereads do not turn a word back into what a teacher corrected
   assert.ok(!r.steps.some((s) => (s.title + s.work).includes('물질량')), 'the solution keeps 몰질량');
   assert.ok(r.proofread.some((p) => p.includes('어긋나')), 'the refused change is recorded');
 });
+
+// C32 with Haiku rereads (2026-10-06): both heading rereads read one garbled heading, and the three STEPs the first
+// read had were merged into one. Headings that are not in the transcribed solution cannot change the STEP count.
+test('agreeing heading rereads that are not in the solution do not change the STEP count', async () => {
+  const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-an-')));
+  const img = store.files.saveDataUrl('data:image/png;base64,' + Buffer.alloc(300, 1).toString('base64'));
+  const material = { id: 'm1', note: '', images: { problem: img.id, solution: img.id, sameImage: false, views: { problem: [], solution: [] } } };
+  const three = { ...ANALYSIS, steps: ANALYSIS.steps.slice(0, 3) };
+  const answers = {
+    [prompts.ANALYZE_SYSTEM]: () => three,
+    [prompts.PROOFREAD_SYSTEM]: () => ({ fixes: [] }),
+    [prompts.REREAD_QUESTION_SYSTEM]: () => ({ question: QUESTION }),
+    [prompts.REREAD_HEADINGS_SYSTEM]: () => ({ steps: [{ marker: 'step1', title: '기체 (가)의 분자량 전체 적산 수(상대질량) 구한다' }] }),
+  };
+  const ctx = { store, job: { id: 'j' }, budget: new Budget({ maxCalls: 12, maxTokens: 1e6 }), log() {},
+    llm: { json: async ({ system }) => ({ data: JSON.parse(JSON.stringify((answers[system] || (() => ({})))())) }) } };
+  const r = await analyzeMaterial(ctx, material);
+  assert.equal(r.steps.length, 3, 'the three STEPs stay');
+  assert.ok(r.uncertainties.some((u) => u.includes('맞지 않아 쓰지 않았습니다')), 'the refused reread is recorded');
+});

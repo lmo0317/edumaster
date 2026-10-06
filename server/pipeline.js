@@ -1,7 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule } = require('./learning');
+const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, grams, overlap } = require('./learning');
 const harness = require('./harness');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
@@ -336,10 +336,19 @@ async function focusedReread(ctx, result, byRole, hasSolution) {
     ? (await read('reread-headings', prompts.REREAD_HEADINGS_SYSTEM, hinted(ctx, '단계 제목만 JSON으로 반환하라.'), byRole.solution)).map((d) => arr(d.steps).filter((s) => s?.marker || s?.title).map(cleanHeading).filter(Boolean))
     : [];
   result.rereads = { questions, headings: headingReads };
-  if (hasSolution && headingReads.length === 2 && headingReads[0].length && headingReads[0].length === headingReads[1].length) {
+  // Two rereads that agree on the number of headings are trusted over the first read — unless the headings they read
+  // are not in the solution the first read transcribed (2026-10-06: two Haiku rereads both read one garbled heading,
+  // "기체 (가)의 분자량 전체 적산 수(상대질량) 구한다", and C32's three STEPs were merged into one). A changed count
+  // must come with headings that are recognisably the solution's own.
+  const transcript = grams(result.steps.map((s) => `${s.title} ${s.work}`).join(' '));
+  const recognised = (h) => overlap(grams(h), transcript) >= 0.5;
+  const sameCount = headingReads.length === 2 && headingReads[0].length && headingReads[0].length === headingReads[1].length;
+  const trusted = sameCount && (headingReads[0].length === result.steps.length || headingReads[0].every(recognised));
+  if (sameCount && !trusted) result.uncertainties.push(`해설 단계 제목 재판독(${headingReads[0].length}개)이 옮겨 적은 해설과 맞지 않아 쓰지 않았습니다: ${headingReads[0].join(' / ').slice(0, 200)}`);
+  if (hasSolution && trusted) {
     result.stepHeadings = headingReads[0];
     result.solutionStepCount = headingReads[0].length;
-  } else if (hasSolution) {
+  } else if (hasSolution && !sameCount) {
     result.uncertainties.push('해설 단계 제목 재판독 두 번의 결과가 달라 STEP 수를 교차 확인하지 못했습니다.');
   }
   if (questions.length < 2) { result.uncertainties.push('발문 재판독을 끝내지 못해 교차 확인을 건너뛰었습니다.'); return; }
