@@ -74,7 +74,7 @@ function timeSummary(timings) {
     analysis: avg(timings.map((t) => t.analysis)),
     generation: avg(timings.map((t) => t.generation)),
     perProblem: avg(items.map((i) => i.minutes)),
-    stages: { s1: stage(/^STEP 1 연습/), s12: stage(/누적/), final: stage(/최종/) },
+    stages: { s1: stage(/^STEP 1 연습/), s12: stage(/누적|^STEP 1~2 연습/), final: stage(/최종/) },
     repairs: avg(items.map((i) => i.repairs)),
   };
 }

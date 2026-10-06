@@ -19,10 +19,10 @@ const caseDir = path.join(__dirname, 'cases', args.case);
 const spec = JSON.parse(fs.readFileSync(path.join(caseDir, 'case.json'), 'utf8'));
 const dataUrl = (file) => `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,` + fs.readFileSync(file).toString('base64');
 const { pcModelKey } = require('../server/llm');
-const LABEL = { deepseek: 'DeepSeek V4 Flash', relay: 'Claude Opus 5.5', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
-const ORDER = ['relay', 'deepseek', 'qwen36', 'gemma12'];
+const LABEL = { 'claude-cli': 'Claude Opus 5.5 (구독)', 'claude-mix': 'Claude 혼합 (Opus+Sonnet)', deepseek: 'DeepSeek V4 Flash', relay: 'Claude Opus 5.5 (9/30 중계)', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
+const ORDER = ['claude-cli', 'claude-mix', 'relay', 'deepseek', 'qwen36', 'gemma12'];
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
-const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider);
+const keyOf = (provider, model, claudeMix) => (provider === 'gemma' ? pcModelKey(model) : provider === 'claude-cli' && claudeMix ? 'claude-mix' : provider);
 
 // Harness scores of each model on this case, from the newest full report that has them.
 const scores = {};
@@ -30,9 +30,9 @@ const reportsDir = path.join(__dirname, 'reports');
 for (const f of fs.readdirSync(reportsDir).filter((x) => x.endsWith('.json')).sort().reverse()) {
   const raw = JSON.parse(fs.readFileSync(path.join(reportsDir, f), 'utf8'));
   for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || scores[keyOf(r.provider, r.model)]) continue;
+    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || scores[keyOf(r.provider, r.model, r.claudeMix)]) continue;
     const t = (list) => ({ pass: (list || []).filter((c) => c.pass).length, total: (list || []).length });
-    scores[keyOf(r.provider, r.model)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
+    scores[keyOf(r.provider, r.model, r.claudeMix)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
   }
 }
 
@@ -42,7 +42,7 @@ for (const f of fs.readdirSync(jobsDir)) {
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, f), 'utf8'));
   if (job.type !== 'generate' || !String(job.title).includes(args.title || `${args.case} · `)) continue;
   const provider = job.options?.provider || 'deepseek';
-  const key = KEYS[job.id] || keyOf(provider, '');
+  const key = KEYS[job.id] || keyOf(provider, '', job.options?.claudeMix);
   const m = job.material;
   models.push({
     key, provider, label: LABEL[key] || key, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${key}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,

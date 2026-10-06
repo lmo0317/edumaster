@@ -7,6 +7,13 @@ const PRICES = {
   deepseek: { input: 0.15, cached: 0.003, output: 0.6 },
   claude: { input: 4, cached: 0.2, output: 20 },
 };
+// Claude models by id (the subscription, 'claude-cli', records the model each call used).
+const CLAUDE_PRICES = {
+  'claude-opus-5-5': { input: 4, cached: 0.2, output: 20 },
+  'claude-sonnet-5-5': { input: 2, cached: 0.2, output: 10 },
+  'claude-haiku-4-5-20251001': { input: 1, cached: 0.1, output: 5 },
+  'claude-fable-5-1': { input: 10, cached: 1, output: 50 },
+};
 
 // DeepSeek peak: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday (Chinese public holidays not counted here).
 function deepseekPeak(at) {
@@ -18,7 +25,7 @@ function deepseekPeak(at) {
 
 /** USD for one ledger record; null for providers without a price (local model, relay). */
 function callCost(r) {
-  const p = PRICES[r.provider];
+  const p = r.provider === 'claude-cli' ? CLAUDE_PRICES[r.model] || PRICES.claude : PRICES[r.provider];
   if (!p) return null;
   const factor = r.provider === 'deepseek' && deepseekPeak(r.createdAt) ? 2 : 1;
   const cached = r.cached || 0;
@@ -41,4 +48,4 @@ function runCost(records, jobIds) {
   return { usd: +usd.toFixed(3), byProvider };
 }
 
-module.exports = { PRICES, deepseekPeak, callCost, runCost };
+module.exports = { PRICES, CLAUDE_PRICES, deepseekPeak, callCost, runCost };

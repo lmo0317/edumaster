@@ -660,12 +660,28 @@ function createApp(options = {}) {
     const problem = avg(perCase);
     const analysis = avg(analyses);
     const both = (u) => (u ? { deepseek: price(u, 'deepseek'), opus: price(u, 'opus') } : null);
+    // Claude through the subscription, alone and mixed: what their own runs cost, call by call at each model's list
+    // price (eval reports keep it per run), per problem made and per analysis.
+    const claude = {};
+    if (fs.existsSync(dir)) {
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+        for (const r of Array.isArray(raw) ? raw : raw.results || []) {
+          if (r.provider !== 'claude-cli' || (onlyCase && r.case !== onlyCase) || !r.cost || r.designWith || r.analyzeWith) continue;
+          const made = (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length;
+          if (!made) continue;
+          const k = r.claudeMix ? 'claudemix' : 'claude';
+          (claude[k] = claude[k] || []).push(r.cost.usd / made);
+        }
+      }
+    }
+    const claudeAvg = Object.fromEntries(Object.entries(claude).map(([k, v]) => [k, v.reduce((a, x) => a + x, 0) / v.length]));
     return {
       pricing: cfg.pricing,
       basis: { problems: perCase.length, analyses: analyses.length },
-      perProblem: both(problem),
+      perProblem: problem || Object.keys(claudeAvg).length ? { ...(both(problem) || {}), ...claudeAvg } : null,
       perProblemRange: perCase.length ? { deepseek: [Math.min(...perCase.map((u) => price(u, 'deepseek'))), Math.max(...perCase.map((u) => price(u, 'deepseek')))], opus: [Math.min(...perCase.map((u) => price(u, 'opus'))), Math.max(...perCase.map((u) => price(u, 'opus')))] } : null,
-      perAnalysis: both(analysis),
+      perAnalysis: { ...(both(analysis) || {}), ...Object.fromEntries(Object.keys(claudeAvg).map((k) => [k, 0])) },
       tokens: { problem, analysis },
     };
   }
@@ -685,7 +701,7 @@ function createApp(options = {}) {
           if (!(r.generation || []).length) continue; // stopped before making anything
           // A mixed run (another model designed, analyzed or repaired) is not this model's own result.
           if (r.designWith || r.analyzeWith || r.repairWith) continue;
-          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
+          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider === 'claude-cli' && r.claudeMix ? 'claude-mix' : r.provider;
           if (only && !only.includes(key)) continue;
           (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
         }
@@ -722,14 +738,14 @@ function createApp(options = {}) {
     }
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
-  const COMPARED = ['relay', 'deepseek', 'qwen36', 'gemma12'];
+  const COMPARED = ['claude-cli', 'claude-mix', 'relay', 'deepseek', 'qwen36', 'gemma12'];
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
-  const PDF_NAME = { relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
+  const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5_subscription', 'claude-mix': 'Claude_mix', relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
   function comparePdf(res, id, key) {
     const file = path.join(compareDir, id, `${key}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
@@ -763,7 +779,7 @@ function createApp(options = {}) {
     }
     return bundle;
   }
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|claude-mix|relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
@@ -773,7 +789,7 @@ function createApp(options = {}) {
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     return bundle;
   }, { open: true });
-  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|claude-mix|relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });
