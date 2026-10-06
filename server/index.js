@@ -341,7 +341,7 @@ function createApp(options = {}) {
         views: { problem: views(body.problemViews), solution: solution ? views(body.solutionViews) : [] },
       },
     });
-    const job = jobs.analyze(material, provider);
+    const job = jobs.analyze(material, provider, { claudeMix: body.claudeMix === true });
     return { material: materialSummary(material), jobId: job.id };
   });
   route('GET', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
@@ -457,7 +457,7 @@ function createApp(options = {}) {
     const feedback = String(body.feedback || '').trim().slice(0, 1000);
     if (feedback) store.rules.put(makeRule({ text: feedback, scope: 'material', stage: 'analysis', source: { materialId: m.id, label: m.title, from: body.from === 'check' ? 'check' : 'input' } }));
     store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
-    return { jobId: jobs.analyze(m, provider).id };
+    return { jobId: jobs.analyze(m, provider, { claudeMix: body.claudeMix === true }).id };
   });
   // Merges extra STEPs to match the teacher's step markers (for materials analyzed before auto-merge).
   route('POST', /^\/api\/materials\/([a-f0-9]+)\/align-steps$/, async (req, res, [id]) => {
@@ -499,7 +499,7 @@ function createApp(options = {}) {
     const { images, ...snapshot } = material;
     // 가정 방향: keep or flip which case STEP 1 assumes and rules out (only for an original whose STEP 1 does that).
     const direction = ['same', 'flip'].includes(body.direction) && harness.assumedCase(material.steps[0]?.work) ? body.direction : undefined;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length } });
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, ...(body.claudeMix === true ? { claudeMix: true } : {}), perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {

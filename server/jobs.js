@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits, PER_CALL_FREE } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits, PER_CALL_FREE, CLAUDE_MIX } = require('./llm');
 const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
@@ -37,6 +37,7 @@ function createJobs({ store, llm, config }) {
       routes: {
         ...(job.options?.designWith ? { generate: job.options.designWith, 'repair-lean': job.options.designWith, adjudicate: job.options.designWith } : {}),
         ...(job.options?.repairWith ? { repair: job.options.repairWith } : {}),
+        ...(job.options?.claudeMix && provider === 'claude-cli' ? Object.fromEntries(Object.entries(CLAUDE_MIX).map(([p, m]) => [p, `claude-cli:${m}`])) : {}),
       },
       // Lean mixed run: the designer writes only an outline; this job's model writes the solution (see pipeline).
       lean: Boolean(job.options?.lean && job.options?.designWith),
@@ -180,7 +181,7 @@ function createJobs({ store, llm, config }) {
   }
 
   return {
-    analyze(material, provider = 'deepseek') { return create('analyze', { materialId: material.id, title: material.title, options: { provider } }, 'analyze'); },
+    analyze(material, provider = 'deepseek', extra = {}) { return create('analyze', { materialId: material.id, title: material.title, options: { provider, ...(extra.claudeMix ? { claudeMix: true } : {}) } }, 'analyze'); },
     generate({ material, items, rules, options }) {
       return create('generate', { materialId: material.id, title: material.title, material, items, rules, options }, 'generate');
     },

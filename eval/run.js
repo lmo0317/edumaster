@@ -25,7 +25,8 @@ const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
 const { runCost } = require('../server/cost');
 // Mixed runs: --analyze-with <p> reads the scans with another model, --design-with <p> writes the problems and their
 // repairs, --repair-with <p> only the repairs; the --providers model does the rest (independent solve, review, checks).
-const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'], lean: args.lean === 'true' || undefined };
+// --claude-mix: within the Claude subscription, judgment on the chosen model and the rest on Sonnet/Haiku (llm.CLAUDE_MIX).
+const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'], lean: args.lean === 'true' || undefined, claudeMix: args['claude-mix'] === 'true' || undefined };
 for (const k of Object.keys(mixed)) if (!mixed[k]) delete mixed[k];
 const mixedName = Object.entries(mixed).map(([k, v]) => (v === true ? `-${k}` : `-${k.replace('With', '')}-${v}`)).join('');
 const learning = {};
@@ -99,7 +100,7 @@ async function main() {
       process.stdout.write(`\n[${name} · ${provider}] 분석 중…`);
       try {
         const created = await call('POST', '/api/materials', {
-          title: `[평가] ${name} · ${provider}`, provider: mixed.analyzeWith || provider, sameImage: Boolean(spec.sameImage),
+          title: `[평가] ${name} · ${provider}`, provider: mixed.analyzeWith || provider, claudeMix: mixed.claudeMix, sameImage: Boolean(spec.sameImage),
           problemImage: dataUrl(problem), solutionImage: solution && !spec.sameImage ? dataUrl(solution) : null,
           problemViews: views(problem), solutionViews: solution && !spec.sameImage ? views(solution) : [],
         });
@@ -111,7 +112,7 @@ async function main() {
         row.read = { steps: (material.steps || []).map((s) => s.title), question: (material.problem?.text || '').split('\n').filter((l) => l.trim()).pop(), proofread: material.proofread || [] };
         if (stage === 'full' && material.status === 'ready') {
           process.stdout.write(' 생성 중…');
-          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider, designWith: mixed.designWith, repairWith: mixed.repairWith, lean: mixed.lean });
+          const gen = await call('POST', '/api/generations', { materialId: material.id, mode, provider, designWith: mixed.designWith, repairWith: mixed.repairWith, lean: mixed.lean, claudeMix: mixed.claudeMix });
           const job = await wait(gen.jobId);
           row.generationUsage = job.usage;
           row.generation = scoreGeneration(job);
