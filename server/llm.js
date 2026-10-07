@@ -366,6 +366,9 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     };
     if (thinking) {
       payload.thinking_budget_tokens = Math.min(config.gemma.thinkingBudget?.[effort] || config.gemma.thinkingBudget?.low || 3072, Math.floor(maxOut / 2));
+      // Strata (the 125B MoE on the PC) reads its own name for the budget: without it Qwen 3.8-Flash-Next thought
+      // through all 24,576 output tokens and every design came back empty (2026-10-07).
+      payload.reasoning_budget_tokens = payload.thinking_budget_tokens;
       payload.reasoning_budget_message = '\n\n생각할 시간이 끝났다. 지금까지 정한 내용으로 바로 JSON 답을 쓴다.\n';
     }
     const { response, raw, envelope } = await postStream(config.gemma.endpoint + '/chat/completions', payload, config.gemma.timeoutMs, signal, 'Gemma 응답 시간이 초과되었습니다.');
@@ -607,6 +610,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
 function pcModelLabel(id) {
   const s = String(id || '').toLowerCase();
   if (/gpt-oss/.test(s)) return 'gpt-oss-20B (PC)';
+  // Strata (github.com/Niko1221/Strata) serves the 125B MoE as "qwen3.8-flash-next…": not the 27B.
+  if (/flash-next/.test(s)) return 'Qwen 3.8-Flash-Next 125B (PC)';
   if (/qwen3\.8.*gsq/.test(s)) return 'Qwen 3.8-27B GSQ (PC)';
   if (/qwen3\.8/.test(s)) return 'Qwen 3.8-27B (PC)';
   if (/ornith/.test(s)) return 'Ornith 1.5-35B (PC)';
@@ -624,6 +629,7 @@ function pcModelKey(id) {
   if (/gemma-4-26b/.test(s)) return 'gemma26';
   if (/qwen3\.6/.test(s)) return 'qwen36';
   if (/gpt-oss/.test(s)) return 'gptoss20';
+  if (/flash-next/.test(s)) return 'qwen38flash';
   if (/qwen3\.8.*gsq/.test(s)) return 'qwen38gsq';
   if (/qwen3\.8/.test(s)) return 'qwen38';
   if (/ornith/.test(s)) return 'ornith';
