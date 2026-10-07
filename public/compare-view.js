@@ -5,28 +5,26 @@
 
   // One comparison of the models: a problem-level quality score with its 95% range, the items behind it, what one
   // problem costs, how long a set takes and when each can be used.
-  function overviewHtml(sys, { selectable = false, balance = false } = {}) {
-    const c = sys.cost; const cmp = sys.compare;
-    const krw = (usd) => `${(Math.round((usd * c.pricing.krwPerUsd) / 10) * 10).toLocaleString()}원`;
+  function overviewHtml(sys, { balance = false } = {}) {
+    const P = sys.pricing; const cmp = sys.compare;
+    const krw = (usd) => `${(Math.round((usd * P.krwPerUsd) / 10) * 10).toLocaleString()}원`;
     const pct = (s) => (s && s.total ? Math.round((s.pass / s.total) * 100) : null);
     const MODELS = [
-      { id: 'claude-cli', name: 'Claude Opus 5.5 (구독)', price: 'claude', use: '선생님 Claude 구독으로 (한도 안에서 추가 비용 없음)' },
-      { id: 'claude-mix', name: 'Claude 혼합 (Opus+Sonnet)', price: 'claudemix', use: 'Claude 구독으로, 설계·수정은 Opus, 검토·풀이는 Sonnet' },
-      { id: 'relay', name: 'Claude Opus 5.5 (9/30 중계)', price: 'opus', use: '이전 시스템으로 한 평가 (세션 중계)' },
-      { id: 'deepseek', name: 'DeepSeek V4 Flash', price: 'deepseek', use: '언제든 사용 (인터넷)' },
-      { id: 'qwen36', name: 'Qwen 3.6-35B (PC)', price: null, use: '선생님 PC가 켜져 있을 때만 (지금 쓰는 PC 모델)' },
-      { id: 'gemma12', name: 'Gemma 4 12B (PC)', price: null, use: '선생님 PC가 켜져 있을 때만 (이전 PC 모델)' },
+      { id: 'claude-cli', name: 'Claude Opus 5.5', claude: true, use: '선생님 Claude 구독으로 (추가 비용 없이 주간 한도 안에서)' },
+      { id: 'deepseek', name: 'DeepSeek V4 Flash', use: '언제든 사용 (인터넷, 쓴 만큼 유료)' },
+      { id: 'qwen36', name: 'Qwen 3.6-35B (PC)', free: true, use: '선생님 PC가 켜져 있을 때만 (지금 쓰는 PC 모델)' },
+      { id: 'gemma12', name: 'Gemma 4 12B (PC)', free: true, use: '선생님 PC가 켜져 있을 때만 (이전 PC 모델)' },
     ].filter((m) => cmp.models[m.id]);
     if (!MODELS.length) return '<p class="muted small">아직 평가 결과가 없습니다. 평가를 돌리면 모델별 비교가 표시됩니다.</p>';
     const quality = (m) => cmp.models[m.id].score ?? 0;
     const best = Math.max(...MODELS.map(quality));
-    const paid = MODELS.filter((m) => m.price && c.perProblem && c.perProblem[m.price] != null && !['claude', 'claudemix'].includes(m.price));
-    const cheapest = paid.length ? paid.reduce((a, m) => (c.perProblem[m.price] < c.perProblem[a.price] ? m : a)) : null;
-    const tag = (m) => [quality(m) === best ? '<span class="chip ok">문제 품질 1위</span>' : '', m === cheapest ? '<span class="chip run">저렴한 유료</span>' : '', !m.price ? '<span class="chip ok">무료</span>' : ''].join(' ');
-    const range = (r) => `약 ${krw(r[0])} ~ ${krw(r[1])}`;
-    // The subscription's models cost nothing extra: their list price is shown as the share of the weekly limit (≈$5 per 1%).
-    const limitShare = (usd) => `주간 한도 약 ${(usd / 5).toFixed(1)}% (정가 ${krw(usd)})`;
-    const costOf = (m) => (!m.price ? '0원' : (m.price === 'claude' || m.price === 'claudemix') ? (c.perProblem?.[m.price] != null ? limitShare(c.perProblem[m.price]) : '-') : m.price === 'opus' && c.opusRange ? range(c.opusRange.problem) : c.perProblem ? `약 ${krw(c.perProblem[m.price])}` : '-');
+    const tag = (m) => [quality(m) === best ? '<span class="chip ok">문제 품질 1위</span>' : '', m.free ? '<span class="chip ok">무료</span>' : m.claude ? '<span class="chip run">구독</span>' : '<span class="chip run">유료</span>'].join(' ');
+    // Every model measured the same way: the tokens its own runs used and their list price. The subscription costs
+    // nothing extra, so its list price is shown as the share of the weekly limit it fills.
+    const tokens = (n) => (n == null ? '-' : n >= 1e4 ? `약 ${Math.round(n / 1e4)}만 토큰` : `약 ${Math.round(n).toLocaleString()} 토큰`);
+    const money = (m, usd) => (m.free ? '0원' : usd == null ? '-' : m.claude ? `주간 한도 약 ${(usd / P.usdPerWeeklyPercent).toFixed(1)}%` : `약 ${krw(usd)}`);
+    const moneyNote = (m, usd, range) => (m.claude && usd != null ? `정가로는 ${krw(usd)}` : !m.free && range && krw(range[0]) !== krw(range[1]) ? `${krw(range[0])} ~ ${krw(range[1])}` : '');
+    const costOf = (m) => money(m, cmp.models[m.id].cost?.problemUsd);
     const tone = (v) => (v == null ? '' : v >= 90 ? 'ok' : v >= 60 ? 'warn' : 'bad');
     const cell = (s) => {
       const v = pct(s);
@@ -45,6 +43,7 @@
           <div><span>바로 쓸 수 있는 문제</span><b>${q.metrics.clear.pass}/${q.metrics.clear.total}</b></div>
           <div><span>끝까지 만든 문제</span><b>${q.metrics.made.pass}/${q.metrics.made.total}</b></div>
           <div><span>원본 읽기 정확도</span><b>${pct(q.read)}%</b></div>
+          <div><span>문제 1개 토큰</span><b>${tokens(q.cost?.problemTokens)}</b></div>
           <div><span>문제 1개 비용</span><b>${costOf(m)}</b></div>
           <div><span>문제 1개 생성</span><b>${q.time?.perProblem != null ? `약 ${q.time.perProblem}분` : '-'}</b></div>
           <div><span>3문제 세트 (분석 포함)</span><b>약 ${q.minutes}분</b></div>
@@ -53,7 +52,13 @@
     }).join('');
     const scoreRow = `<tr class="cmp-total"><th>문제 품질 점수<div class="muted tiny">아래 항목의 가중 평균, 못 만든 문제는 0점</div></th>${MODELS.map((m) => { const q = cmp.models[m.id]; return `<td><b class="cmp-pct ${tone(q.score)}">${q.score}점</b><div class="muted tiny">범위 ${q.low}~${q.high} · ${q.problems}문제</div></td>`; }).join('')}</tr>`;
     const rows = cmp.metrics.map((x) => `<tr><th>${x.label}${x.weight ? `<div class="muted tiny">가중치 ${x.weight}</div>` : ''}</th>${MODELS.map((m) => cell(cmp.models[m.id].metrics[x.id])).join('')}</tr>`).join('');
-    const costRow = `<tr><th>문제 1개 비용</th>${MODELS.map((m) => `<td><b>${costOf(m)}</b>${m.price && c.perProblemRange?.[m.price] && krw(c.perProblemRange[m.price][0]) !== krw(c.perProblemRange[m.price][1]) ? `<div class="muted tiny">${krw(c.perProblemRange[m.price][0])} ~ ${krw(c.perProblemRange[m.price][1])}</div>` : ''}</td>`).join('')}</tr>`;
+    const costCell = (m, usd, range) => { const note = moneyNote(m, usd, range); return `<td><b>${money(m, usd)}</b>${note ? `<div class="muted tiny">${note}</div>` : ''}</td>`; };
+    const costRows = [
+      `<tr><th>문제 1개 토큰<div class="muted tiny">원본 분석 몫 포함</div></th>${MODELS.map((m) => `<td><b>${tokens(cmp.models[m.id].cost?.problemTokens)}</b></td>`).join('')}</tr>`,
+      `<tr><th>문제 1개 비용</th>${MODELS.map((m) => { const k = cmp.models[m.id].cost || {}; return costCell(m, k.problemUsd, k.problemUsdRange); }).join('')}</tr>`,
+      `<tr><th>3문제 세트 토큰<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${tokens(cmp.models[m.id].cost?.setTokens)}</b></td>`).join('')}</tr>`,
+      `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => costCell(m, cmp.models[m.id].cost?.setUsd)).join('')}</tr>`,
+    ].join('');
     const mins = (v) => (v == null ? '<td class="muted small">-</td>' : `<td><b>${v}분</b></td>`);
     const timeRow = (label, note, get) => `<tr><th>${label}${note ? `<div class="muted tiny">${note}</div>` : ''}</th>${MODELS.map((m) => mins(get(cmp.models[m.id].time || {}))).join('')}</tr>`;
     const timeRows = [
@@ -65,7 +70,6 @@
       `<tr><th>문제당 자동 수정 횟수</th>${MODELS.map((m) => { const r = cmp.models[m.id].time?.repairs; return r == null ? '<td class="muted small">-</td>' : `<td><b>${r}회</b></td>`; }).join('')}</tr>`,
       `<tr><th>3문제 세트 전체<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => mins(cmp.models[m.id].minutes)).join('')}</tr>`,
     ].join('');
-    const setRow = c.perProblem ? `<tr><th>3문제 세트 비용<div class="muted tiny">원본 분석 포함</div></th>${MODELS.map((m) => `<td><b>${!m.price ? '0원' : (m.price === 'claude' || m.price === 'claudemix') ? (c.perProblem?.[m.price] != null ? limitShare(c.perProblem[m.price] * 3) : '-') : m.price === 'opus' && c.opusRange ? range(c.opusRange.set) : `약 ${krw(c.perAnalysis[m.price] + c.perProblem[m.price] * 3)}`}</b></td>`).join('')}</tr>` : '';
     const when = Object.values(cmp.models).map((q) => q.when.slice(0, 8)).sort().pop();
     return `<p class="swipe-hint mobile-only">카드를 옆으로 넘기면 다른 모델을 볼 수 있습니다.</p>
       <div class="sys-cards cmp-cards">${cards}</div>
@@ -77,11 +81,11 @@
         <tr class="grp"><td colspan="${MODELS.length + 1}"><span class="grp-label">시간 (평가 회차 평균)</span></td></tr>
         ${timeRows}
         <tr class="grp"><td colspan="${MODELS.length + 1}"><span class="grp-label">비용</span></td></tr>
-        ${costRow}${setRow}
+        ${costRows}
       </table></div>
       <p class="muted small">화학 몰질량 문제를 모델만 바꿔 똑같은 과정으로 만들고, 자동 검토 결과를 문제 하나하나 채점한 것입니다 (${when.slice(0, 4)}.${when.slice(4, 6)}.${when.slice(6, 8)} 기준). <b>문제 품질 점수</b>는 문제마다 항목별 가중치(정답·계산 30, STEP 범위 15, 풀이 방법 15, 조건 10, 지침 10, 바로 사용 10, 최종 문제의 새 구조 10)로 채점해 평균한 값이고, 만들지 못한 문제는 0점으로 셉니다. 같은 모델도 돌릴 때마다 결과가 달라서 여러 번 평가한 모델은 모든 회차를 합쳤습니다. <b>믿을 수 있는 범위</b>는 평가한 문제 수로 본 95% 신뢰 구간(윌슨 구간)입니다. 문제가 적으면 넓어지므로, 범위가 겹치는 모델끼리는 차이가 확실하지 않습니다. 최종 문제의 새 구조는 한 번만 평가한 모델이면 직접 비교한 판정을 씁니다. 자동 검토는 2026-09-30에 강화되었습니다(건너뛸 수 있는 STEP, 숫자만 바꾼 최종 문제, 선생님 STEP 제목, 표에 드러난 남은 물질까지 확인). '현재 검토 기준' 모델은 그 뒤의 평가만, '이전 검토 기준' 모델은 그 전 평가로 채점해 이전 모델의 점수가 실제보다 후할 수 있습니다.
-      <b>시간</b>은 작업 기록의 시각으로 잰 것으로, 문제 하나의 시간은 설계부터 독립 검토·자동 수정을 거쳐 판정이 나올 때까지입니다. DeepSeek은 인터넷 API, Qwen·Gemma는 선생님 PC(RTX 5080)에서 잰 시간이고, Opus(9/30 중계)는 API가 아닌 세션 중계로 돌려 실제 API 속도와는 다를 수 있습니다. Claude 구독 두 열은 서버의 Claude 구독(Claude Code)으로 잰 시간입니다.
-      비용은 실제로 쓴 토큰 양에 공개 단가(DeepSeek 입력 $${c.pricing.deepseek.input}·출력 $${c.pricing.deepseek.output}, Opus 5.5 입력 $${c.pricing.opus.input}·출력 $${c.pricing.opus.output} / 100만 토큰)와 1달러 = ${c.pricing.krwPerUsd.toLocaleString()}원을 적용했고, 검토·수정 비용까지 포함합니다. ${c.opusRange ? 'Opus는 토큰 수가 기록되지 않는 방식으로 돌렸기 때문에, 실제로 주고받은 글자 수로 추정한 범위입니다 (생각 토큰은 측정하지 못해 답변의 0~2배로 잡음).' : 'Opus는 DeepSeek과 같은 양의 토큰을 쓴다고 본 추정입니다.'} Claude 구독 두 열은 추가 비용이 없고, 호출마다 쓴 모델의 정가(Opus 5.5 입력 $4·출력 $20, Sonnet 5.5 입력 $2·출력 $10)로 계산한 금액을 주간 한도 비율로 나타냈습니다 (정가 약 $5가 주간 한도 1%, 실측). 혼합은 검토·풀이를 Sonnet에 맡겨 아끼지만, 이 문제에서는 최종 문제 자동 수정이 한 번 더 일어나 Opus 단독과 비용이 같았습니다.${balance ? ' DeepSeek 충전 잔액: <span id="balance">확인 중…</span>' : ''}</p>`;
+      <b>시간</b>은 작업 기록의 시각으로 잰 것으로, 문제 하나의 시간은 설계부터 독립 검토·자동 수정을 거쳐 판정이 나올 때까지입니다. Claude는 서버의 Claude 구독(Claude Code), DeepSeek은 인터넷 API, Qwen·Gemma는 선생님 PC(RTX 5080)에서 잰 시간입니다.
+      <b>토큰</b>은 평가에서 실제로 쓴 양으로, 원본 분석과 문제 3개의 설계·독립 풀이·검토·자동 수정을 모두 더한 것입니다. <b>비용</b>은 호출마다 그 모델의 공개 정가(DeepSeek V4 Flash는 시간대별 단가, Claude Opus 5.5는 입력 $4·출력 $20 / 100만 토큰)로 계산해 1달러 = ${P.krwPerUsd.toLocaleString()}원으로 바꾼 것입니다. Claude는 선생님 구독으로 돌아 추가 비용이 없는 대신 구독의 주간 한도를 쓰고, 한도는 정가만큼 차기 때문에 주간 한도 비율로 표시했습니다 (정가 약 $${P.usdPerWeeklyPercent}가 주간 한도 1%, 2026-10-06 실측). Qwen·Gemma는 선생님 PC에서 돌아 비용이 없습니다.${balance ? ' DeepSeek 충전 잔액: <span id="balance">확인 중…</span>' : ''}</p>`;
   }
 
   // One row per model: each problem's result and the PDF. The public page shows only this.
@@ -115,7 +119,7 @@
 
   // The same molar-mass original made into a problem set by each model: what worked, what did not, the PDF.
   // pdfBase: where the PDFs are served (the app's API or the public one); balance: show DeepSeek's balance slot.
-  function pageHtml(b, { pdfBase = 'api/compare', selectable = false, balance = false } = {}) {
+  function pageHtml(b, { pdfBase = 'api/compare', balance = false } = {}) {
     const fb = b.feedback;
     const MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'] };
     const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
@@ -130,10 +134,10 @@
     return `
       <div class="panel">
         <h2>품질과 비용 한눈에</h2>
-        ${overviewHtml(b.overview, { selectable, balance })}
+        ${overviewHtml(b.overview, { balance })}
       </div>
       <h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2>
-      <p class="muted">같은 몰질량 원본 문제와 해설을 모델마다 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다. Opus와 DeepSeek 세트는 2026-09-30 강화된 자동 검토로 다시 만든 것이고, Claude 구독 두 세트(Opus 단독, Opus+Sonnet 혼합)는 2026-10-06에 만들어 Claude·Gemini 독립 검토까지 거쳤으며, 문제마다 수치를 직접 다시 계산해 확인했습니다. '교사 검토 필요'로 표시된 문제는 PDF에도 표시됩니다.</p>
+      <p class="muted">같은 몰질량 원본 문제와 해설을 모델마다 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다. Claude Opus 세트(2026-10-06)와 DeepSeek 세트(2026-09-30)는 강화된 자동 검토로 만든 것이고, 문제마다 수치를 직접 다시 계산해 확인했습니다. '교사 검토 필요'로 표시된 문제는 PDF에도 표시됩니다.</p>
       <div class="panel cv2-orig"><span class="muted small">원본</span>
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
         <span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>

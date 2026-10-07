@@ -2,9 +2,8 @@
 // Builds one model-comparison file for the 모델 비교 page: the original (images + the teacher's STEP titles) and,
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
 //   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
-//     [--relay-dir <relay folder of the Opus run> --relay-from <first request id of this case>]
 //     [--keys <jobId>=<key>,...] [--merge]
-// Each model has a key (relay, deepseek, or the local model: gemma12, qwen36); a PC job is gemma12 unless --keys
+// Each model has a key (claude-cli, deepseek, or the local model: gemma12, qwen36); a PC job is gemma12 unless --keys
 // says otherwise. --merge keeps the models already in the file and replaces only those with the same key.
 // Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
 // eval/compare/<case>/<key>.pdf, are offered for download on the page.
@@ -19,10 +18,10 @@ const caseDir = path.join(__dirname, 'cases', args.case);
 const spec = JSON.parse(fs.readFileSync(path.join(caseDir, 'case.json'), 'utf8'));
 const dataUrl = (file) => `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,` + fs.readFileSync(file).toString('base64');
 const { pcModelKey } = require('../server/llm');
-const LABEL = { 'claude-cli': 'Claude Opus 5.5 (구독)', 'claude-mix': 'Claude 혼합 (Opus+Sonnet)', deepseek: 'DeepSeek V4 Flash', relay: 'Claude Opus 5.5 (9/30 중계)', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
-const ORDER = ['claude-cli', 'claude-mix', 'relay', 'deepseek', 'qwen36', 'gemma12'];
+const LABEL = { 'claude-cli': 'Claude Opus 5.5', deepseek: 'DeepSeek V4 Flash', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
+const ORDER = ['claude-cli', 'deepseek', 'qwen36', 'gemma12'];
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
-const keyOf = (provider, model, claudeMix) => (provider === 'gemma' ? pcModelKey(model) : provider === 'claude-cli' && claudeMix ? 'claude-mix' : provider);
+const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider);
 
 // Harness scores of each model on this case, from the newest full report that has them.
 const scores = {};
@@ -30,9 +29,9 @@ const reportsDir = path.join(__dirname, 'reports');
 for (const f of fs.readdirSync(reportsDir).filter((x) => x.endsWith('.json')).sort().reverse()) {
   const raw = JSON.parse(fs.readFileSync(path.join(reportsDir, f), 'utf8'));
   for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || scores[keyOf(r.provider, r.model, r.claudeMix)]) continue;
+    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || r.claudeMix || scores[keyOf(r.provider, r.model)]) continue;
     const t = (list) => ({ pass: (list || []).filter((c) => c.pass).length, total: (list || []).length });
-    scores[keyOf(r.provider, r.model, r.claudeMix)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
+    scores[keyOf(r.provider, r.model)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
   }
 }
 
@@ -40,9 +39,9 @@ const jobsDir = path.join(args.data, 'jobs');
 const models = [];
 for (const f of fs.readdirSync(jobsDir)) {
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, f), 'utf8'));
-  if (job.type !== 'generate' || !String(job.title).includes(args.title || `${args.case} · `)) continue;
+  if (job.type !== 'generate' || job.options?.claudeMix || !String(job.title).includes(args.title || `${args.case} · `)) continue;
   const provider = job.options?.provider || 'deepseek';
-  const key = KEYS[job.id] || keyOf(provider, '', job.options?.claudeMix);
+  const key = KEYS[job.id] || keyOf(provider, '');
   const m = job.material;
   models.push({
     key, provider, label: LABEL[key] || key, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${key}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,
@@ -62,26 +61,6 @@ const file = path.join(__dirname, 'compare', `${args.case}.json`);
 const previous = args.merge && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
 if (previous) models.push(...previous.models.filter((p) => !models.some((m) => m.key === p.key)));
 models.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
-// Opus ran through the relay, which records no token counts: keep the characters it actually exchanged so the
-// page can estimate its cost from real sizes instead of from DeepSeek's token use.
-let relayMeasure = null;
-if (args['relay-dir']) {
-  const dir = args['relay-dir'];
-  const ANALYSIS = new Set(['analyze', 'proofread', 'reread-question', 'reread-problem', 'reread-headings', 'regroup', 'fix-verification']);
-  const m = { analysis: { calls: 0, inChars: 0, outChars: 0, images: 0 }, generation: { calls: 0, inChars: 0, outChars: 0 } };
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.request.json') && (!args['relay-from'] || x >= args['relay-from']))) {
-    const r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-    const resp = path.join(dir, f.replace('.request.json', '.response.txt'));
-    const k = ANALYSIS.has(r.purpose) ? m.analysis : m.generation;
-    k.calls++;
-    k.inChars += r.system.length + r.content.filter((c) => c.type === 'text').reduce((a, c) => a + c.text.length, 0);
-    k.outChars += fs.existsSync(resp) ? fs.readFileSync(resp, 'utf8').length : 0;
-    if (k.images !== undefined) k.images += r.content.filter((c) => c.type === 'image').length;
-  }
-  const opus = models.find((x) => x.provider === 'relay');
-  m.problems = opus ? opus.items.filter((i) => i.problem).length : 3;
-  relayMeasure = m;
-}
 const out = {
   id: args.case, title: spec.title, createdAt: new Date().toISOString(),
   original: {
@@ -89,7 +68,6 @@ const out = {
     answer: spec.expect?.answer, steps: spec.expect?.stepTitles || [],
   },
   models,
-  relayMeasure: relayMeasure || previous?.relayMeasure || null,
 };
 fs.mkdirSync(path.join(__dirname, 'compare'), { recursive: true });
 fs.writeFileSync(file, JSON.stringify(out));

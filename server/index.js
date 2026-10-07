@@ -341,7 +341,7 @@ function createApp(options = {}) {
         views: { problem: views(body.problemViews), solution: solution ? views(body.solutionViews) : [] },
       },
     });
-    const job = jobs.analyze(material, provider, { claudeMix: body.claudeMix === true });
+    const job = jobs.analyze(material, provider);
     return { material: materialSummary(material), jobId: job.id };
   });
   route('GET', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
@@ -457,7 +457,7 @@ function createApp(options = {}) {
     const feedback = String(body.feedback || '').trim().slice(0, 1000);
     if (feedback) store.rules.put(makeRule({ text: feedback, scope: 'material', stage: 'analysis', source: { materialId: m.id, label: m.title, from: body.from === 'check' ? 'check' : 'input' } }));
     store.materials.put({ ...m, status: 'analyzing', error: '', note: body.note !== undefined ? String(body.note).slice(0, 1000) : m.note });
-    return { jobId: jobs.analyze(m, provider, { claudeMix: body.claudeMix === true }).id };
+    return { jobId: jobs.analyze(m, provider).id };
   });
   // Merges extra STEPs to match the teacher's step markers (for materials analyzed before auto-merge).
   route('POST', /^\/api\/materials\/([a-f0-9]+)\/align-steps$/, async (req, res, [id]) => {
@@ -499,7 +499,7 @@ function createApp(options = {}) {
     const { images, ...snapshot } = material;
     // 가정 방향: keep or flip which case STEP 1 assumes and rules out (only for an original whose STEP 1 does that).
     const direction = ['same', 'flip'].includes(body.direction) && harness.assumedCase(material.steps[0]?.work) ? body.direction : undefined;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, ...(body.claudeMix === true ? { claudeMix: true } : {}), perStage: items.length / stages.length } });
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {
@@ -637,54 +637,6 @@ function createApp(options = {}) {
   route('GET', /^\/api\/corrections$/, () => store.corrections.all().sort((a, b) => b.count - a.count));
   route('DELETE', /^\/api\/corrections\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.corrections.remove(id) }));
 
-  // Cost per problem from real DeepSeek runs of the eval set: tokens of a whole generation job (design, blind
-  // solve, repairs) divided by the problems it produced; the analysis of one original counted separately.
-  // Opus is priced on the same token amounts (the relay run records no token counts).
-  function costEstimate(onlyCase) {
-    const dir = path.join(cfg.root, 'eval', 'reports');
-    const perCase = [];
-    const analyses = [];
-    if (fs.existsSync(dir)) {
-      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
-        let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
-        for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-          if (r.provider !== 'deepseek' || (onlyCase && r.case !== onlyCase)) continue;
-          if (r.analysisUsage?.calls) analyses.push(r.analysisUsage);
-          const made = (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length;
-          if (r.generationUsage?.calls && made) perCase.push({ case: r.case, input: r.generationUsage.input / made, output: r.generationUsage.output / made });
-        }
-      }
-    }
-    const price = (u, p) => (u.input * cfg.pricing[p].input + u.output * cfg.pricing[p].output) / 1e6;
-    const avg = (list) => (list.length ? { input: list.reduce((a, x) => a + x.input, 0) / list.length, output: list.reduce((a, x) => a + x.output, 0) / list.length } : null);
-    const problem = avg(perCase);
-    const analysis = avg(analyses);
-    const both = (u) => (u ? { deepseek: price(u, 'deepseek'), opus: price(u, 'opus') } : null);
-    // Claude through the subscription, alone and mixed: what their own runs cost, call by call at each model's list
-    // price (eval reports keep it per run), per problem made and per analysis.
-    const claude = {};
-    if (fs.existsSync(dir)) {
-      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
-        let raw; try { raw = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
-        for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-          if (r.provider !== 'claude-cli' || (onlyCase && r.case !== onlyCase) || !r.cost || r.designWith || r.analyzeWith) continue;
-          const made = (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length;
-          if (!made) continue;
-          const k = r.claudeMix ? 'claudemix' : 'claude';
-          (claude[k] = claude[k] || []).push(r.cost.usd / made);
-        }
-      }
-    }
-    const claudeAvg = Object.fromEntries(Object.entries(claude).map(([k, v]) => [k, v.reduce((a, x) => a + x, 0) / v.length]));
-    return {
-      pricing: cfg.pricing,
-      basis: { problems: perCase.length, analyses: analyses.length },
-      perProblem: problem || Object.keys(claudeAvg).length ? { ...(both(problem) || {}), ...claudeAvg } : null,
-      perProblemRange: perCase.length ? { deepseek: [Math.min(...perCase.map((u) => price(u, 'deepseek'))), Math.max(...perCase.map((u) => price(u, 'deepseek')))], opus: [Math.min(...perCase.map((u) => price(u, 'opus'))), Math.max(...perCase.map((u) => price(u, 'opus')))] } : null,
-      perAnalysis: { ...(both(analysis) || {}), ...Object.fromEntries(Object.keys(claudeAvg).map((k) => [k, 0])) },
-      tokens: { problem, analysis },
-    };
-  }
   // Model comparison for teachers (scoring in scoring.js). Every full run of a model counts (one run swings by ±4 of 29 checks). The PC provider is split by the local
   // model each run used; `only` limits the models shown (the comparison page leaves out rejected candidates).
   // verdicts: a hand-checked verdict on a model's final problem ('ok' / 'no'), used for a model evaluated once
@@ -699,9 +651,9 @@ function createApp(options = {}) {
         if (!results.length || (raw.stage || results[0]?.stage) !== 'full') continue;
         for (const r of results) {
           if (!(r.generation || []).length) continue; // stopped before making anything
-          // A mixed run (another model designed, analyzed or repaired) is not this model's own result.
-          if (r.designWith || r.analyzeWith || r.repairWith) continue;
-          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider === 'claude-cli' && r.claudeMix ? 'claude-mix' : r.provider;
+          // A mixed run (another model designed, analyzed or repaired, or Claude models mixed) is not this model's own result.
+          if (r.designWith || r.analyzeWith || r.repairWith || r.claudeMix) continue;
+          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
           if (only && !only.includes(key)) continue;
           (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
         }
@@ -723,6 +675,19 @@ function createApp(options = {}) {
       const scores = problems.map((p) => p.score);
       const mean = scores.reduce((a, s) => a + s, 0) / (scores.length || 1);
       const [low, high] = wilson(mean, scores.length);
+      // What the model used on these same runs: every token of the run (the analysis, the three problems, their
+      // reviews and repairs) and its list price call by call (eval/recost.js for reports written before a price was
+      // kept). The PC models cost nothing; the Claude subscription costs nothing extra but fills its weekly limit by
+      // list price.
+      const used = rows.map((r) => ({ made: (r.generation || []).filter((c) => /: 문제 생성$/.test(c.name) && c.pass).length, tokens: (r.analysisUsage?.total || 0) + (r.generationUsage?.total || 0), usd: r.provider === 'gemma' ? 0 : r.cost?.usd ?? null }));
+      const avg = (xs) => (xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : null);
+      const priced = used.filter((u) => u.usd != null && u.made);
+      const counted = used.filter((u) => u.tokens && u.made);
+      const cost = {
+        setTokens: avg(counted.map((u) => u.tokens)), problemTokens: avg(counted.map((u) => u.tokens / u.made)),
+        setUsd: avg(priced.map((u) => u.usd)), problemUsd: avg(priced.map((u) => u.usd / u.made)),
+        problemUsdRange: priced.length > 1 ? [Math.min(...priced.map((u) => u.usd / u.made)), Math.max(...priced.map((u) => u.usd / u.made))] : null,
+      };
       const rate = (dim) => { const hit = problems.filter((p) => p.dims[dim] !== undefined); return { pass: hit.filter((p) => p.dims[dim]).length, total: hit.length }; };
       out[key] = {
         when: rows[rows.length - 1].when, runs: rows.length, pc, olderReview: !strict.length,
@@ -734,18 +699,19 @@ function createApp(options = {}) {
         metrics: Object.fromEntries(DIMENSIONS.map(([id]) => [id, { ...rate(id), ...(id === 'structural' && verdict ? { reviewed: true } : {}) }])),
         minutes: Math.round(rows.reduce((a, r) => a + (r.minutes || 0), 0) / rows.length),
         time: timeSummary(rows.map((r) => r.timing).filter(Boolean)),
+        cost,
       };
     }
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
-  const COMPARED = ['claude-cli', 'claude-mix', 'relay', 'deepseek', 'qwen36', 'gemma12'];
+  const COMPARED = ['claude-cli', 'deepseek', 'qwen36', 'gemma12'];
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
-  const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5_subscription', 'claude-mix': 'Claude_mix', relay: 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
+  const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
   function comparePdf(res, id, key) {
     const file = path.join(compareDir, id, `${key}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
@@ -763,23 +729,11 @@ function createApp(options = {}) {
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
     // Quality and cost of each model on this case alone.
     const verdicts = Object.fromEntries(Object.entries(bundle.feedback?.models || {}).map(([k, v]) => [k, v.final?.[0]]).filter(([, v]) => v));
-    bundle.overview = { compare: modelComparison(id, COMPARED, verdicts), cost: costEstimate(id) };
-    // Opus cost from what its run actually exchanged: 0.6–1.0 token per character (Korean + LaTeX), reasoning
-    // tokens not measured so 0–2× the written answer, 1,000–1,600 tokens per image. A range, not one number.
-    const rm = bundle.relayMeasure;
-    const cost = bundle.overview.cost;
-    if (rm && cost.pricing) {
-      const pr = cost.pricing.opus;
-      const usd = (inTok, outTok) => (inTok * pr.input + outTok * pr.output) / 1e6;
-      const gen = rm.generation; const an = rm.analysis;
-      const problem = [usd(gen.inChars * 0.6, gen.outChars * 0.6) / rm.problems, usd(gen.inChars, gen.outChars * 3) / rm.problems];
-      const analysis = [usd(an.inChars * 0.6 + an.images * 1000, an.outChars * 0.6), usd(an.inChars + an.images * 1600, an.outChars * 3)];
-      cost.opusRange = { problem, analysis, set: [analysis[0] + problem[0] * 3, analysis[1] + problem[1] * 3] };
-      if (cost.perProblem) cost.perProblem.opus = (problem[0] + problem[1]) / 2;
-    }
+    // The Claude subscription's weekly limit fills by list price: ≈$5 per 1% (measured 2026-10-06).
+    bundle.overview = { compare: modelComparison(id, COMPARED, verdicts), pricing: { krwPerUsd: cfg.pricing.krwPerUsd, usdPerWeeklyPercent: 5 } };
     return bundle;
   }
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|claude-mix|relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
@@ -789,7 +743,7 @@ function createApp(options = {}) {
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     return bundle;
   }, { open: true });
-  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|claude-mix|relay|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });

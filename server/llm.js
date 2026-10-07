@@ -380,7 +380,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   // Claude Code CLI on this server (`claude -p`): the same system prompt and user message; images go to a temporary
   // folder and are opened with the Read tool where they stood in the message; the answer and the token counts come
   // from its JSON result. Runs on the logged-in subscription, so nothing is billed per call.
-  async function sendClaudeCli({ messages, effort, signal, model: modelOverride }) {
+  async function sendClaudeCli({ messages, effort, signal }) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-claude-'));
     try {
       const user = messages[1].content;
@@ -397,7 +397,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       for (const turn of messages.slice(2)) texts.push(`[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}`);
       const prompt = (images ? '[이미지: 경로]가 있는 자리마다 그 이미지 파일을 Read 도구로 열어 자세히 본 뒤 답한다. 다른 파일은 열지 않는다.\n\n' : '') + texts.join('\n');
       const choice = claudeCliChoice(config);
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', modelOverride || choice.model, '--system-prompt', messages[0].content, '--no-session-persistence',
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', choice.model, '--system-prompt', messages[0].content, '--no-session-persistence',
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
         ...(effort === 'off' ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
@@ -520,16 +520,14 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
    * Calls the model and returns parsed JSON.
    * One automatic retry only for unreadable/truncated output; that retry is counted in the budget too.
    */
-  async function json({ provider: requested = 'deepseek', purpose, jobId, budget, system, text, images = [], vision = false, maxTokens = 16000, effort = 'low', signal }) {
-    // "claude-cli:<model>": the Claude subscription with a model chosen for this call (Claude 혼합).
-    const [provider, claudeModel] = requested.startsWith('claude-cli:') ? ['claude-cli', requested.slice('claude-cli:'.length)] : [requested, ''];
+  async function json({ provider = 'deepseek', purpose, jobId, budget, system, text, images = [], vision = false, maxTokens = 16000, effort = 'low', signal }) {
     const content = images.length
       ? [{ type: 'text', text }, ...images.flatMap((img) => [
           ...(img.label ? [{ type: 'text', text: img.label }] : []),
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeModel || claudeCliChoice(config).model : cli.CLIS.includes(provider) ? cli.cliChoice(config, provider).model || 'codex-default' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : cli.CLIS.includes(provider) ? cli.cliChoice(config, provider).model || 'codex-default' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     // The teacher's persona and per-stage additions (LLM tab) go around the built-in instructions (not in mock mode).
     let messages = [{ role: 'system', content: mode === 'mock' ? system : withTeacherPrompt(config, system) }, { role: 'user', content }];
     let lastError;
@@ -545,7 +543,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
-          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal, model: claudeModel })
+          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal })
           : cli.CLIS.includes(provider) ? await cli.sendCli(config, provider, { messages, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
@@ -632,15 +630,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-/**
- * Claude 혼합: within one Claude subscription, the calls that need judgment stay on the chosen model (Opus) and the
- * others go to Sonnet — the subscription's limit fills by list price (Sonnet ½ of Opus; ≈$5 list per 1% of the
- * weekly limit, measured 2026-10-06). Measured on D76 and E37: the same or better harness scores for ~40% less.
- */
-const CLAUDE_MIX = {
-  'review-solution': 'claude-sonnet-5-5', 'write-solution': 'claude-sonnet-5-5', solve: 'claude-sonnet-5-5', learn: 'claude-sonnet-5-5', proofread: 'claude-sonnet-5-5',
-  // The focused rereads stay on the chosen model: they decide the STEP count, and two agreeing Haiku rereads merged
-  // C32's three STEPs into one (2026-10-06) while saving ~$0.1 of a $14 run.
-};
-
-module.exports = { CLAUDE_MIX, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

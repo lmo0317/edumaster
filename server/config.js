@@ -98,12 +98,7 @@ module.exports = {
     // stopped fixing at 1.6M tokens after 9 calls — agy counts its whole agent turn, ~180k tokens a call).
     perCallFreeTokens: int('EDUMASTER_PER_CALL_FREE_TOKENS', 100000000),
   },
-  // USD per million tokens, for the cost estimate on the 모델 비교 page (checked 2026-09-29: DeepSeek's own
-  // price list, claude.com/pricing for Opus 5.5). Gemma runs free on the teacher's PC.
-  pricing: {
-    deepseek: { input: 0.30, output: 1.20 },
-    opus: { input: 4, output: 20 },
-    krwPerUsd: 1400,
-  },
+  // Won per dollar for the 모델 비교 page (each call's list price is in server/cost.js).
+  pricing: { krwPerUsd: 1400 },
   maxUploadBytes: int('EDUMASTER_MAX_UPLOAD_BYTES', 14 * 1024 * 1024),
 };
