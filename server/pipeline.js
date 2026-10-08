@@ -739,6 +739,28 @@ function fitSolutionToStage(item) {
   return true;
 }
 
+/** What a solution review asks the writer to change: each STEP's issues and the rules it finds broken (a rule the
+ *  independent solver judged is the solver's call). */
+function reviewNotes(review, rules, blind) {
+  return [
+    ...review.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`)),
+    ...rules.filter((r) => !blind.rules.some((b) => b.id === r.id)).map((r) => [r, review.rules.find((b) => b.id === r.id)]).filter(([, b]) => b && !b.ok).map(([r, b]) => `교사 지침 미준수: ${r.text.slice(0, 80)} — ${b.note}`),
+  ];
+}
+
+/** The solution review a check skipped (a repair was due), added for the version the teacher gets. */
+async function addSolutionReview(ctx, item, material, rules, check) {
+  if (!check.verification.solutionReview?.skipped) return;
+  if (ctx.budget.affords && !ctx.budget.affords(1 + (ctx.reserveCalls || 0))) return;
+  const review = await reviewSolution(ctx, item, material, rules);
+  check.verification.solutionReview = review;
+  check.rewriteNotes.push(...reviewNotes(review, rules, check.verification.blind));
+  for (const r of check.verification.rules) {
+    const b = !r.judged && review.rules.find((x) => x.id === r.id);
+    if (b) r.judged = { ok: b.ok, note: b.note };
+  }
+}
+
 async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = null) {
   if (fitSolutionToStage(item)) ctx.log(`${item.label}: 범위 밖 STEP으로 쓴 정답 계산을 마지막 STEP에 합침`);
   const code = item.verificationSpec
@@ -748,7 +770,6 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const integratedFinal = item.stage.kind === 'twin' && mode === 'integrated';
   // A rewrite of the solution alone keeps the problem, so the solve (and its adjudication) is not repeated.
   const blind = keep?.blind || await blindSolve(ctx, item, material, rules, integratedFinal);
-  const solutionReview = await reviewSolution(ctx, item, material, rules);
   const lean = Boolean(ctx.lean);
   const hard = [];
   const soft = [];
@@ -783,15 +804,17 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     soft.push(...cov.notes);
   }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
-  const codeChecks = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)];
+  // The table-shape check is a rough stand-in for the solver's reading of the five structure criteria: a final that keeps
+  // the original's table but changes the reasoning (another reference experiment, a new quantity asked) is the
+  // solver's call, or the two would send it back and forth.
+  const codeChecks = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)]
+    .filter((c) => !(c.id === 'variant-shape' && blind.variation === 'structural'));
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
     if (solutionOnly(c) && c.severity !== 'hard') rewriteNotes.push(`${c.label}: ${c.evidence}`);
     else if (c.severity === 'hard') { hard.push(`${c.label}: ${c.evidence}`); invalid.push(`${c.label}: ${c.evidence}`); }
     else soft.push(`${c.label}: ${c.evidence}`);
   }
-  const reviewNotes = solutionReview.steps.flatMap((s) => s.issues.map((x) => `해설이 선생님 해설과 다름 (STEP ${s.step}): ${x}`));
-  rewriteNotes.push(...reviewNotes);
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
   const designNotes = [
     ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
@@ -801,19 +824,26 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     ...failed.filter((c) => c.severity === 'design' && !solutionOnly(c)).map((c) => `${c.label}: ${c.evidence}`),
     ...handNotes,
   ];
+  // A problem rule the independent solver finds broken goes back for repair like any other design fault (in a lean
+  // run it is only recorded).
+  if (!lean) {
+    for (const r of rules) {
+      const judged = blind.rules.find((b) => b.id === r.id);
+      if (judged && !judged.ok) designNotes.push(`교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`);
+    }
+  }
+  // The solution review only feeds a rewrite of the solution, which a repair or a fresh design makes moot: it runs when
+  // the problem itself needs no repair (the version the teacher gets is reviewed in the end: addSolutionReview). 42% of the reviews of
+  // eight Opus sets were thrown away that way (2026-10-09).
+  const repairNeeded = hard.length || (!lean && cov.notes.length) || designNotes.length;
+  const solutionReview = repairNeeded ? { skipped: true, steps: [], rules: [] } : await reviewSolution(ctx, item, material, rules);
+  rewriteNotes.push(...reviewNotes(solutionReview, rules, blind));
   soft.push(...designNotes);
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
     // Problem rules are judged by the independent solver, solution rules by the solution reviewer.
     const byReviewer = solutionReview.rules.find((b) => b.id === r.id);
     const judged = blind.rules.find((b) => b.id === r.id) || byReviewer;
-    // A rule the independent reviewer finds broken is sent back for repair like any other design fault (in a lean
-    // run a solution rule goes back to the writer, and a problem rule judged by the solver is only recorded).
-    if (judged && !judged.ok) {
-      const note = `교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`;
-      if (judged === byReviewer) rewriteNotes.push(note);
-      else if (!lean) designNotes.push(note);
-    }
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
@@ -919,6 +949,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     item.status = 'verifying'; ctx.save();
     check = await verifyItem(ctx, item, material, rules, mode, prior);
   }
+  await addSolutionReview(ctx, item, material, rules, check);
   return { version: versionOf(item), check, writeNotes, reasons: repairReasons(check), design };
 }
 

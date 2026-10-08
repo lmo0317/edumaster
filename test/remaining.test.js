@@ -105,6 +105,24 @@ test('a repair is skipped when it would leave too little budget for the problems
   assert.ok(budget.affords(3), 'the next problem still fits');
 });
 
+// 2026-10-09: 42% of the solution reviews of eight Opus sets were thrown away by the repair that followed. A review
+// now runs only when the problem needs no repair, and once for the version the teacher gets.
+test('the solution review is skipped while a repair is due, and run once for the version that is kept', async () => {
+  const solves = [{ answer: 3, stepsUsed: [1, 2] }, { answer: 3, stepsUsed: [1] }];
+  let reviews = 0;
+  const llm = { json: async ({ system }) => {
+    if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+    if (system === prompts.SOLUTION_REVIEW_SYSTEM) { reviews++; return { data: { steps: [], rules: [] } }; }
+    return { data: generated(1) };
+  } };
+  const ctx = { llm, job: { id: 'j' }, budget: new Budget({ maxCalls: 40, maxTokens: 1e6 }), effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, save() {}, log() {} };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 1, 'the first version is out of range: one repair');
+  assert.equal(reviews, 1, 'only the repaired version is reviewed');
+  assert.equal(item.verification.solutionReview.skipped, undefined);
+});
+
 // 2026-10-02: a problem is made without stopping for the teacher; of its designs, the one with the fewest faults is kept.
 test('of three designs the one with the fewest faults is kept: a later design with a wrong answer never replaces it', async () => {
   let designs = 0;

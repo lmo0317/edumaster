@@ -197,6 +197,11 @@ function answerText(events, result) {
   return joined.length > last.length && joined.trimEnd().endsWith(last.trim()) ? joined : last;
 }
 
+// The calls that design or judge take the LLM tab's thinking effort; writing a solution out, proofreading, learning and
+// the like keep the effort the pipeline asks for — at the tab's "high" every one of them thought like a design
+// (write-solution, learn and proofread: 10% of an Opus set, 2026-10-09).
+const JUDGING = new Set(['generate', 'repair', 'repair-lean', 'solve', 'review-solution', 'adjudicate', 'review']);
+
 function claudeCliChoice(config) {
   const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};
   const model = CLAUDE_MODELS[s.model] ? s.model : config.claudeCli.model;
@@ -397,7 +402,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   // Claude Code CLI on this server (`claude -p`): the same system prompt and user message; images go to a temporary
   // folder and are opened with the Read tool where they stood in the message; the answer and the token counts come
   // from its JSON result. Runs on the logged-in subscription, so nothing is billed per call.
-  async function sendClaudeCli({ messages, effort, signal }) {
+  async function sendClaudeCli({ messages, effort, signal, purpose }) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-claude-'));
     try {
       const user = messages[1].content;
@@ -416,7 +421,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       const choice = claudeCliChoice(config);
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', choice.model, '--system-prompt', messages[0].content, '--no-session-persistence',
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
-        ...(effort === 'off' ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
+        ...(effort === 'off' || (!JUDGING.has(purpose) && effort !== 'high') ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
         const token = claudeCliToken(config);
         // The CLI's own output cap per message (32k by default) cut long answers: it went on in a new message and
@@ -563,7 +568,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
           : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
-          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal })
+          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal, purpose })
           : cli.CLIS.includes(provider) ? await cli.sendCli(config, provider, { messages, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {

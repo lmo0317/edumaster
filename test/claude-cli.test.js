@@ -69,6 +69,10 @@ test('claude-cli: the model and effort chosen on the LLM tab are what the CLI is
     await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'off', system: 's', text: '문제' });
     s = JSON.parse(fs.readFileSync(seen, 'utf8'));
     assert.equal(s.args[s.args.indexOf('--effort') + 1], 'low');
+    // Writing a solution out does not judge: it keeps the effort the pipeline asks for, not the tab's.
+    await llm.json({ provider: 'claude-cli', purpose: 'write-solution', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'low', system: 's', text: '요지' }).catch(() => {}); // the fake answer has no solution
+    s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    assert.equal(s.args[s.args.indexOf('--effort') + 1], 'low');
     assert.equal(claudeCliChoice({ dataDir, claudeCli: { model: 'claude-opus-5-5' } }).label, 'Claude Sonnet 5.5 (구독)');
   } finally { saveLlmSettings(dataDir, { claude: {} }); }
 });
