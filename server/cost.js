@@ -11,6 +11,8 @@ const PRICES = {
 const CLAUDE_PRICES = {
   'claude-opus-5-5': { input: 4, cached: 0.2, output: 20 },
   'claude-sonnet-5-5': { input: 2, cached: 0.2, output: 10 },
+  // Haiku 5.5 (2026-10-07): this price for prompts up to 100k tokens, five times it above (ours stay under).
+  'claude-haiku-5-5': { input: 0.1, cached: 0.01, output: 0.5 },
   'claude-haiku-4-5-20251001': { input: 1, cached: 0.1, output: 5 },
   'claude-fable-5-1': { input: 10, cached: 1, output: 50 },
 };

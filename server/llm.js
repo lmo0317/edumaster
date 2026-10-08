@@ -150,6 +150,7 @@ function claudeCliReady(config) {
 const CLAUDE_MODELS = {
   'claude-opus-5-5': 'Claude Opus 5.5',
   'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-haiku-5-5': 'Claude Haiku 5.5',
   'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
   'claude-fable-5-1': 'Claude Fable 5.1',
 };
@@ -183,6 +184,19 @@ function withTeacherPrompt(config, system) {
 }
 
 /** The Claude model and effort the subscription runs: the LLM tab's choice, else the server's default. */
+/**
+ * The whole answer of a Claude CLI run: the text the model wrote after its last tool result (opening the images),
+ * across every message — an answer longer than one message goes on in the next, and `result` holds only the last.
+ */
+function answerText(events, result) {
+  const last = String(result.result || '');
+  let from = 0;
+  events.forEach((e, i) => { if (e.type === 'user' && (e.message?.content || []).some?.((c) => c.type === 'tool_result')) from = i + 1; });
+  const joined = events.slice(from).filter((e) => e.type === 'assistant')
+    .flatMap((e) => (e.message?.content || []).filter((c) => c.type === 'text').map((c) => c.text)).join('');
+  return joined.length > last.length && joined.trimEnd().endsWith(last.trim()) ? joined : last;
+}
+
 function claudeCliChoice(config) {
   const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};
   const model = CLAUDE_MODELS[s.model] ? s.model : config.claudeCli.model;
@@ -405,7 +419,10 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         ...(effort === 'off' ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
         const token = claudeCliToken(config);
-        const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env: token ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token } : process.env });
+        // The CLI's own output cap per message (32k by default) cut long answers: it went on in a new message and
+        // `result` held only that last part (Haiku 5.5, 2026-10-08: two of three designs arrived as JSON tails).
+        const env = { ...process.env, CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS || '64000', ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}) };
+        const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env });
         let out = ''; let err = '';
         const timer = setTimeout(() => { child.kill('SIGTERM'); reject(Object.assign(new Error('Claude(구독) 응답 시간이 초과되었습니다.'), { status: 504 })); }, config.claudeCli.timeoutMs);
         const abort = () => child.kill('SIGTERM');
@@ -433,7 +450,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       const u = result.usage || {};
       const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
       return {
-        choices: [{ finish_reason: 'stop', message: { content: String(result.result || '') } }],
+        choices: [{ finish_reason: 'stop', message: { content: answerText(events, result) } }],
         usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
       };
     } finally {
@@ -609,6 +626,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
 // The PC provider serves whichever local model is loaded; name it from the model id llama-server reports.
 function pcModelLabel(id) {
   const s = String(id || '').toLowerCase();
+  // A model rented for an evaluation (eval/modal-llm.py) names itself "modal-<model>-<quant>".
+  if (/^modal-/.test(s)) return `${id.slice(6)} (Modal)`;
   if (/gpt-oss/.test(s)) return 'gpt-oss-20B (PC)';
   // Strata (github.com/Niko1221/Strata) serves the 125B MoE as "qwen3.8-flash-next…": not the 27B.
   if (/flash-next/.test(s)) return 'Qwen 3.8-Flash-Next 125B (PC)';
@@ -625,6 +644,7 @@ function pcModelLabel(id) {
 // the model was recorded were all Gemma 4 12B.
 function pcModelKey(id) {
   const s = String(id || '').toLowerCase();
+  if (/^modal-/.test(s)) return s;
   if (!s || s === 'gemma' || /gemma-4-12b/.test(s)) return 'gemma12';
   if (/gemma-4-26b/.test(s)) return 'gemma26';
   if (/qwen3\.6/.test(s)) return 'qwen36';
@@ -636,4 +656,4 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = { answerText, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

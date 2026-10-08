@@ -23,6 +23,7 @@ const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
 const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
 const { runCost } = require('../server/cost');
+const { llmSettings } = require('../server/llm');
 // Mixed runs: --analyze-with <p> reads the scans with another model, --design-with <p> writes the problems and their
 // repairs, --repair-with <p> only the repairs; the --providers model does the rest (independent solve, review, checks).
 const mixed = { analyzeWith: args['analyze-with'], designWith: args['design-with'], repairWith: args['repair-with'], lean: args.lean === 'true' || undefined };
@@ -86,7 +87,8 @@ async function main() {
   await call('POST', '/api/login', { username: 'eval', password: 'eval-harness' });
   // The PC provider serves whichever local model is loaded; keep its name so runs of different models differ.
   const status = await call('GET', '/api/status');
-  const modelOf = (provider) => (provider === 'gemma' ? status.providers?.gemma?.model || 'gemma' : provider);
+  const modelOf = (provider) => (provider === 'gemma' ? status.providers?.gemma?.model || 'gemma'
+    : provider === 'claude-cli' ? llmSettings(dataDir).claude?.model || provider : provider);
 
   const results = [];
   for (const name of caseNames) {

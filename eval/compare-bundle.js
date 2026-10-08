@@ -21,7 +21,7 @@ const { pcModelKey } = require('../server/llm');
 const LABEL = { 'claude-cli': 'Claude Opus 5.5', deepseek: 'DeepSeek V4 Flash', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
 const ORDER = ['claude-cli', 'deepseek', 'qwen36', 'gemma12'];
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
-const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider);
+const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider === 'claude-cli' && model && !/^(claude-cli|claude-opus-5-5)$/.test(model) ? model : provider);
 
 // Harness scores of each model on this case, from the newest full report that has them.
 const scores = {};

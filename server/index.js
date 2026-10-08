@@ -653,7 +653,7 @@ function createApp(options = {}) {
           if (!(r.generation || []).length) continue; // stopped before making anything
           // A mixed run (another model designed, analyzed or repaired, or Claude models mixed) is not this model's own result.
           if (r.designWith || r.analyzeWith || r.repairWith || r.claudeMix) continue;
-          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider;
+          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider === 'claude-cli' && r.model && !/^(claude-cli|claude-opus-5-5)$/.test(r.model) ? r.model : r.provider;
           if (only && !only.includes(key)) continue;
           (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
         }
