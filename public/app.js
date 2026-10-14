@@ -1567,6 +1567,24 @@
     ['localCalls', 'PC 모델 세트당 호출 상한', 'PC 모델로 만드는 세트의 호출 상한 (문제 3개 기준). 호출마다 비용이 없고 빨라서 더 끝까지 고치게 높게 둔다'],
     ['setCalls', '세트당 AI 호출 상한', '문제 3개짜리 세트가 쓸 수 있는 AI 호출 수 (문제가 더 많으면 그만큼 늘어남). 뒤 문제를 만들 몫은 남겨 두고 고친다'],
   ];
+  // What the server does instead of the model, and why (2026-10-13~14: each of these was a frequent judge note or a
+  // repair loop when the model did it).
+  const HN_SYSTEM = [
+    ['계산', '표 수치·숨긴 값·정답·선택지 후보, 해설에 쓸 값(반응량, 남는 물질, C+D 질량, 실젯값, 비례식)을 서버가 계산한다 (몰질량 표 유형).', 'AI가 숫자를 짐작하면 검산·독립 풀이에서 걸려 설계부터 다시 했다.'],
+    ['형식', '해설 문장은 선생님 문장 틀에 값을 넣어 서버가 만든다. STEP 제목, 선택지 분석 머리말, 표 머리글(반응 전/반응 후), 분수(\\frac)·수식($) 표기도 서버가 맞춘다.', '해설 대조 지적의 대부분이 문장을 붙이거나 조사를 바꾸는 형식 문제였고, 고칠 때마다 Opus 검토가 한 번 더 돌았다.'],
+    ['검사', '판독 표 값(인쇄 값을 필기로 뺐는지), 판독에 섞인 한자, 원본 검산, 쓰이지 않는 조건, STEP 범위, 숫자만 바꾼 최종 문제를 코드로 본다.', '판독이 틀리면 그 원본으로 만드는 모든 세트가 틀어진다.'],
+    ['흐름', '누가 무엇을 하는지 나눈다: 원본 이해·독립 풀이·최종 판정은 판단이 필요한 모델, 문제 쓰기·고치기는 여러 번 해도 공짜인 PC 모델, 계산·형식은 서버.', '비싼 모델은 판정만 하고 반복 작업은 공짜 모델에게 맡긴다.'],
+    ['학습', '세트에서 나온 실수를 지침으로, 판독 오류를 교정 목록으로 쌓아 다음 세트에 넣는다.', '같은 실수를 두 번 고치지 않는다.'],
+  ];
+  // How each piece cut the expensive model's work on the molar-mass original (eval rounds, Opus at list price).
+  const HN_SAVINGS = [
+    ['서버가 해설에 쓸 값을 계산해 줌 (C+D 질량, 숨긴 실험 표시)', 'Opus 1벌 $1.85 → $1.72, STEP 1~2 연습 해설 지적 7건 → 1건'],
+    ['선택지 분석 머리말을 서버가 넣음', '$1.51 — 최종 문제의 두 번째 해설 고쳐 쓰기가 사라짐'],
+    ['선생님 문장 틀 추출 + 해설을 Qwen이 먼저 고침', '$1.39 (Opus 단독 대비 −62%)'],
+    ['형식은 시스템이 — Qwen은 틀 번호와 값만, 문장은 서버가', '연습 두 문제가 Opus 해설 검토에서 지적 0건으로 한 번에 통과'],
+    ['표 머리글·분수·한자를 코드로 맞춤, 판독 표 값 검사', 'Qwen 단독 판독 실패로 서버 계산이 빠지던 회차(10/29)가 없어짐'],
+    ['같은 원본은 원본 이해·문장 틀을 저장해 다시 씀', '같은 원본으로 100벌: Opus 단독 53.9만 원 → Opus + Qwen + 시스템 16.5만 원 (API 정가)'],
+  ];
   async function harnessView(pane) {
     pane.innerHTML = '<p class="muted">불러오는 중…</p>';
     const paint = async () => {
@@ -1581,10 +1599,21 @@
           <span class="hn-fail ${c.onFail}">${esc(h.onFail[c.onFail] || '')}</span></div>`;
       };
       pane.innerHTML = `
-        <p class="lp-intro">하네스는 AI가 만든 문제를 서버가 검사하고 스스로 고치는 장치입니다. 문제마다 아래 순서로 돌고, 선생님에게 넘기는 것은 정답을 확정하지 못한 문제뿐입니다.</p>
+        <p class="lp-intro">하네스는 AI 둘레에서 일하는 서버 장치입니다. AI는 판단과 내용(문제 구조, 해설에 무엇을 쓸지)에만 집중하고, 정해진 규칙으로 답이 하나인 일(계산·문장 배치·형식·검사)은 서버 코드가 맡습니다. 그래서 AI가 틀리고 다시 하는 일이 줄어 토큰이 줄고, 작은 모델로도 품질이 올라갑니다. 문제마다 아래 순서로 돌고, 선생님에게 넘기는 것은 정답을 확정하지 못한 문제뿐입니다.</p>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>시스템이 맡는 일</h2><p>AI에게 맡기지 않고 서버 코드가 하는 일입니다. 같은 일을 AI가 하면 틀리고 고치느라 호출과 토큰이 늘었습니다.</p></div>
+          <div class="panel lt-list">${HN_SYSTEM.map(([name, what, why]) => `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">${name}</span><span class="lt-sub lt-wrap">${what}</span><span class="lt-sub lt-wrap muted">${why}</span></div></div>`).join('')}</div></section>
+        <section class="lt-sec"><div class="lt-sec-head"><h2>토큰을 줄인 방법</h2><p>몰질량 원본으로 회차마다 재면서 하나씩 넣었습니다(2026-10-13~14, Opus 정가 기준). 점수는 모두 Opus가 판정한 자동 검토입니다.</p></div>
+          <div class="panel"><div class="table-wrap"><table class="cmp-table save-stages">
+            <tr><th>무엇을 바꿨나</th><th>효과</th></tr>
+            ${HN_SAVINGS.map(([what, effect]) => `<tr><th class="small">${what}</th><td class="small">${effect}</td></tr>`).join('')}
+          </table></div>
+          <div class="hn-stats" style="margin-top:12px">${[['94점 · 5,860원', 'Opus 단독 (1벌, API 정가)'], ['97점 · 2,430원', 'Opus + Qwen + 시스템 (−59%)'], ['80점 · 0원', 'Qwen 3.8 학습됨 + 시스템 (PC)'], ['44점 → 80점', 'Qwen 혼자일 때 시스템 전 → 후']].map(([n, k]) => `<div><b>${n}</b><span>${k}</span></div>`).join('')}</div>
+          <p class="muted small">자세한 비교는 모델 비교 페이지에 있습니다. 구독으로 쓰면 각 금액이 약 91% 더 내려갑니다.</p></div></section>
         <section class="lt-sec"><div class="lt-sec-head"><h2>문제 하나를 만드는 순서</h2></div>
           <ol class="hn-flow panel">
-            <li><b>설계</b><span>지침·학습·본보기를 넣어 문제, 해설, 검산 프로그램을 만든다.</span></li>
+            <li><b>원본 준비 (원본마다 1번)</b><span>원본을 판독해 STEP으로 정리하고, 서버가 표를 선생님 풀이대로 계산해 원본 정답과 맞는지 본다. 선생님 해설에서 문장 틀을 뽑아 둔다.</span></li>
+            <li><b>설계</b><span>지침·학습·본보기와 서버가 계산한 후보 표·해설에 쓸 값을 넣어, AI가 문제 구조를 고르고 해설 내용(어느 문장에 어떤 값)을 정한다.</span></li>
+            <li><b>문장 배치</b><span>서버가 선생님 문장 틀로 해설 문장·STEP 제목·머리말·수식 표기를 만들고, 수치는 서버 계산값으로 맞춘다.</span></li>
             <li><b>검사</b><span>코드 검산, 정답을 모르는 독립 풀이, 선생님 해설과의 대조, 코드 점검까지 아래 ${h.checks.generation.length}가지.</span></li>
             <li><b>고치기</b><span>해설만 다르면 해설만 다시 쓴다(최대 ${v.maxRewrites}번). 문제에 결함이 있으면 고친다(최대 ${v.maxRepairs}번).</span></li>
             <li><b>새로 설계</b><span>그래도 남으면 남은 점을 알려 주고 처음부터 다시 설계한다. 문제마다 최대 ${v.maxDesigns}번.</span></li>
