@@ -2,7 +2,7 @@
 // Long model work runs as background jobs persisted on disk; the browser only polls.
 // A restart marks unfinished jobs "interrupted"; resuming keeps every finished problem.
 const { newId } = require('./store');
-const { Budget, pcModelLabel, claudeCliChoice, harnessSettings, claudeLimits, PER_CALL_FREE } = require('./llm');
+const { Budget, pcModelLabel, claudeCliChoice, claudeDesignModel, CLAUDE_MODELS, harnessSettings, claudeLimits, PER_CALL_FREE } = require('./llm');
 const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
@@ -35,11 +35,14 @@ function createJobs({ store, llm, config }) {
       // Every model call in this job goes to the provider the teacher picked.
       // Except the calls a mixed run gives to another model: the problems (designWith) or only the repairs (repairWith).
       routes: {
-        ...(job.options?.designWith ? { generate: job.options.designWith, 'repair-lean': job.options.designWith, adjudicate: job.options.designWith } : {}),
+        ...(job.options?.designWith ? { generate: job.options.designWith, 'repair-lean': job.options.designWith, 'repair-notes': job.options.designWith, adjudicate: job.options.designWith, 'polish-solution': job.options.designWith } : {}),
         ...(job.options?.repairWith ? { repair: job.options.repairWith } : {}),
       },
       // Lean mixed run: the designer writes only an outline; this job's model writes the solution (see pipeline).
       lean: Boolean(job.options?.lean && job.options?.designWith),
+      // A cheaper designer's problems are checked by code before the judge solves them (see designOnce): a cheaper
+      // Claude model, or another provider designing for Claude (the PC's Qwen under Opus).
+      precheck: provider === 'claude-cli' && Boolean(claudeDesignModel(config) || job.options?.designWith),
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       direction: job.options?.direction || '',
@@ -134,7 +137,7 @@ function createJobs({ store, llm, config }) {
       ctx.save();
       // The PC provider serves whichever local model is loaded, and the subscription runs the Claude model chosen on
       // the LLM tab; the job keeps that name (reports, PDFs).
-      if (ctx.provider === 'claude-cli') job.modelLabel = claudeCliChoice(config).label;
+      if (ctx.provider === 'claude-cli') job.modelLabel = claudeCliChoice(config).label + (ctx.precheck ? ` · 설계 ${CLAUDE_MODELS[claudeDesignModel(config)]}` : '');
       if (cliModels.CLIS.includes(ctx.provider)) job.modelLabel = cliModels.cliChoice(config, ctx.provider).label;
       const named = ctx.provider === 'gemma' && llm.gemmaStatus
         ? llm.gemmaStatus(true).then((s) => { if (s.model) job.modelLabel = pcModelLabel(s.model).replace(' (PC)', ''); }).catch(() => {})

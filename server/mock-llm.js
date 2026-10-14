@@ -133,7 +133,8 @@ function mock(messages) {
     const outline = (text.split('[출제자의 풀이 요지')[1] || '').split('\n[')[0];
     const steps = [...outline.matchAll(/^STEP (\d+)\. ([^\n]*)\n([\s\S]*?)(?=\n\nSTEP \d+\.|\n요약:|$)/gm)].map((m) => ({ step: Number(m[1]), title: m[2], work: m[3].trim() }));
     data = { solution: { steps, summary: '모의 해설' } };
-  } else if (system === prompts.ADJUDICATE_SYSTEM) data = { problemAtFault: false, reason: '모의 판정: 검토자 계산 실수' };
+  } else if (system === prompts.EXTRACT_FRAMES_SYSTEM) data = { steps: [] }; // no frames: a mock set runs as before
+  else if (system === prompts.ADJUDICATE_SYSTEM) data = { problemAtFault: false, reason: '모의 판정: 검토자 계산 실수' };
   // One item per set that had faults, about the first one (a real model generalizes them).
   else if (system === prompts.LEARN_SYSTEM) {
     const first = /\n- \(([^)]*)\) (.+)/.exec(text.split('[이번 세트에서 나온 실수]')[1] || '');

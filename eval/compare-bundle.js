@@ -18,20 +18,27 @@ const caseDir = path.join(__dirname, 'cases', args.case);
 const spec = JSON.parse(fs.readFileSync(path.join(caseDir, 'case.json'), 'utf8'));
 const dataUrl = (file) => `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,` + fs.readFileSync(file).toString('base64');
 const { pcModelKey } = require('../server/llm');
-const LABEL = { 'claude-cli': 'Claude Opus 5.5', deepseek: 'DeepSeek V4 Flash', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
-const ORDER = ['claude-cli', 'deepseek', 'qwen36', 'gemma12'];
+const LABEL = { 'claude-cli': 'Claude Opus 5.5', 'opus-haiku': 'Claude Opus 5.5 + Haiku 5.5', 'opus-qwen': 'Claude Opus 5.5 + Qwen 3.6-35B (PC)', 'opus-qwen-sys': 'Claude Opus 5.5 + Qwen 3.8-27B (PC) + 시스템', deepseek: 'DeepSeek V4 Flash', qwen38q4: 'Qwen 3.8-27B (PC) · 학습됨 + 시스템', qwen36: 'Qwen 3.6-35B', gemma12: 'Gemma 4 12B' };
+const ORDER = ['claude-cli', 'opus-haiku', 'opus-qwen', 'opus-qwen-sys', 'deepseek', 'qwen38q4', 'qwen36', 'gemma12'];
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
-const keyOf = (provider, model) => (provider === 'gemma' ? pcModelKey(model) : provider === 'claude-cli' && model && !/^(claude-cli|claude-opus-5-5)$/.test(model) ? model : provider);
+const keyOf = (provider, model, designModel, designWith) => (provider === 'gemma' ? (/qwen3.8-27b-q4/.test(model || '') ? 'qwen38q4' : pcModelKey(model)) : provider === 'claude-cli' && /haiku/.test(designModel || '') ? 'opus-haiku'
+  : provider === 'claude-cli' && designWith === 'gemma' && /qwen3\.8/.test(designModel || '') ? 'opus-qwen-sys'
+  : provider === 'claude-cli' && designWith === 'gemma' ? 'opus-qwen'
+  : provider === 'claude-cli' && model && !/^(claude-cli|claude-opus-5-5)$/.test(model) ? model : provider);
 
 // Harness scores of each model on this case, from the newest full report that has them.
 const scores = {};
+// The same run's scores for a set when its report is here (a model run several times shows the set it made).
+const byJob = {};
 const reportsDir = path.join(__dirname, 'reports');
 for (const f of fs.readdirSync(reportsDir).filter((x) => x.endsWith('.json')).sort().reverse()) {
   const raw = JSON.parse(fs.readFileSync(path.join(reportsDir, f), 'utf8'));
   for (const r of Array.isArray(raw) ? raw : raw.results || []) {
-    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || r.claudeMix || scores[keyOf(r.provider, r.model)]) continue;
+    if (r.case !== args.case || r.stage !== 'full' || !(r.generation || []).length || r.claudeMix) continue;
     const t = (list) => ({ pass: (list || []).filter((c) => c.pass).length, total: (list || []).length });
-    scores[keyOf(r.provider, r.model)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
+    if (r.jobId && !byJob[r.jobId]) byJob[r.jobId] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
+    if (scores[keyOf(r.provider, r.model, r.designModel, r.designWith)]) continue;
+    scores[keyOf(r.provider, r.model, r.designModel, r.designWith)] = { read: t(r.analysis), make: t(r.generation), minutes: r.minutes, usage: r.generationUsage || null, report: f };
   }
 }
 
@@ -41,11 +48,11 @@ for (const f of fs.readdirSync(jobsDir)) {
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, f), 'utf8'));
   if (job.type !== 'generate' || job.options?.claudeMix || !String(job.title).includes(args.title || `${args.case} · `)) continue;
   const provider = job.options?.provider || 'deepseek';
-  const key = KEYS[job.id] || keyOf(provider, '');
+  const key = KEYS[job.id] || keyOf(provider, '', '', job.options?.designWith);
   const m = job.material;
   models.push({
     key, provider, label: LABEL[key] || key, jobId: job.id, pdf: fs.existsSync(path.join(__dirname, 'compare', args.case, `${key}.pdf`)), status: job.status, error: job.error || '', mode: job.options?.mode,
-    score: scores[key] || null,
+    score: byJob[job.id] || scores[key] || null,
     reading: { question: (m.problem.text || '').split('\n').filter((l) => l.trim()).pop(), steps: m.steps.map((s) => s.title), answer: m.problem.answer },
     items: job.items.map((it) => ({
       label: it.label, stage: it.stage, status: it.status, error: it.error || '',

@@ -31,13 +31,47 @@ function callCost(r) {
   if (!p) return null;
   const factor = r.provider === 'deepseek' && deepseekPeak(r.createdAt) ? 2 : 1;
   const cached = r.cached || 0;
-  return factor * ((r.input - cached) * p.input + cached * p.cached + r.output * p.output) / 1e6;
+  // Claude bills a cache write above the input price: twice for the 1-hour cache the CLI uses (its reads held across
+  // 7-minute gaps, 2026-10-09), 1.25 times for the API's 5-minute one. Records before 2026-10-09 have no cacheWrite.
+  const write = r.cacheWrite || 0;
+  const writeFactor = r.provider === 'claude-cli' ? 2 : r.provider === 'claude' ? 1.25 : 1;
+  // A failed call (e.g. the CLI's 64k output cap) is recorded without token counts; it adds nothing rather than NaN.
+  const input = r.input || 0, output = r.output || 0;
+  return factor * ((input - cached - write) * p.input + write * p.input * writeFactor + cached * p.cached + output * p.output) / 1e6;
 }
 
-/** Totals per provider and overall for the ledger records of the given jobs. */
-function runCost(records, jobIds) {
+// What each call was for, in the stages a teacher sees: reading the original (done once per original: every set made
+// from it reuses the analysis), designing the problems with their repairs, solving and writing the solutions, learning.
+// The teacher's sentence frames are read off the original once too (extract-frames, 2026-10-13).
+const STAGE_OF = (purpose) => (/^(analyze|proofread|reread-|regroup|fix-verification|extract-frames)/.test(purpose) ? 'read'
+  : /^(generate|repair)/.test(purpose) ? 'design' : purpose === 'learn' ? 'learn' : 'solve');
+
+/*
+ * The same calls by the part of the work a teacher pays for (모델 비교's cost matrix): understanding the original's
+ * problem and its solution (once per original), each step practice problem, the twin final, and the set's learning.
+ * The problem a call belonged to is read off the generation job's log: from the line its label first appears on to
+ * the next problem's.
+ */
+const PART_OF_READ = (purpose) => (/^(analyze|reread-question|reread-problem|regroup)/.test(purpose) ? 'understand' : 'solution');
+function partOf(r, job, analysisIds) {
+  if (analysisIds.includes(r.jobId) || STAGE_OF(r.purpose || '') === 'read') return PART_OF_READ(r.purpose || '');
+  if (r.purpose === 'learn') return 'learn';
+  const starts = (job?.items || []).map((it) => ({ part: it.stage?.kind === 'twin' ? 'twin' : 'practice', at: (job.log || []).find((x) => x.message.startsWith(`${it.label}: `))?.t }))
+    .filter((x) => x.at).sort((a, b) => (a.at < b.at ? -1 : 1));
+  const mine = starts.filter((x) => x.at <= r.createdAt).pop();
+  return mine ? mine.part : 'practice';
+}
+
+/** Totals per provider and overall for the ledger records of the given jobs; the subscription's also per Claude model
+ *  (a run with Haiku designing spends tokens on both, at prices forty times apart) and per stage and model; with the
+ *  generation job, per part of the work and model (partOf). */
+function runCost(records, jobIds, { job = null } = {}) {
+  const byPart = {};
   const byProvider = {};
+  const byModel = {};
+  const byStage = {};
   let usd = 0;
+  const withClaude = records.some((x) => jobIds.includes(x.jobId) && x.provider === 'claude-cli');
   for (const r of records) {
     if (!jobIds.includes(r.jobId) || r.outcome === 'started') continue;
     const c = callCost(r);
@@ -45,9 +79,25 @@ function runCost(records, jobIds) {
     t.calls++; t.input += r.input || 0; t.cached += r.cached || 0; t.output += r.output || 0;
     if (r.provider === 'deepseek' && deepseekPeak(r.createdAt)) t.peakCalls++;
     if (c !== null) { t.usd += c; usd += c; }
+    // The PC model designing for Claude (designWith) is counted beside it as 'local', at 0: who did which stage.
+    // DeepSeek is split by stage and part too (모델 비교's price grid covers every model, 2026-10-14).
+    const model = r.provider === 'claude-cli' ? r.model : r.provider === 'gemma' && withClaude ? 'local' : r.provider === 'deepseek' ? 'deepseek' : null;
+    if (model) {
+      const m = byModel[model] || (byModel[model] = { calls: 0, tokens: 0, usd: 0 });
+      m.calls++; m.tokens += (r.input || 0) + (r.output || 0); m.usd += c || 0;
+      const st = byStage[STAGE_OF(r.purpose || '')] || (byStage[STAGE_OF(r.purpose || '')] = {});
+      const sm = st[model] || (st[model] = { calls: 0, tokens: 0, usd: 0 });
+      sm.calls++; sm.tokens += (r.input || 0) + (r.output || 0); sm.usd += c || 0;
+      if (job) {
+        const part = partOf(r, job, jobIds.filter((id) => id !== job.id));
+        const pt = byPart[part] || (byPart[part] = {});
+        const pm = pt[model] || (pt[model] = { calls: 0, tokens: 0, usd: 0 });
+        pm.calls++; pm.tokens += (r.input || 0) + (r.output || 0); pm.usd += c || 0;
+      }
+    }
   }
-  for (const t of Object.values(byProvider)) t.usd = +t.usd.toFixed(3);
-  return { usd: +usd.toFixed(3), byProvider };
+  for (const t of [...Object.values(byProvider), ...Object.values(byModel), ...Object.values(byStage).flatMap(Object.values), ...Object.values(byPart).flatMap(Object.values)]) t.usd = +t.usd.toFixed(3);
+  return { usd: +usd.toFixed(3), byProvider, ...(Object.keys(byModel).length ? { byModel, byStage } : {}), ...(Object.keys(byPart).length ? { byPart } : {}) };
 }
 
-module.exports = { PRICES, CLAUDE_PRICES, deepseekPeak, callCost, runCost };
+module.exports = { PRICES, CLAUDE_PRICES, STAGE_OF, deepseekPeak, callCost, runCost };

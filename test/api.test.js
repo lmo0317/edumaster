@@ -56,7 +56,7 @@ test('full flow with mock model: analyze → edit → generate → verify/repair
     // teacher edits: fix a step title and keep 3 steps
     const edited = await s.call('PUT', `/api/materials/${material.id}`, { steps: material.steps.map((st, i) => (i === 0 ? { ...st, title: 'I에서 모두 반응한 물질 판정' } : st)) });
     assert.equal(edited.status, 200, JSON.stringify(edited.data));
-    assert.equal(edited.data.steps[0].title, 'I에서 모두 반응한 물질 판정');
+    assert.equal(edited.data.steps[0].title, 'Ⅰ에서 모두 반응한 물질 판정'); // the problem numbers its experiments Ⅰ~Ⅲ
 
     // a global rule that must be attached and reported
     const rule = (await s.call('POST', '/api/rules', { text: '보조 문자 n, m을 해설에서 계속 사용한다', kind: 'do', target: 'solution', scope: 'global' })).data;

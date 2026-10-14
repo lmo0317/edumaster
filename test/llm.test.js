@@ -103,6 +103,11 @@ test('unreadable JSON: repaired locally when possible, otherwise the model is sh
   const { extractJson } = require('../server/llm');
   // Unescaped quotes inside a string (a common DeepSeek slip) are repaired without another call.
   assert.deepEqual(extractJson('{"title":"그는 "몰질량"을 구한다","n":1,}'), { title: '그는 "몰질량"을 구한다', n: 1 });
+  // A string that breaks off and starts over under the same key (Haiku 5.5, R9 molar final) keeps the second start.
+  assert.deepEqual(extractJson('{"rules":[{"id":"a","how":"계산은 분수("how":"계산은 정수로 잡았다"}],"n":1}'), { rules: [{ id: 'a', how: '계산은 정수로 잡았다' }], n: 1 });
+  // One brace too many closes the answer early, with a bad LaTeX escape before it (Haiku 5.5, R12 nerve practice).
+  assert.deepEqual(extractJson('{"problem":{"text":"$-80\\,\\text{mV}$ }"},"rules":[{"id":"a"}]},"verification":{"program":[]}}'),
+    { problem: { text: '$-80\\,\\text{mV}$ }' }, rules: [{ id: 'a' }], verification: { program: [] } });
 
   let calls = 0; const seen = [];
   const server = require('node:http').createServer((req, res) => {

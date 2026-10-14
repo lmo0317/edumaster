@@ -23,7 +23,11 @@ $models = @{
   # A dense model must sit wholly on the GPU (--fit moved layers to the CPU: 9 tok/s instead of 55); the 8-bit KV
   # cache leaves room for image prefill (47s per image with f16 KV, 2s with q8).
   qwen38   = @{ m = Join-Path $cand 'qwen38/Qwen3.8-27B-UD-Q3_K_XL.gguf'; p = Join-Path $cand 'qwen38/mmproj-F16.gguf'; alias = 'edumaster-qwen3.8-27b'; extra = @('--fit', 'off', '-ngl', '99', '-ctk', 'q8_0', '-ctv', 'q8_0') + $qwenImage }
-  qwen38q4 = @{ m = Join-Path $cand 'qwen38/Qwen3.8-27B-UD-IQ4_XS.gguf'; p = Join-Path $cand 'qwen38/mmproj-F16.gguf'; alias = 'edumaster-qwen3.8-27b-q4'; extra = @('--fit', 'on', '--fit-target', '2048') + $qwenImage }
+  # 4-bit fits the GPU only with the image projector on the CPU (2026-10-13): 53 tok/s and ~30 s per image, against
+  # 8 tok/s when --fit moved layers to the CPU. -ub 512 keeps the compute buffer small. --no-mmap: a mapped file kept
+  # the whole model (17 GB) in RAM as well, with RAM at 29.6/31 GB. --cache-ram 0: the prompt cache kept up to 8 GB of
+  # earlier prompts in RAM (0.5-1.5 GB each) that the next, different prompt never reused (RAM 28.7/31 GB, 2026-10-13).
+  qwen38q4 = @{ m = Join-Path $cand 'qwen38/Qwen3.8-27B-UD-IQ4_XS.gguf'; p = Join-Path $cand 'qwen38/mmproj-F16.gguf'; alias = 'edumaster-qwen3.8-27b-q4'; extra = @('--fit', 'off', '-ngl', '99', '-ctk', 'q8_0', '-ctv', 'q8_0', '-ub', '512', '--no-mmproj-offload', '--no-mmap', '--cache-ram', '0') + $qwenImage }
   # GSQ-RCO picks a quantization per tensor: 11.8 GB at 3.5 bits/weight, scored like BF16 on its card (2026-10-04).
   qwen38gsq = @{ m = Join-Path $cand 'qwen38gsq/Qwen3.8-27B-GSQ-RCO-IQ3_S.gguf'; p = Join-Path $cand 'qwen38gsq/mmproj-Qwen3.8-27B-BF16.gguf'; alias = 'edumaster-qwen3.8-27b-gsq'; extra = @('--fit', 'off', '-ngl', '99', '-ctk', 'q8_0', '-ctv', 'q8_0') + $qwenImage }
   # 95.7/100 on the 2026 수능 math paper (arXiv 2511.18649) at 3.6B active; 12.1 GB, wholly on the GPU. No image

@@ -1,0 +1,20 @@
+{
+  "title": "화학 · 화학 반응식과 기체의 밀도 (밀도비로 한계 반응물, 반응 계수 b와 x)",
+  "problem": "problem.png",
+  "solution": "solution.png",
+  "sameImage": false,
+  "expect": {
+    "answer": 2,
+    "choiceCount": 5,
+    "stepCount": 3,
+    "stepTitles": [
+      "밀도와 B, C의 분자량 비를 이용하여 실험 Ⅰ에서 한계 반응물을 찾는다",
+      "실험 Ⅰ에서 화학 반응식을 완성한다",
+      "실험 Ⅱ에서 화학 반응식을 완성하고, x를 구한다"
+    ],
+    "problemMustContain": ["반응 계수", "1/16", "밀도", "온도와 압력은 일정"],
+    "problemMustNotContain": ["16M", "B의 분자량=M", "2B(g)", "2×10"],
+    "stepsMustContain": ["한계 반응물", "b=2", "x=10"],
+    "notes": "발문은 'b×x는?'이다(선택지 15, 20, 21, 24, 32). 반응식은 A(s)+bB(g)→C(g)이고, A(s)의 s를 감싼 파란 동그라미와 b 밑의 파란 '2', 분홍 '단서'와 'B의 분자량=M, C의 분자량=16M', 표 실험 Ⅱ 반응 후 x 옆의 파란 '10', ② 옆 초록 '2×10=20'과 동그라미는 필기다. 표의 인쇄 값: Ⅰ은 A 2, B 7, 밀도 1→7 / Ⅱ는 A 3, B 8, 밀도 1→x."
+  }
+}

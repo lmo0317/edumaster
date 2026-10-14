@@ -19,8 +19,9 @@ process.stdin.on('end', () => {
   const args = process.argv.slice(2);
   const images = input.split('[이미지: ').slice(1).map((x) => x.split(']')[0]).map((file) => ({ file, exists: fs.existsSync(file) }));
   fs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ args, input, images, cwd: process.cwd() }));
+  if (process.env.FAKE_CAP && args[args.indexOf('--effort') + 1] !== 'medium') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: "API Error: Claude's response exceeded the 64000 output token maximum.", usage: { input_tokens: 100, output_tokens: 64000 } }) + String.fromCharCode(10)); return; }
   if (process.env.FAKE_LIMIT) { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached' }) + String.fromCharCode(10)); return; }
-  process.stdout.write([{ type: 'system', subtype: 'init' }, { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.08, resetsAt: 1790845800 }, seven_day: { utilization: 0.42, resetsAt: 1790920800 } } } }, { type: 'result', subtype: 'success', is_error: false, result: '답: {"answer": 3, "answerValue": "3"}', usage: { input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 40 } }].map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10));
+  process.stdout.write([{ type: 'system', subtype: 'init' }, { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.08, resetsAt: 1790845800 }, seven_day: { utilization: 0.42, resetsAt: 1790920800 } } } }, { type: 'result', subtype: 'success', is_error: false, result: process.env.FAKE_RESULT || '답: {"answer": 3, "answerValue": "3"}', usage: { input_tokens: 100, cache_read_input_tokens: 50, cache_creation_input_tokens: 20, output_tokens: 40 } }].map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10));
 });`);
 const image = 'data:image/png;base64,' + Buffer.from('png-bytes').toString('base64');
 const dataDir = fs.mkdtempSync(path.join(tmp, 'data-'));
@@ -30,7 +31,7 @@ test('claude-cli: system prompt and model passed, images opened with Read only, 
   const llm = llmFor();
   const r = await llm.json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'low', system: '시스템 지시', text: '', images: [{ label: '[원본 문제]', dataUrl: image }], vision: true });
   assert.equal(r.data.answer, 3);
-  assert.deepEqual(r.usage, { input: 150, output: 40, reasoning: 0, cached: 50, total: 190 });
+  assert.deepEqual(r.usage, { input: 170, output: 40, reasoning: 0, cached: 50, cacheWrite: 20, total: 210 });
   const s = JSON.parse(fs.readFileSync(seen, 'utf8'));
   assert.ok(s.args.includes('-p') && s.args.includes('--no-session-persistence'));
   assert.equal(s.args[s.args.indexOf('--model') + 1], 'claude-opus-5-5');
@@ -57,6 +58,39 @@ test('claude-cli: a text-only call gets no tools; a usage limit comes back as a 
   } finally { delete process.env.FAKE_LIMIT; }
 });
 
+test('claude-cli: an answer past the output cap is retried at medium effort, its tokens counted', async () => {
+  const { saveLlmSettings } = require('../server/llm');
+  saveLlmSettings(dataDir, { claude: { model: 'claude-opus-5-5', effort: 'high' } });
+  process.env.FAKE_CAP = '1';
+  try {
+    const budget = new Budget({ maxCalls: 5, maxTokens: 1e6 });
+    const r = await llmFor().json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget, effort: 'low', system: 's', text: '문제' });
+    assert.equal(r.data.answer, 3);
+    const s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+    assert.equal(s.args[s.args.indexOf('--effort') + 1], 'medium');
+    assert.equal(budget.calls, 2);
+  } finally { delete process.env.FAKE_CAP; saveLlmSettings(dataDir, { claude: {} }); }
+});
+
+test('claude-cli: an answer cut at the cap does not use up the retry for unreadable JSON', async () => {
+  process.env.FAKE_CAP = '1'; process.env.FAKE_RESULT = '읽을 수 없는 답';
+  try {
+    const budget = new Budget({ maxCalls: 5, maxTokens: 1e6 });
+    await assert.rejects(() => llmFor().json({ provider: 'claude-cli', purpose: 'solve', jobId: 'j', budget, effort: 'high', system: 's', text: '문제' }), /JSON/);
+    assert.equal(budget.calls, 3, 'cut, then the medium answer, then one ask to fix it');
+  } finally { delete process.env.FAKE_CAP; delete process.env.FAKE_RESULT; }
+});
+
+test('claude-cli: a clean solution review (no STEP deviates) is accepted in one call', async () => {
+  process.env.FAKE_RESULT = '{"steps":[],"rules":{"kept":["r1"],"broken":[]}}';
+  try {
+    const budget = new Budget({ maxCalls: 5, maxTokens: 1e6 });
+    const r = await llmFor().json({ provider: 'claude-cli', purpose: 'review-solution', jobId: 'j', budget, effort: 'low', system: 's', text: '해설' });
+    assert.deepEqual(r.data.steps, []);
+    assert.equal(budget.calls, 1);
+  } finally { delete process.env.FAKE_RESULT; }
+});
+
 test('claude-cli: the model and effort chosen on the LLM tab are what the CLI is run with (reading calls stay quick)', async () => {
   const { saveLlmSettings, claudeCliChoice } = require('../server/llm');
   saveLlmSettings(dataDir, { claude: { model: 'claude-sonnet-5-5', effort: 'high' } });
@@ -75,4 +109,20 @@ test('claude-cli: the model and effort chosen on the LLM tab are what the CLI is
     assert.equal(s.args[s.args.indexOf('--effort') + 1], 'low');
     assert.equal(claudeCliChoice({ dataDir, claudeCli: { model: 'claude-opus-5-5' } }).label, 'Claude Sonnet 5.5 (구독)');
   } finally { saveLlmSettings(dataDir, { claude: {} }); }
+});
+
+test('claude-cli: easy calls named in claude.cheap go to the cheaper model; designing and judging never do', async () => {
+  fs.writeFileSync(path.join(dataDir, 'llm-settings.json'), JSON.stringify({ claude: { model: 'claude-opus-5-5', effort: 'high', cheap: { model: 'claude-haiku-5-5', purposes: ['write-solution', 'learn', 'solve'] } } }));
+  try {
+    const llm = llmFor();
+    const modelFor = async (purpose) => {
+      await llm.json({ provider: 'claude-cli', purpose, jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }), effort: 'low', system: 's', text: '문제' }).catch(() => {});
+      const s = JSON.parse(fs.readFileSync(seen, 'utf8'));
+      return s.args[s.args.indexOf('--model') + 1];
+    };
+    assert.equal(await modelFor('write-solution'), 'claude-haiku-5-5');
+    assert.equal(await modelFor('learn'), 'claude-haiku-5-5');
+    assert.equal(await modelFor('solve'), 'claude-opus-5-5', 'a judging call stays on the chosen model even when listed');
+    assert.equal(await modelFor('generate'), 'claude-opus-5-5');
+  } finally { fs.rmSync(path.join(dataDir, 'llm-settings.json'), { force: true }); }
 });

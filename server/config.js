@@ -98,7 +98,8 @@ module.exports = {
     // stopped fixing at 1.6M tokens after 9 calls — agy counts its whole agent turn, ~180k tokens a call).
     perCallFreeTokens: int('EDUMASTER_PER_CALL_FREE_TOKENS', 100000000),
   },
-  // Won per dollar for the 모델 비교 page (each call's list price is in server/cost.js).
-  pricing: { krwPerUsd: 1400 },
+  // Won per dollar for the 모델 비교 page (each call's list price is in server/cost.js), and the teacher's Claude Max
+  // fee (Max 20x, $200 a month), which the 모델 비교 page spreads over the weekly limit it buys.
+  pricing: { krwPerUsd: 1400, claudeMaxUsdPerMonth: 200 },
   maxUploadBytes: int('EDUMASTER_MAX_UPLOAD_BYTES', 14 * 1024 * 1024),
 };

@@ -213,9 +213,26 @@ test('run cost: list prices per provider, DeepSeek peak hours double, cached inp
   assert.equal(c.byProvider.deepseek.peakCalls, 1);
   assert.equal(c.byProvider.claude.usd, +(0.1 * 4 + 0.05 * 20).toFixed(3));
   assert.equal(c.byProvider.claude.calls, 1);
+  // DeepSeek is split by model and stage too (모델 비교's price grid); the API Claude is not.
+  assert.deepEqual(Object.keys(c.byModel), ['deepseek']);
 });
 
-test('lean run: a solution-format fault is rewritten by the writer, and a disagreeing solver is checked by the designer before any repair', async () => {
+test('run cost: the subscription is split by Claude model, each at its own price', () => {
+  const { runCost } = require('../server/cost');
+  const at = '2026-10-11T02:00:00Z';
+  const c = runCost([
+    { jobId: 'a', provider: 'claude-cli', model: 'claude-opus-5-5', createdAt: at, input: 1e5, output: 5e4, outcome: 'stop' },
+    { jobId: 'a', provider: 'claude-cli', model: 'claude-haiku-5-5', createdAt: at, input: 1e6, output: 1e6, outcome: 'stop' },
+  ], ['a']);
+  assert.deepEqual(c.byModel['claude-opus-5-5'], { calls: 1, tokens: 15e4, usd: 1.4 });
+  assert.deepEqual(c.byModel['claude-haiku-5-5'], { calls: 1, tokens: 2e6, usd: 0.6 });
+  assert.equal(c.usd, 2);
+  const { STAGE_OF } = require('../server/cost');
+  assert.deepEqual(['analyze', 'reread-question', 'generate', 'repair-lean', 'solve', 'review-solution', 'write-solution', 'learn'].map(STAGE_OF),
+    ['read', 'read', 'design', 'design', 'solve', 'solve', 'solve', 'learn']);
+});
+
+test('lean run: a STEP title worded otherwise is set by the system (no rewrite), and a disagreeing solver is checked by the designer before any repair', async () => {
   const calls = [];
   let writes = 0;
   const llm = {
@@ -235,7 +252,7 @@ test('lean run: a solution-format fault is rewritten by the writer, and a disagr
   const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
   await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
   assert.equal(calls.filter((s) => s === prompts.REPAIR_SYSTEM).length, 0, 'no design repair');
-  assert.equal(writes, 2, 'the wrong STEP title was sent back to the writer once');
+  assert.equal(writes, 1, 'the system puts the teacher’s STEP title in; the writer is not asked again');
   assert.equal(calls.filter((s) => s === prompts.SOLVE_SYSTEM).length, 1, 'rewriting the solution does not solve again');
   assert.equal(calls.filter((s) => s === prompts.ADJUDICATE_SYSTEM).length, 1);
   assert.equal(item.outline.steps[0].work, '3', 'the designer\'s outline is kept');
@@ -267,4 +284,116 @@ test('lean run: when the designer agrees the problem is at fault, the repair ret
   assert.equal(item.designNote, '설계 메모', 'what the repair left out is kept');
   assert.ok(item.verificationSpec?.program?.length, 'the verification program is kept');
   assert.equal(item.status, 'passed');
+});
+
+// Fewer Opus tokens (2026-10-09): what every call of a kind in a set sends alike goes in `context` (cached by the
+// provider after the system prompt); the solver names kept rules by id only; a repair returns only the rule notes
+// that changed.
+test('the original and the rules are the context every design, repair and solve of a set shares; each call adds its own text', async () => {
+  const rules = [{ id: 'r1', kind: 'do', target: 'problem', text: '표의 행은 원본 순서대로 둔다.' }];
+  const solves = [
+    { answer: 3, stepsUsed: [1, 2], conditions: [{ text: '(단, 온도는 일정하다.)', used: false }] },
+    { answer: 3, stepsUsed: [1, 2], conditions: [] },
+  ];
+  const calls = [];
+  const llm = {
+    json: async ({ system, context, text }) => {
+      calls.push({ system, context, text });
+      if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+      return { data: generated(system === prompts.REPAIR_SYSTEM ? '고친 문제' : '처음 문제') };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules, mode: 'integrated' });
+  const of = (system) => calls.filter((c) => c.system === system);
+  const [design] = of(prompts.GENERATE_SYSTEM);
+  const [repair] = of(prompts.REPAIR_SYSTEM);
+  assert.equal(design.context, repair.context, 'design and repair share the original and the rules');
+  assert.match(design.context, /\[원본 문제\][\s\S]*원본 표와 질문[\s\S]*표의 행은 원본 순서대로 둔다/);
+  assert.doesNotMatch(design.text, /원본 표와 질문|표의 행은 원본 순서대로/);
+  assert.match(design.text, /이번에 만들 문제: STEP 1~2 연습/);
+  assert.match(repair.text, /\[발견된 문제\][\s\S]*쓰이지 않는 조건/);
+  const solveCalls = of(prompts.SOLVE_SYSTEM);
+  assert.equal(solveCalls.length, 2);
+  assert.equal(solveCalls[0].context, solveCalls[1].context);
+  assert.match(solveCalls[0].context, /\(r1\) 표의 행은 원본 순서대로 둔다/);
+  assert.match(solveCalls[1].text, /고친 문제/);
+  // The joined text reads as before: the context first.
+  assert.equal(prompts.generateText({ material, stage: item.stage, total: 2, mode: 'integrated', prior: [], rules, variantNo: 1 }), design.context + '\n' + design.text);
+});
+
+test('the solver names kept rules by id and broken ones with a note; a broken rule goes back for repair', async () => {
+  const rules = [{ id: 'r1', kind: 'do', target: 'problem', text: '표의 행은 원본 순서대로 둔다.' }, { id: 'r2', kind: 'dont', target: 'problem', text: '구할 값을 표에 주지 않는다.' }];
+  const solves = [
+    { answer: 3, stepsUsed: [1, 2], conditions: [], rules: { kept: ['r1'], broken: [{ id: 'r2', note: '$x$를 표에 줌' }] } },
+    { answer: 3, stepsUsed: [1, 2], conditions: [], rules: { kept: ['r1', 'r2'], broken: [] } },
+  ];
+  const repairs = [];
+  const llm = {
+    json: async ({ system, text }) => {
+      if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+      if (system === prompts.REPAIR_SYSTEM) { repairs.push(text); return { data: generated('고친 문제') }; }
+      return { data: generated('처음 문제') };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules, mode: 'integrated' });
+  assert.equal(repairs.length, 1);
+  assert.match(repairs[0], /교사 지침 미준수: 구할 값을 표에 주지 않는다\. — \$x\$를 표에 줌/);
+  assert.doesNotMatch(repairs[0], /교사 지침 미준수: 표의 행은/);
+  assert.deepEqual(item.verification.rules.map((r) => [r.id, r.judged.ok]), [['r1', true], ['r2', true]]);
+  assert.equal(item.status, 'passed');
+});
+
+test('a repair returns only the rule notes that changed; the others stay as the design wrote them', async () => {
+  const rules = [{ id: 'r1', kind: 'do', target: 'problem', text: '표의 행은 원본 순서대로 둔다.' }, { id: 'r2', kind: 'dont', target: 'problem', text: '구할 값을 표에 주지 않는다.' }];
+  const solves = [
+    { answer: 3, stepsUsed: [1, 2], conditions: [], rules: { kept: ['r1'], broken: [{ id: 'r2', note: '$x$를 표에 줌' }] } },
+    { answer: 3, stepsUsed: [1, 2], conditions: [], rules: { kept: ['r1', 'r2'], broken: [] } },
+  ];
+  const llm = {
+    json: async ({ system, text }) => {
+      if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() };
+      if (system === prompts.REPAIR_SYSTEM) {
+        assert.match(text, /appliedRules에는 이번 수정으로 지키는 방법이 달라진 지침만/);
+        return { data: { ...generated('고친 문제'), appliedRules: [{ id: 'r2', how: '$x$를 기호로 숨겼다' }] } };
+      }
+      return { data: { ...generated('처음 문제'), appliedRules: [{ id: 'r1', how: 'Ⅰ, Ⅱ, Ⅲ 순서 유지' }, { id: 'r2', how: '표에 x 없음' }] } };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem(ctxFor(llm), { material, item, prior: [], rules, mode: 'integrated' });
+  assert.deepEqual(item.appliedRules, [{ id: 'r1', how: 'Ⅰ, Ⅱ, Ⅲ 순서 유지' }, { id: 'r2', how: '$x$를 기호로 숨겼다' }]);
+});
+
+test('run cost: a Claude cache write is priced above the input price (CLI 1-hour cache: twice)', () => {
+  const { callCost } = require('../server/cost');
+  const base = { provider: 'claude-cli', model: 'claude-opus-5-5', createdAt: '2026-10-09T00:00:00Z', output: 0 };
+  // 10k input: 4k read from the cache, 3k written to it, 3k plain.
+  assert.equal(+callCost({ ...base, input: 1e4, cached: 4e3, cacheWrite: 3e3 }).toFixed(6), +((3e3 * 4 + 3e3 * 8 + 4e3 * 0.2) / 1e6).toFixed(6));
+  // A record from before cache writes were kept costs what it did.
+  assert.equal(+callCost({ ...base, input: 1e4, cached: 4e3 }).toFixed(6), +((6e3 * 4 + 4e3 * 0.2) / 1e6).toFixed(6));
+  // A failed call has no token counts: it adds nothing instead of turning the run's total into NaN.
+  assert.equal(callCost({ provider: 'claude-cli', model: 'claude-haiku-5-5', outcome: 'error' }), 0);
+});
+
+test('a cheaper designer\'s problem that fails a code check goes back to it before the judge solves it', async () => {
+  const leftover = (rows) => ({ ...generated('표\n| 실험 | A | B | 남은 |\n|---|---|---|---|\n' + rows), solution: { steps: [{ step: 1, title: 'S1', work: '가정하면 모순 3' }], summary: '3' } });
+  const assumeMaterial = { ...material, steps: [{ title: 'S1', technique: '가정→모순', work: '만약 A가 모두 반응했다면 맞지 않다' }, material.steps[1]] };
+  const order = [];
+  const llm = {
+    json: async ({ system }) => {
+      order.push(system === prompts.SOLVE_SYSTEM ? 'solve' : system === prompts.REPAIR_SYSTEM ? 'repair' : system === prompts.GENERATE_SYSTEM ? 'generate' : 'other');
+      if (system === prompts.SOLVE_SYSTEM) return { data: { answer: 3, stepsUsed: [1, 2], conditions: [] } };
+      if (system === prompts.REPAIR_SYSTEM) return { data: leftover('| Ⅰ | $4w$ | $6w$ | $w$ |') };
+      if (system === prompts.GENERATE_SYSTEM) return { data: leftover('| Ⅰ | $4w$ | $6w$ | $9w$ |') }; // 9w left > 4w put in
+      return { data: { steps: [], rules: [] } };
+    },
+  };
+  const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
+  await produceItem({ ...ctxFor(llm), precheck: true }, { material: assumeMaterial, item, prior: [], rules: [], mode: 'integrated' });
+  assert.deepEqual(order.slice(0, 3), ['generate', 'repair', 'solve'], 'repaired before the first solve');
+  const pre = item.attempts.find((a) => a.kind === 'precheck');
+  assert.match(pre.failures.join(), /가정→모순 없이 남은 물질이 정해지는 실험이 없음/);
+  assert.equal(order.filter((x) => x === 'solve').length, 1);
 });

@@ -40,6 +40,29 @@ function views(file) {
   return fs.existsSync(dir) ? fs.readdirSync(dir).sort().map((f) => dataUrl(path.join(dir, f))) : [];
 }
 
+// Lessons about one original (scope material) are kept under the case name, since every run registers the original anew.
+function caseRules(dataDir) {
+  const dir = path.join(dataDir, 'rules');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => ({ file: path.join(dir, f), rule: JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) })) : [];
+}
+function tagCaseLessons(dataDir, name) {
+  const materials = path.join(dataDir, 'materials');
+  const ids = fs.existsSync(materials) ? fs.readdirSync(materials).map((f) => JSON.parse(fs.readFileSync(path.join(materials, f), 'utf8')))
+    .filter((m) => String(m.title || '').startsWith(`[평가] ${name} ·`)).map((m) => m.id) : [];
+  for (const { file, rule } of caseRules(dataDir)) {
+    if (rule.scope === 'material' && ids.includes(rule.source?.materialId) && rule.source.evalCase !== name) {
+      fs.writeFileSync(file, JSON.stringify({ ...rule, source: { ...rule.source, evalCase: name } }, null, 1));
+    }
+  }
+}
+function carryCaseLessons(dataDir, name, materialId) {
+  for (const { file, rule } of caseRules(dataDir)) {
+    if (rule.scope === 'material' && rule.source?.evalCase === name) {
+      fs.writeFileSync(file, JSON.stringify({ ...rule, source: { ...rule.source, materialId } }, null, 1));
+    }
+  }
+}
+
 async function main() {
   const dataDir = path.join(__dirname, '.work', stamp);
   process.env.EDUMASTER_KEEP_RAW = '1'; // every model answer is kept under .work/<stamp>/llm-raw
@@ -97,7 +120,11 @@ async function main() {
     const solution = spec.solution ? path.join(casesDir, name, spec.solution) : null;
     for (const provider of providers) {
       const started = Date.now();
-      const row = { case: name, title: spec.title, provider, model: modelOf(provider), stage, mode, ...mixed };
+      // Claude with a cheaper designer (Opus + Haiku): named so 모델 비교 keeps it apart from Opus alone.
+      // Or with the PC designing: the PC model's name (Qwen 3.6 with the hand-written molar solution, or Qwen 3.8 with the
+      // teacher's frames — 모델 비교 keeps the two apart).
+      const designModel = provider === 'claude-cli' ? llmSettings(dataDir).claude?.designModel || (mixed.designWith === 'gemma' ? modelOf('gemma') : undefined) : undefined;
+      const row = { case: name, title: spec.title, provider, model: modelOf(provider), designModel, stage, mode, ...mixed };
       process.stdout.write(`\n[${name} · ${provider}] 분석 중…`);
       try {
         const created = await call('POST', '/api/materials', {
@@ -105,6 +132,9 @@ async function main() {
           problemImage: dataUrl(problem), solutionImage: solution && !spec.sameImage ? dataUrl(solution) : null,
           problemViews: views(problem), solutionViews: solution && !spec.sameImage ? views(solution) : [],
         });
+        // What an earlier eval run learned about this case's original follows it to this run's copy of the original,
+        // as a teacher's lessons stay with the original she keeps using (rounds of --learning-from).
+        carryCaseLessons(dataDir, name, created.material.id);
         const analysisJob = await wait(created.jobId);
         const material = await call('GET', `/api/materials/${created.material.id}`);
         row.analysisUsage = analysisJob.usage;
@@ -124,10 +154,13 @@ async function main() {
         // List-price cost of every call this case made (analysis + generation), per provider.
         const usageDir = path.join(dataDir, 'usage');
         const records = fs.existsSync(usageDir) ? fs.readdirSync(usageDir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(usageDir, f), 'utf8'))) : [];
-        row.cost = runCost(records, [analysisJob.id, row.jobId].filter(Boolean));
+        const jobFile = row.jobId && path.join(dataDir, 'jobs', `${row.jobId}.json`);
+        const genJob = jobFile && fs.existsSync(jobFile) ? JSON.parse(fs.readFileSync(jobFile, 'utf8')) : null;
+        row.cost = runCost(records, [analysisJob.id, row.jobId].filter(Boolean), { job: genJob });
       } catch (e) {
         row.error = e.message;
       }
+      tagCaseLessons(dataDir, name);
       row.minutes = +((Date.now() - started) / 60000).toFixed(1);
       const all = [...(row.analysis || []), ...(row.generation || [])];
       process.stdout.write(` ${all.filter((c) => c.pass).length}/${all.length} 통과 (${row.minutes}분)`);

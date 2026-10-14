@@ -183,7 +183,7 @@ a.button.primary { background: var(--accent); color: #fff; border-color: var(--a
 .cv2-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 640px; font-size: 13.5px; }
 .cv2-table th, .cv2-table td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
 .cv2-table tr:first-child th { vertical-align: bottom; border-bottom: 2px solid var(--line); font-size: 14px; }
-.cv2-table tr > th:first-child { width: 34%; font-weight: 600; }
+.cv2-table tr > th:first-child { width: 170px; font-weight: 600; }
 .cv2-table tr.grp td { background: #f4f6fa; color: var(--accent); font-weight: 700; font-size: 12.5px; padding: 6px 10px; }
 .cv2-score { font-size: 26px; font-weight: 800; line-height: 1.1; margin-top: 4px; }
 .cv2-score.ok, .cv2-pct.ok { color: var(--ok); } .cv2-score.warn, .cv2-pct.warn { color: #b97d10; } .cv2-score.bad, .cv2-pct.bad { color: var(--bad); }
@@ -897,3 +897,75 @@ a.btn.set-open:hover { border-color: var(--accent); }
 .lm-heat td { width: 26px; min-width: 26px; height: 22px; border-radius: 4px; background: #eef0f4; }
 .lm-heat td.k { background: var(--ok); } .lm-heat td.b { background: #d99a1e; } .lm-heat td.u { background: #b9c6ea; }
 .lm-heat td.lm-heat-n { background: none; width: auto; white-space: nowrap; color: var(--muted); padding: 0 8px; font-variant-numeric: tabular-nums; }
+
+/* 진행 상황 page (progress-view.js): the token-saving work, its rounds and what was kept or reverted. */
+.pg-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.pg-tile { display: grid; gap: 4px; }
+.pg-tile span { color: var(--muted); font-size: 13px; }
+.pg-tile b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.pg-tile small { color: var(--muted); }
+.pg-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.55; }
+.pg-hist { margin: 0; padding-left: 20px; display: grid; gap: 12px; }
+.pg-hist p { margin: 4px 0 0; color: var(--ink); line-height: 1.55; }
+.pg-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 13.5px; margin-bottom: 6px; }
+.pg-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.pg-legend small { color: var(--muted); }
+.pg-chart { position: relative; overflow-x: auto; }
+.pg-chart svg { width: 100%; min-width: 520px; height: auto; display: block; }
+.pg-grid { stroke: var(--line); stroke-width: 1; }
+.pg-axis { fill: var(--muted); font-size: 12px; }
+i.pg-mm, path.pg-mm { background: #2a78d6; fill: #2a78d6; }
+i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
+.pg-hit:hover path { opacity: .8; }
+.pg-tip { position: absolute; pointer-events: none; background: var(--ink); color: #fff; font-size: 12.5px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; }
+.pg-good { color: var(--ok); }
+/* 모델 비교 · 혼합 모델: what the mix saves against Opus alone */
+.save-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 10px 0; }
+.save-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: #fff; }
+.save-card.win { border-color: var(--ok); background: var(--ok-soft); }
+.save-title { font-weight: 800; margin-bottom: 8px; }
+.save-line { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-top: 1px dashed var(--line); }
+.save-line:first-of-type { border-top: 0; }
+.save-line span { color: var(--muted); }
+.save-card.win .save-line b { color: var(--ok); }
+.save-sub { text-align: right; color: var(--muted); font-size: 12px; margin-top: -3px; padding-bottom: 3px; }
+.save-note { margin-top: 8px; font-size: 13px; line-height: 1.5; }
+.save-h { font-size: 16px; margin: 18px 0 6px; }
+.save-up { color: var(--ok); } .save-down { color: var(--bad); }
+.save-total { font-size: 16px; margin: 4px 0 10px; }
+.save-sub-total th, .save-sub-total td { background: #fafbfd; }
+
+/* 모델 비교: the long notes and the round log fold away. */
+.cmp-note { margin-top: 12px; }
+.cmp-note > summary { padding: 8px 0; font-weight: 600; color: var(--muted); }
+.cmp-note > p, .cmp-note > .table-wrap { margin-top: 6px; }
+
+/* 모델 비교 › 전체 비교: short cards, the price-quality chart and the price grid. */
+.ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+.ov-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+.ov-name { font-weight: 700; font-size: 15px; line-height: 1.3; }
+.ov-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip.solo { background: #e8f1fc; color: #1c5cab; }
+.chip.mix { background: #fdeee7; color: #b24316; }
+.ov-score { font-size: 34px; font-weight: 800; line-height: 1; }
+.ov-score small { font-size: 14px; font-weight: 600; margin-left: 2px; color: var(--muted); }
+.ov-score.ok { color: #1a7f45; } .ov-score.warn { color: #b7791f; } .ov-score.bad { color: #c53030; }
+.ov-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 4px 0 0; font-size: 13px; }
+.ov-facts dt { color: var(--muted); } .ov-facts dd { margin: 0; font-weight: 600; text-align: right; }
+.ov-prices { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; border-top: 1px solid var(--line); }
+.ov-prices th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 0; vertical-align: top; white-space: nowrap; }
+.ov-prices td { text-align: right; padding: 6px 0; }
+.ov-prices td span { display: block; }
+.ov-chart-wrap { overflow-x: auto; }
+.ov-chart { width: 100%; min-width: 600px; display: block; }
+.ov-chart .ov-gl { stroke: #e7e9ef; stroke-width: 1; }
+.ov-tick { font-size: 11px; fill: #6b7280; }
+.ov-axis { font-size: 12px; fill: #4b5563; }
+.ov-lbl { font-size: 12px; fill: #1f2937; font-weight: 600; }
+.ov-sweet { fill: #e9f7ef; }
+.ov-sweet-t { font-size: 11px; fill: #1a7f45; font-weight: 600; }
+.ov-dot:hover .ov-lbl { text-decoration: underline; }
+.ov-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 13px; margin: 6px 0; }
+.ov-legend svg { vertical-align: -2px; margin-right: 4px; }
+.cost-matrix { min-width: 980px; }
+.cost-matrix th, .cost-matrix td { word-break: keep-all; }

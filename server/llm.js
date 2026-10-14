@@ -41,20 +41,43 @@ class Budget {
   }
 }
 
+// One brace too many closes the whole answer early ('…"how":"…"}]},"verification":{…}'): what follows is more of
+// the same object, so that brace goes. jsonrepair read it as an array of four parts and the design was lost (Haiku 5.5,
+// nerve STEP 1 practice, twice in a row, R12 2026-10-12). Read by brackets, not by JSON.parse, so a bad LaTeX escape
+// earlier in the text does not hide it.
+function reopen(json) {
+  let depth = 0; let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (inString) { if (c === '\\') i++; else if (c === '"') inString = false; continue; }
+    if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') {
+      depth--;
+      if (depth === 0 && i < json.length - 1 && /^\s*,\s*"/.test(json.slice(i + 1))) { json = json.slice(0, i) + json.slice(i + 1); depth = 1; i--; }
+    }
+  }
+  return json;
+}
+
 function extractJson(text) {
   let body = String(text || '').trim();
   const fence = /^```(?:json)?\s*([\s\S]*?)```$/i.exec(body);
   if (fence) body = fence[1].trim();
   const start = body.indexOf('{'); const end = body.lastIndexOf('}');
   if (start < 0 || end <= start) throw new LlmFormatError('모델 응답에서 JSON을 찾지 못했습니다.');
-  const json = body.slice(start, end + 1);
+  const json = reopen(body.slice(start, end + 1));
   try { return restoreLatex(JSON.parse(json)); } catch { /* try the LaTeX-escape repair below */ }
   // Models often forget to double LaTeX backslashes: "\ce{A}" is an invalid JSON escape. Double every
   // backslash that does not start a valid JSON escape, then parse again.
   const latexFixed = json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
   try { return restoreLatex(JSON.parse(latexFixed)); } catch { /* try a general repair below */ }
+  // A string that breaks off and starts over under the same key ('"how":"… 분수("how":"…'): keep the second
+  // start. Haiku 5.5 did this in a 9.7k-character final design (2026-10-11), the set's last problem lost.
+  const restarted = latexFixed.replace(/"(\w+)":"(?:[^"\\]|\\.)*"\1":"/g, '"$1":"');
+  if (restarted !== latexFixed) try { return restoreLatex(JSON.parse(restarted)); } catch { /* try a general repair below */ }
   // Unescaped quotes inside strings, trailing commas, missing brackets: repair locally before asking again.
-  try { return restoreLatex(JSON.parse(jsonrepair(latexFixed))); }
+  try { return restoreLatex(JSON.parse(jsonrepair(restarted))); }
   catch (e) { throw new LlmFormatError('모델 응답 JSON을 읽지 못했습니다: ' + e.message); }
 }
 
@@ -76,7 +99,8 @@ const REQUIRED = {
   generate: ['problem', 'solution', 'verification'],
   repair: ['problem', 'solution', 'verification'],
   solve: ['answer'],
-  'review-solution': ['steps'],
+  // steps lists only the STEPs that deviate and is empty for a clean solution; the rule verdicts always come back.
+  'review-solution': ['rules'],
   regroup: ['groups'],
   'reread-question': ['question'],
   'reread-problem': ['text'],
@@ -206,6 +230,21 @@ function claudeCliChoice(config) {
   const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};
   const model = CLAUDE_MODELS[s.model] ? s.model : config.claudeCli.model;
   return { model, effort: CLAUDE_EFFORTS.includes(s.effort) ? s.effort : 'auto', label: `${CLAUDE_MODELS[model] || model} (구독)` };
+}
+
+// Easy calls on a cheaper Claude model (llm-settings claude.cheap: {model, purposes}): the calls that design or judge
+// stay on the chosen model; reading checks, rewriting a solution to the reviewer's notes and learning can go cheaper.
+// claude.designModel: the problems themselves (design and repairs) on another model, judged by the chosen one.
+const DESIGNING = new Set(['generate', 'repair', 'repair-lean']);
+function claudeDesignModel(config) {
+  const m = config.dataDir ? (llmSettings(config.dataDir).claude || {}).designModel : '';
+  return CLAUDE_MODELS[m] && m !== claudeCliChoice(config).model ? m : '';
+}
+function claudeCliModel(config, purpose) {
+  if (DESIGNING.has(purpose) && claudeDesignModel(config)) return claudeDesignModel(config);
+  const cheap = config.dataDir ? (llmSettings(config.dataDir).claude || {}).cheap : null;
+  if (cheap && CLAUDE_MODELS[cheap.model] && !JUDGING.has(purpose) && (cheap.purposes || []).includes(purpose)) return cheap.model;
+  return claudeCliChoice(config).model;
 }
 
 /** The subscription's use as of the last call (5-hour and weekly windows), kept for the LLM tab. */
@@ -362,7 +401,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     return JSON.parse(raw);
   }
 
-  async function sendGemma({ messages, maxTokens, effort, signal, copying = false }) {
+  async function sendGemma({ messages, maxTokens, effort, signal, copying = false, dry = true }) {
     const status = await gemmaStatus();
     if (!status.available) throw Object.assign(new Error('Gemma(PC)에 연결할 수 없습니다. PC가 켜져 있고 Gemma가 실행 중인지 확인해 주세요.'), { status: 503 });
     // JSON-constrained output that fits the context. Thinking (design/review calls) gets its own budget: left
@@ -376,7 +415,10 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     // temperature low. The streamed-repeat stop still ends a real loop.
     const payload = {
       model: status.model, messages, temperature: copying ? 0.2 : thinking ? 0.6 : 0.2, top_p: 0.95,
-      ...(copying ? {} : { dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4 }),
+      // Nor on a design or repair: its solution has tables, and DRY ended Qwen 3.6's final at the fifth "---|" of a
+      // seven-column separator (EOS outscored the penalised "---|", 2026-10-12 run 4) and dropped the ")" of a
+      // repeated "(mol)" and the space of a repeated "반응 후" (run 3).
+      ...(copying || !dry ? {} : { dry_multiplier: 0.8, dry_base: 1.75, dry_allowed_length: 4 }),
       max_tokens: maxOut,
       // enable_thinking switches Qwen's and Gemma's thinking; gpt-oss always thinks and takes its depth from
       // reasoning_effort instead (each template ignores the other's key).
@@ -402,7 +444,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   // Claude Code CLI on this server (`claude -p`): the same system prompt and user message; images go to a temporary
   // folder and are opened with the Read tool where they stood in the message; the answer and the token counts come
   // from its JSON result. Runs on the logged-in subscription, so nothing is billed per call.
-  async function sendClaudeCli({ messages, effort, signal, purpose }) {
+  async function sendClaudeCli({ messages, effort, signal, purpose, capped = false }) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'em-claude-'));
     try {
       const user = messages[1].content;
@@ -419,9 +461,10 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       for (const turn of messages.slice(2)) texts.push(`[${turn.role === 'assistant' ? '너의 이전 응답' : '추가 요청'}]\n${turn.content}`);
       const prompt = (images ? '[이미지: 경로]가 있는 자리마다 그 이미지 파일을 Read 도구로 열어 자세히 본 뒤 답한다. 다른 파일은 열지 않는다.\n\n' : '') + texts.join('\n');
       const choice = claudeCliChoice(config);
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', choice.model, '--system-prompt', messages[0].content, '--no-session-persistence',
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', claudeCliModel(config, purpose), '--system-prompt', messages[0].content, '--no-session-persistence',
         '--tools', images ? 'Read' : '', ...(images ? ['--allowedTools', 'Read'] : []),
-        ...(effort === 'off' || (!JUDGING.has(purpose) && effort !== 'high') ? ['--effort', 'low'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
+        // After an answer cut at the output cap, the retry thinks at medium so the answer fits in one message.
+        ...(effort === 'off' || (!JUDGING.has(purpose) && effort !== 'high') ? ['--effort', 'low'] : capped ? ['--effort', 'medium'] : choice.effort !== 'auto' ? ['--effort', choice.effort] : effort === 'high' ? ['--effort', 'high'] : [])];
       const { code, stdout, stderr } = await new Promise((resolve, reject) => {
         const token = claudeCliToken(config);
         // The CLI's own output cap per message (32k by default) cut long answers: it went on in a new message and
@@ -448,16 +491,19 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       if (!result) {
         throw Object.assign(new Error(`Claude(구독) 실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`), { status: 502 });
       }
+      const u = result.usage || {};
+      const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      const usage = { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, prompt_cache_write_tokens: u.cache_creation_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) };
+      // One message past the output cap is a cut-off answer, retried like any other (Haiku 5.5 designing at high
+      // effort thought past 64k tokens in one message and failed the whole final stage, 2026-10-11).
+      if (result.is_error && /output token maximum/.test(String(result.result || ''))) {
+        return { choices: [{ finish_reason: 'length', message: { content: '' } }], usage };
+      }
       // A usage limit, an expired login and the like come back as an error result with the reason in `result`.
       if (result.is_error || result.subtype !== 'success') {
         throw Object.assign(new Error(`Claude(구독) 오류: ${String(result.result || result.subtype || '').slice(0, 300)}`), { status: 502 });
       }
-      const u = result.usage || {};
-      const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-      return {
-        choices: [{ finish_reason: 'stop', message: { content: answerText(events, result) } }],
-        usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
-      };
+      return { choices: [{ finish_reason: 'stop', message: { content: answerText(events, result) } }], usage };
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -493,7 +539,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
         return {
           choices: [{ finish_reason: data.stop_reason === 'max_tokens' ? 'length' : 'stop', message: { content: text } }],
-          usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
+          usage: { prompt_tokens: input, prompt_cache_hit_tokens: u.cache_read_input_tokens || 0, prompt_cache_write_tokens: u.cache_creation_input_tokens || 0, completion_tokens: u.output_tokens || 0, total_tokens: input + (u.output_tokens || 0) },
         };
       }
       if ((response.status === 429 || response.status === 529) && attempt < 4) {
@@ -545,18 +591,24 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
    * Calls the model and returns parsed JSON.
    * One automatic retry only for unreadable/truncated output; that retry is counted in the budget too.
    */
-  async function json({ provider = 'deepseek', purpose, jobId, budget, system, text, images = [], vision = false, maxTokens = 16000, effort = 'low', signal }) {
+  async function json({ provider = 'deepseek', purpose, jobId, budget, system, context = '', text, images = [], vision = false, maxTokens = 16000, effort = 'low', signal }) {
+    // `context` (what every call of this kind in a set sends alike) follows the system prompt, where the provider's
+    // prompt cache keeps it between calls; the mock reads the user message only, so there it leads the text.
+    if (context && mode === 'mock') { text = context + '\n' + text; context = ''; }
     const content = images.length
       ? [{ type: 'text', text }, ...images.flatMap((img) => [
           ...(img.label ? [{ type: 'text', text: img.label }] : []),
           { type: 'image_url', image_url: { url: img.dataUrl, detail: 'high' } },
         ])]
       : text;
-    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliChoice(config).model : cli.CLIS.includes(provider) ? cli.cliChoice(config, provider).model || 'codex-default' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
+    const model = provider === 'gemma' ? 'gemma' : provider === 'relay' ? 'relay' : provider === 'claude' ? config.claude.model : provider === 'claude-cli' ? claudeCliModel(config, purpose) : cli.CLIS.includes(provider) ? cli.cliChoice(config, provider).model || 'codex-default' : vision ? config.deepseek.visionModel : config.deepseek.textModel;
     // The teacher's persona and per-stage additions (LLM tab) go around the built-in instructions (not in mock mode).
-    let messages = [{ role: 'system', content: mode === 'mock' ? system : withTeacherPrompt(config, system) }, { role: 'user', content }];
+    let messages = [{ role: 'system', content: (mode === 'mock' ? system : withTeacherPrompt(config, system)) + (context ? '\n\n' + context : '') }, { role: 'user', content }];
     let lastError;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // An answer cut at the output cap does not use up the retry for unreadable JSON: the medium-effort answer
+    // after it can still come back broken (R9 molar final, 2026-10-11).
+    let cut = 0;
+    for (let attempt = 0; attempt < 2 + cut; attempt++) {
       budget.reserve();
       const started = Date.now();
       const record = { id: newId(), jobId, purpose, provider, model: mode === 'mock' ? 'mock' : model, createdAt: new Date().toISOString(), outcome: 'started' };
@@ -565,10 +617,10 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       try {
         const tokens = attempt ? Math.min(maxTokens * 2, 128000) : maxTokens;
         envelope = mode === 'mock' ? await mock(messages)
-          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' })
+          : provider === 'gemma' ? await sendGemma({ messages, maxTokens: tokens, effort, signal, copying: purpose === 'write-solution' || purpose === 'polish-solution', dry: !/^(generate|repair|polish)/.test(purpose) })
           : provider === 'relay' ? await sendRelay({ messages, purpose, signal })
           : provider === 'claude' ? await sendClaude({ messages, maxTokens: tokens, effort, signal })
-          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal, purpose })
+          : provider === 'claude-cli' ? await sendClaudeCli({ messages, effort, signal, purpose, capped: cut === 1 })
           : cli.CLIS.includes(provider) ? await cli.sendCli(config, provider, { messages, effort, signal })
           : await sendDeepseek({ model, messages, maxTokens: tokens, effort, signal });
       } catch (e) {
@@ -582,6 +634,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         reasoning: u.completion_tokens_details?.reasoning_tokens || 0,
         // Input served from the provider's prompt cache (billed far lower); kept per call for cost reports.
         cached: u.prompt_cache_hit_tokens || 0,
+        // Input written to the cache (Claude bills it above the input price); part of `input`, not of `cached`.
+        cacheWrite: u.prompt_cache_write_tokens || 0,
         total: u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0),
       };
       budget.add(usage);
@@ -589,15 +643,18 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
       const finish = choice?.finish_reason;
       store.usage.put({ ...record, durationMs: Date.now() - started, ...usage, outcome: finish || 'unknown' });
       const raw = choice?.message?.content || '';
+      // The thinking too: a loop stopped in the thinking left an empty answer and nothing to read (run 4).
+      const thought = choice?.message?.reasoning_content ? `\n\n--- thinking ---\n${choice.message.reasoning_content}` : '';
       // Evaluation runs keep every answer so a check that failed can be traced to what the model actually wrote.
       if (process.env.EDUMASTER_KEEP_RAW === '1') {
         try {
           fs.mkdirSync(path.join(store.dataDir, 'llm-raw'), { recursive: true });
-          fs.writeFileSync(path.join(store.dataDir, 'llm-raw', `${record.createdAt.replace(/[:.]/g, '')}-${purpose}.txt`), `finish=${finish}\n\n${raw}`);
+          fs.writeFileSync(path.join(store.dataDir, 'llm-raw', `${record.createdAt.replace(/[:.]/g, '')}-${purpose}.txt`), `finish=${finish}\n\n${raw}${thought}`);
         } catch { /* diagnostics only */ }
       }
       try {
-        if (finish === 'length') throw new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.');
+        if (finish === 'length') cut = 1;
+        if (finish === 'length') throw Object.assign(new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.'), { cut: true });
         if (finish === 'repeat') throw new LlmFormatError('모델이 같은 내용을 반복해서 중간에 멈췄습니다.');
         const { data, moved } = fixShape(extractJson(raw), SHAPES[purpose]);
         // A repaired-but-truncated answer (jsonrepair dropped everything after a broken bracket) must not pass.
@@ -610,7 +667,7 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         // Keep what the model sent so a failure can be diagnosed later.
         try {
           fs.mkdirSync(path.join(store.dataDir, 'llm-failures'), { recursive: true });
-          fs.writeFileSync(path.join(store.dataDir, 'llm-failures', `${record.id}-${purpose}.txt`), `${e.message}\nfinish=${finish}\n\n${raw}`);
+          fs.writeFileSync(path.join(store.dataDir, 'llm-failures', `${record.id}-${purpose}.txt`), `${e.message}\nfinish=${finish}\n\n${raw}${thought}`);
         } catch { /* diagnostics only */ }
         // Same request again would give the same broken answer (temperature 0). For unreadable JSON, show the
         // model its answer and the error and ask for the corrected JSON; for a cut-off answer, allow more room.
@@ -661,4 +718,5 @@ function pcModelKey(id) {
   return s.replace(/^edumaster-/, '');
 }
 
-module.exports = { answerText, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+module.exports = {
+  claudeDesignModel, answerText, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };

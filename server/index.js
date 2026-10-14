@@ -292,7 +292,7 @@ function createApp(options = {}) {
     const body = await readBody(req, 1024);
     if (!CLAUDE_MODELS[body.model]) throw fail(400, '고를 수 없는 Claude 모델입니다.');
     if (!CLAUDE_EFFORTS.includes(body.effort)) throw fail(400, '추론 강도 값이 올바르지 않습니다.');
-    saveLlmSettings(cfg.dataDir, { claude: { model: body.model, effort: body.effort } });
+    saveLlmSettings(cfg.dataDir, { claude: { ...(llmSettings(cfg.dataDir).claude || {}), model: body.model, effort: body.effort } });
     return claudeCliChoice(cfg);
   });
   // 기본 모델: the model pages preselect and requests without a model use (LLM tab).
@@ -641,6 +641,15 @@ function createApp(options = {}) {
   // model each run used; `only` limits the models shown (the comparison page leaves out rejected candidates).
   // verdicts: a hand-checked verdict on a model's final problem ('ok' / 'no'), used for a model evaluated once
   // (the automatic check passed DeepSeek's final, which only changed numbers).
+  // Opus with Haiku designing (Opus solves, reviews and learns) is its own model: its runs are not Opus alone's.
+  // Qwen 3.8-27B at 4 bits alone, with the system doing the mechanical part (2026-10-13/14), is its own model.
+  const compareKey = (r) => (r.provider === 'gemma' ? (/qwen3.8-27b-q4/.test(r.model || '') ? 'qwen38q4' : pcModelKey(r.model))
+    : r.provider === 'claude-cli' && /haiku/.test(r.designModel || '') ? 'opus-haiku'
+      // Qwen 3.8 designing with the system doing the mechanical part (server numbers, the teacher's frames checked by code,
+      // Qwen's own fixes before Opus reviews) is measured apart from the Qwen 3.6 runs with the hand-written molar solution.
+      : r.provider === 'claude-cli' && r.designWith === 'gemma' && /qwen3\.8/.test(r.designModel || '') ? 'opus-qwen-sys'
+      : r.provider === 'claude-cli' && r.designWith === 'gemma' ? 'opus-qwen'
+      : r.provider === 'claude-cli' && r.model && !/^(claude-cli|claude-opus-5-5)$/.test(r.model) ? r.model : r.provider);
   function modelComparison(onlyCase, only, verdicts = {}) {
     const dir = path.join(cfg.root, 'eval', 'reports');
     const runs = {};
@@ -652,8 +661,9 @@ function createApp(options = {}) {
         for (const r of results) {
           if (!(r.generation || []).length) continue; // stopped before making anything
           // A mixed run (another model designed, analyzed or repaired, or Claude models mixed) is not this model's own result.
-          if (r.designWith || r.analyzeWith || r.repairWith || r.claudeMix) continue;
-          const key = r.provider === 'gemma' ? pcModelKey(r.model) : r.provider === 'claude-cli' && r.model && !/^(claude-cli|claude-opus-5-5)$/.test(r.model) ? r.model : r.provider;
+          // Opus with the PC's Qwen designing (opus-qwen) is the one such mix measured as its own model.
+          if ((r.designWith && !/^opus-qwen/.test(compareKey(r))) || r.analyzeWith || r.repairWith || r.claudeMix) continue;
+          const key = compareKey(r);
           if (only && !only.includes(key)) continue;
           (runs[key] = runs[key] || []).push({ ...r, when: raw.stamp || f.slice(0, 15), reviewVersion: raw.reviewVersion });
         }
@@ -688,9 +698,34 @@ function createApp(options = {}) {
         setUsd: avg(priced.map((u) => u.usd)), problemUsd: avg(priced.map((u) => u.usd / u.made)),
         problemUsdRange: priced.length > 1 ? [Math.min(...priced.map((u) => u.usd / u.made)), Math.max(...priced.map((u) => u.usd / u.made))] : null,
       };
+      // The subscription's set split by Claude model (a run from before the split was recorded used one model).
+      const split = rows.filter((r, i) => r.provider === 'claude-cli' && used[i].made && used[i].usd != null)
+        .map((r) => r.cost.byModel || { [r.model || 'claude-opus-5-5']: { tokens: (r.analysisUsage?.total || 0) + (r.generationUsage?.total || 0), usd: r.cost.usd } });
+      if (split.length) {
+        const ids = [...new Set(split.flatMap(Object.keys))];
+        cost.setByModel = Object.fromEntries(ids.map((id) => [id, { tokens: avg(split.map((x) => x[id]?.tokens || 0)), usd: avg(split.map((x) => x[id]?.usd || 0)) }]));
+      }
+      // And by stage (reading the original, design and repairs, solving and solutions, learning), per Claude model.
+      const staged = rows.filter((r, i) => r.cost?.byStage && used[i].made);
+      if (staged.length === split.length && staged.length) {
+        const stages = [...new Set(staged.flatMap((r) => Object.keys(r.cost.byStage)))];
+        cost.setByStage = Object.fromEntries(stages.map((st) => {
+          const models = [...new Set(staged.flatMap((r) => Object.keys(r.cost.byStage[st] || {})))];
+          return [st, Object.fromEntries(models.map((id) => [id, { tokens: avg(staged.map((r) => r.cost.byStage[st]?.[id]?.tokens || 0)), usd: avg(staged.map((r) => r.cost.byStage[st]?.[id]?.usd || 0)) }]))];
+        }));
+      }
+      // And by part of the work (understanding the original, its solution, the step practice problems, the twin final,
+      // learning), for 모델 비교's cost matrix: averaged over the runs that have it (eval/recost.js fills older ones).
+      const parted = rows.filter((r, i) => r.cost?.byPart && used[i].made);
+      if (parted.length) {
+        const parts = [...new Set(parted.flatMap((r) => Object.keys(r.cost.byPart)))];
+        cost.setByPart = Object.fromEntries(parts.map((pt) => [pt, avg(parted.map((r) => Object.values(r.cost.byPart[pt] || {}).reduce((x, v) => x + v.usd, 0)))]));
+        cost.partRuns = parted.length;
+        cost.practices = avg(parted.map((r) => (r.timing?.items || []).filter((it) => !/최종/.test(it.label)).length || 2));
+      }
       const rate = (dim) => { const hit = problems.filter((p) => p.dims[dim] !== undefined); return { pass: hit.filter((p) => p.dims[dim]).length, total: hit.length }; };
       out[key] = {
-        when: rows[rows.length - 1].when, runs: rows.length, pc, olderReview: !strict.length,
+        when: rows[rows.length - 1].when, first: rows[0].when, runs: rows.length, pc, olderReview: !strict.length,
         label: pc ? pcModelLabel(rows[rows.length - 1].model || 'gemma-4-12b').replace(' (PC)', '') : undefined,
         read: tally(() => true, rows.flatMap((r) => r.analysis || [])),
         problems: problems.length,
@@ -704,19 +739,22 @@ function createApp(options = {}) {
     }
     return { metrics: DIMENSIONS.map(([id, label, weight]) => ({ id, label, weight })), models: out };
   }
-  const COMPARED = ['claude-cli', 'deepseek', 'qwen36', 'gemma12'];
+  const COMPARED = ['claude-cli', 'opus-haiku', 'opus-qwen', 'opus-qwen-sys', 'deepseek', 'qwen38q4'];
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
     const b = JSON.parse(fs.readFileSync(path.join(compareDir, f), 'utf8'));
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
-  const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5', deepseek: 'DeepSeek_V4_Flash', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
+  const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5', 'opus-haiku': 'Claude_Opus_5.5+Haiku_5.5', 'opus-qwen': 'Claude_Opus_5.5+Qwen_3.6-35B', 'opus-qwen-sys': 'Claude_Opus_5.5+Qwen_3.8-27B+시스템', deepseek: 'DeepSeek_V4_Flash', qwen38q4: 'Qwen_3.8-27B+시스템', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
   function comparePdf(res, id, key) {
     const file = path.join(compareDir, id, `${key}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
     const name = `${id}_${PDF_NAME[key]}.pdf`;
-    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${name}"`, 'Content-Length': fs.statSync(file).size, ...security });
+    // A header takes ASCII only: the name in UTF-8 goes in filename* (RFC 6266), with an ASCII fallback — a Korean name
+    // ("…+시스템") in filename= failed the whole download with a 500 (2026-10-14).
+    const ascii = name.replace(/[^\x20-\x7e]/g, '').replace(/\+(?=\.pdf$)/, '') || 'compare.pdf';
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`, 'Content-Length': fs.statSync(file).size, ...security });
     fs.createReadStream(file).pipe(res);
     return undefined;
   }
@@ -730,10 +768,10 @@ function createApp(options = {}) {
     // Quality and cost of each model on this case alone.
     const verdicts = Object.fromEntries(Object.entries(bundle.feedback?.models || {}).map(([k, v]) => [k, v.final?.[0]]).filter(([, v]) => v));
     // The Claude subscription's weekly limit fills by list price: ≈$5 per 1% (measured 2026-10-06).
-    bundle.overview = { compare: modelComparison(id, COMPARED, verdicts), pricing: { krwPerUsd: cfg.pricing.krwPerUsd, usdPerWeeklyPercent: 5 } };
+    bundle.overview = { compare: modelComparison(id, COMPARED, verdicts), pricing: { krwPerUsd: cfg.pricing.krwPerUsd, usdPerWeeklyPercent: 5, maxUsdPerMonth: cfg.pricing.claudeMaxUsdPerMonth } };
     return bundle;
   }
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)$/, (req, res, [id, key]) => comparePdf(res, id, key));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
@@ -743,7 +781,7 @@ function createApp(options = {}) {
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     return bundle;
   }, { open: true });
-  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|deepseek|qwen36|gemma12)$/, (req, res, [id, key]) => {
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)$/, (req, res, [id, key]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key);
   }, { open: true });

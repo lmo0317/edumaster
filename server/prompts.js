@@ -152,7 +152,9 @@ const VARIATION_CRITERIA = '다음 다섯 항목 중 둘 이상이 원본과 달
 // A practice problem keeps the original's containers or experiments and their labels (an approved lesson,
 // 2026-10-03); the unused-condition check then flagged what a kept container holds, and the two sent C32's practice
 // back and forth (6 repairs, 2026-10-07). The same words for the designer and the judge.
-const KEPT_SETTING = '원본처럼 남겨 둔 용기·실험의 이름표와 그 안에 든 물질(분자식)은 문제 상황이므로 쓰이지 않는 조건으로 보지 않는다. 그 용기나 실험에 준 수치(질량·부피·양)와 단서 문구는 풀이에 쓰일 때만 둔다.';
+// Nerve conduction (2026-10-10): the kept neuron B "2개의 뉴런, ㉠~㉢ 중 한 곳에 시냅스" was flagged unused in every
+// practice while a lesson said to keep it — 6 repairs and 2 redesigns per practice.
+const KEPT_SETTING = '원본처럼 남겨 둔 용기·실험의 이름표와 그 안에 든 물질(분자식), 원본 그림의 구조(신경·뉴런의 구성, 시냅스가 있을 수 있는 위치 ㉠~㉢ 같은 표시, 지점 이름)는 문제 상황이므로 쓰이지 않는 조건으로 보지 않는다. 그 용기·실험·지점에 준 수치(질량·부피·양·막전위)와 단서 문구는 풀이에 쓰일 때만 둔다.';
 
 const DESIGN_PRINCIPLES = `[변형 문제 설계 원칙]
 1. 원본 풀이의 STEP 로직을 그대로 써서 풀리는 문제를 만든다. 다른 방법이 더 쉬운 문제로 바뀌면 안 된다. 교사의 보조 문자·가정/모순 판정·비교 방식을 해설에서 그대로 사용한다.
@@ -179,10 +181,10 @@ const OUTPUT_SPEC = `반환 JSON 형식:
 {"problem":{"text":"...","choices":["...","...","...","...","..."],"answer":2,"figure":""},
  "solution":{"steps":[{"step":1,"title":"...","work":"..."}],"summary":"최종 정답 도출 한 줄"},
  "usesSteps":[1,2],
- "designNote":"원본과 무엇을 어떻게 바꿨는지, 어떤 STEP이 왜 필요한지 (교사용)",
- "appliedRules":[{"id":"지침 id","how":"이 문제에서 어떻게 지켰는지"}],
+ "designNote":"원본과 무엇을 어떻게 바꿨는지, 어떤 STEP이 왜 필요한지 (교사용, 3문장 이내)",
+ "appliedRules":[{"id":"지침 id","how":"이 문제에서 어떻게 지켰는지 한 문장"}],
  "verification":{"program":["..."],"answer":"ans","choices":["..."],"free":[],"checks":[{"expr":"...","desc":"..."}]}}
-- solution.steps의 step은 사용한 원본 STEP 번호. 이 문제가 쓰는 원본 STEP만 둔다 (STEP 1~2 연습이면 STEP 1, 2만). 정답을 구하는 마지막 계산과 선택지 판단은 마지막 STEP의 work 끝에 쓰고, '선택지 분석' 같은 STEP을 따로 만들지 않는다. work에는 모든 계산을 생략 없이 쓴다. 원본 해설의 표현·순서를 따른다.
+- solution.steps의 step은 사용한 원본 STEP 번호. 이 문제가 쓰는 원본 STEP만 둔다 (STEP 1~2 연습이면 STEP 1, 2만). 정답을 구하는 마지막 계산과 선택지 판단(ㄱ·ㄴ·ㄷ 문제면 선생님 해설과 같은 형식의 보기별 판정과 '정답은 …이다.')은 마지막 STEP의 work 끝에 쓰고, '선택지 분석' 같은 STEP을 따로 만들지 않는다. work에는 모든 계산을 생략 없이 쓴다. 원본 해설의 표현·순서를 따르고, 원본 해설에 없는 요약·정리 문장('결론: …', '정리하면 …')을 덧붙이지 않는다.
 - 원본에 그림이 있었고 새 문제에도 그림이 필요하면 figure에 그릴 내용을 정확히 글로 쓰거나, 표로 대체할 수 있으면 표를 쓴다.`;
 
 const GENERATE_SYSTEM = `너는 교사의 풀이 로직을 연습시키는 단계별 변형 문제를 설계하는 출제 전문가다.
@@ -222,8 +224,9 @@ function stageInstruction(stage, total, mode) {
     const range = k === 1 ? 'STEP 1' : `STEP 1~${k}`;
     return `[이번에 만들 문제: ${range} 연습]
 - 원본의 ${range} 로직만으로 끝까지 풀리는 문제를 만든다. 질문은 STEP ${k}의 결론(또는 그것으로 바로 구할 수 있는 값)을 묻는다.
+- 답은 원본 해설의 ${range}가 실제로 구하는 값만으로 나와야 한다. 원본 해설이 이 범위에서 구하지 않는 값(예: 원본이 뒤 STEP에서 정하는 반응 계수·몰질량)을 묻거나 답에 넣지 않는다.
 - ${range}의 각 STEP이 모두 실제로 필요해야 한다. ${k < n ? `STEP ${k + 1} 이후의 로직은 필요 없어야 한다.` : ''}
-- ${k === 1 ? '' : `STEP 1~${k - 1}에서 학생이 추론해야 할 결론을 문제에 미리 알려주지 않는다.`} 원본 표·조건 중 이 범위에 필요 없는 부분(예: 필요 없는 실험 행)은 뺀다.
+- ${k === 1 ? '' : `STEP 1~${k - 1}에서 학생이 추론해야 할 결론을 문제에 미리 알려주지 않는다.`} 원본 표·조건 중 이 범위에 필요 없는 부분은 뺀다. 단, 원본 ${range}의 STEP 제목·해설이 다루는 실험(예: 'Ⅰ~Ⅲ에서 …')은 남기고, 그 실험의 수치가 이 범위의 풀이에 실제로 쓰이도록 정한다.
 - usesSteps는 [${Array.from({ length: k }, (_, i) => i + 1).join(',')}] 이어야 한다.`;
   }
   if (stage.kind === 'focus') {
@@ -267,7 +270,7 @@ function priorBlock(prior) {
 const LAYER_LABEL = { guide: '지침', problem: '이 문제', lesson: '공통 학습' };
 function rulesBlock(rules) {
   if (!rules.length) return '\n[교사 지침·학습] 없음. appliedRules는 빈 배열.';
-  return '\n[교사 지침·학습 — 모두 지킨다. 지침은 반드시 지킬 규칙, 이 문제는 선생님이 이 원본에 대해 가르친 것, 공통 학습은 여러 문제에서 배운 교훈이다. 서로 부딪히면 지침 > 이 문제 > 공통 학습 순서로 따른다. 각 항목을 어떻게 지켰는지 appliedRules에 id별로 적는다]\n' + rules.map((r) =>
+  return '\n[교사 지침·학습 — 모두 지킨다. 지침은 반드시 지킬 규칙, 이 문제는 선생님이 이 원본에 대해 가르친 것, 공통 학습은 여러 문제에서 배운 교훈이다. 서로 부딪히면 지침 > 이 문제 > 공통 학습 순서로 따른다. 각 항목을 어떻게 지켰는지 appliedRules에 id별로 한 문장씩 적는다. 이 문제에 해당하지 않는 항목(예: 연습 문제에서 최종 문제 지침)도 빼지 않고 "해당 없음: 이유"로 적는다]\n' + rules.map((r) =>
     `- (${r.id}) [${LAYER_LABEL[r.layer] || '이 문제'}${r.kind === 'dont' ? '·하지 말 것' : r.kind === 'do' ? '·할 것' : ''}${r.target && r.target !== 'all' ? '·' + ({ problem: '문제', solution: '해설', design: '설계' }[r.target] || r.target) : ''}] ${r.text}`
     + (r.context ? `\n    (이 피드백을 받은 문제 — 같은 실수를 반복하지 않는다. 내용·수치를 베끼지 않는다: ${r.context})` : '')).join('\n');
 }
@@ -291,8 +294,47 @@ const DIRECTION = {
   flip: '[가정 방향] 원본 STEP 1과 반대로 만든다. 원본에서 결론이던 쪽을 가정하면 모순이 되고, 원본에서 모순이던 쪽이 결론이 되게 수치를 잡는다 (원본이 \'A가 모두 반응했다면 모순 → B가 모두 반응\'이면 이 문제는 \'B가 모두 반응했다면 모순 → A가 모두 반응\'). 해설의 가정도 그 쪽으로 쓴다.',
 };
 
-function generateText({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '' }) {
-  const parts = [materialBlock(material), stageInstruction(stage, total, mode), priorBlock(prior), rulesBlock(rules), examplesBlock(examples)];
+// Each call's prompt in two parts: `context`, what every call of that kind in a set sends alike (the original, the
+// teacher's solution, the rules), and `text`, what this call adds. The pipeline puts the context after the system
+// prompt, where the provider's prompt cache keeps it between calls; with everything in the user message only the
+// system prompt was ever cached (2026-10-09: a set sent the same original and rules ~40 times at full input price).
+// The *Text functions give both in one string (context first), as the model reads them.
+const joinParts = ({ context, text }) => context + '\n' + text;
+
+/** The teacher's sentence frames, when the original has them (see harness.validateFrames). */
+function framesBlock(material) {
+  const frames = material.frames || [];
+  if (!frames.length) return '';
+  // The writer gives each sentence as a frame number and its values; the server writes the sentence (harness.renderFrames).
+  return '\n[선생님 해설의 문장 틀 — 해설 문장은 직접 쓰지 말고 틀 번호와 값만 쓴다. 서버가 선생님 문장으로 바꿔 넣는다]\n'
+    + '해설(work)의 한 줄 = 선생님 문장 하나: "[틀 STEP-번호] 자리=값; 자리=값" 꼴로 쓴다. 예: "[틀 1-1] 실험1=Ⅱ; 물질=A; 질량1=5w". 자리 이름은 《 》 안의 이름 그대로 쓰고, 틀의 모든 자리를 채운다. 값은 $ 없이 수식만 쓴다(\\frac{4}{3}w). '
+    + '어느 틀을 어떤 순서로, 몇 번(실험마다) 쓸지와 값은 네가 정한다. 맞는 틀이 없는 문장(비례식 줄, 선택지 계산 줄, 정답 줄)과 표는 그대로 쓴다.\n'
+    + frames.map((f) => f.frames.map((x, i) => `[틀 ${f.step}-${i + 1}] ${x}`).join('\n')).join('\n');
+}
+
+/** The original and the rules: the same for every design and repair of a set. */
+function designContext({ material, rules }) {
+  return materialBlock(material) + framesBlock(material) + '\n' + rulesBlock(rules);
+}
+
+// Once per original: the teacher's solution as sentence frames, so a variant's solution can be held to them by code.
+const EXTRACT_FRAMES_SYSTEM = `너는 선생님 해설의 문장 틀을 뽑는 사람이다. 선생님 해설의 각 줄(표의 행은 빼고)을, 문제마다 바뀌는 부분만 《이름》 자리로 바꾼 틀로 옮긴다. 자리 표시는 반드시 《 》를 쓴다 (수식의 { }와 헷갈리지 않게).
+- 바뀌는 부분: 수치, 수식, 실험 번호(Ⅰ, Ⅱ …), 보기 번호(①~⑤), 변형 문제에서 달라질 수 있는 물질 기호(예: "만약 Ⅰ에서 A가 모두 반응했다면"의 A — 가정하는 물질), 이 문제에만 있는 값의 이름. 자리 이름은 짧게 쓴다 (예: 《실험》, 《물질》, 《질량》, 《값》, 《식》, 《번호》). 같은 이름이 한 틀에 두 번 나오면 《질량1》, 《질량2》처럼 번호를 붙인다. 수식 안의 값만 자리로 바꾸고 $는 틀에 그대로 둔다 (예: "A $《질량1》$ g")..
+- 선생님이 언제나 같은 글자로 쓰는 부분은 자리로 만들지 않는다. 예: "A … g과 B … g이 반응해서"의 A와 B(반응한 두 물질은 언제나 A, B 순서), "C(g)와 D(g)", "B의 몰질량", 단위 g·mol. 자리가 적을수록 좋다.
+- 수식만 있는 줄(비례식, 선택지 계산 줄)과 "정답은 …" 줄도 틀로 쓴다: 수식의 값만 자리로 바꾸고 기호(=, \\times, \\Rightarrow, $ 위치)는 그대로 둔다.
+- 표의 행을 뺀 선생님 해설의 모든 줄에 틀이 하나씩 있어야 한다.
+- 나머지 글자는 한 글자도 바꾸지 않는다: 조사, 어미, 띄어쓰기, 마침표, 수식 기호($ … $, \\ce{…})의 위치, 문장 끊는 곳. 선생님의 한 줄은 틀 하나다 (줄을 합치거나 나누지 않는다).
+- 같은 모양의 줄이 여러 번 나오면(예: 실험마다 같은 문장) 틀 하나로 쓴다.
+- 머리말 줄(예: "| 선택지 분석 |")은 그대로 틀로 쓴다.
+반환 JSON 형식:
+{"steps":[{"step":1,"frames":["만약 《실험1》에서 《물질》가 모두 반응했다면 A $《질량1》$ g과 …", "…"]}]}`;
+function extractFramesText(material) {
+  return '[선생님 해설]\n' + material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n') + '\n\nJSON만 반환하라.';
+}
+
+function generateParts({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '', shapeHint = '' }) {
+  const parts = [stageInstruction(stage, total, mode), priorBlock(prior), examplesBlock(examples)];
+  if (shapeHint) parts.push('\n[서버가 원본 표에서 계산한 후보]\n' + shapeHint);
   if (DIRECTION[direction] && (stage.kind !== 'focus')) parts.push('\n' + DIRECTION[direction]);
   if (usedRows.length) {
     parts.push('\n[이미 쓴 실험 수치 — 표의 어느 행에서도 이 (반응 전 두 값) 조합을 다시 쓰지 않는다]\n' + usedRows.join(' / '));
@@ -309,8 +351,9 @@ function generateText({ material, stage, total, mode, prior, rules, variantNo, e
   }
   if (extraFeedback) parts.push('\n[이번 재생성에 대한 교사 피드백 — 최우선으로 반영]\n' + extraFeedback);
   parts.push('\n위 지시에 따라 JSON만 반환하라. verification.program은 네가 쓴 해설 계산과 같은 순서로 쓴다.');
-  return parts.join('\n');
+  return { context: designContext({ material, rules }), text: parts.join('\n') };
 }
+const generateText = (args) => joinParts(generateParts(args));
 
 const SOLVE_SYSTEM = `너는 문제를 처음 보는 최상위권 학생이자 검토자다. 주어진 문제만 보고 직접 풀어 정답을 고른다.
 - 출제자의 정답이나 해설은 주어지지 않는다. 스스로 끝까지 계산한다.
@@ -318,29 +361,33 @@ const SOLVE_SYSTEM = `너는 문제를 처음 보는 최상위권 학생이자 �
 - shortcuts: 어떤 STEP의 핵심 기법을 쓰지 않고 더 쉬운 방법으로 그 STEP의 결론을 얻을 수 있으면 그 STEP은 stepsUsed에 넣지 말고 shortcuts에 적는다. 예: 남은 질량이 넣은 A의 질량보다 커서 남은 물질이 B임이 바로 보이면 '가정→모순' 없이 한계 반응물이 정해지므로 shortcut이다. 기법이 꼭 필요하면 빈 배열.
 - issues에는 실제 결함만 적는다: ambiguous(답이 하나로 정해지지 않음), contradiction(조건 모순), missing(조건 부족), unnecessary(풀이에 안 쓰이는 조건), revealed(추론해야 할 결론을 문제가 미리 알려줌), ugly(손계산이 어려운 수), other. 결함이 없으면 빈 배열.
 - 가정→모순 판정 풀이에서 '반증하기 위한 가정'은 결함이 아니다.
-- rules: 문제(발문·조건·선택지) 설계에 관한 교사 지침만 판정한다. 해설에 관한 지침은 넣지 않는다.
+- rules: [판정할 교사 지침]을 하나씩 판정해, 지킨 지침은 kept에 id만, 어긴 지침은 broken에 id와 어떻게 어겼는지(note)를 넣는다. 문제(발문·조건·선택지) 설계에 관한 지침만 판정한다.
 - conditions: 문제 상황을 성립시키는 전제(섞인 기체끼리 반응하지 않는다, X~Z는 임의의 원소 기호이다)는 계산에 쓰이지 않아도 나열하지 않는다. ${KEPT_SETTING} 문제에 주어진 조건과 문장을 하나씩 나열하고(각 문장, 표의 각 열, 각 실험 행, 주어진 수치, 반응식과 그 계수, 단서 문구 "(단, …)" 등) 네 풀이에서 실제로 썼는지 used로 표시한다. 없어도 답이 똑같이 나오는 조건은 used=false. 예: 반응식이 주어졌지만 질량비만으로 답이 나오면 반응식은 used=false. 이미 다른 값으로 정해진 것을 확인하는 데만 쓰인 값(예: 한 실험에서 비례 상수를 구한 뒤 다른 실험의 상댓값이 맞는지 확인만 한 경우)도 used=false. 정보 없이 자료를 소개만 하는 문장(뒤에 그 자료가 없는 "…에 대한 자료이다" 등)도 used=false로 적는다. 바로 뒤에 반응식·표·그림이 나오는 소개 문장("다음은 … 화학 반응식이다", "표는 … 자료이다")은 그 자료의 일부이므로 따로 나열하지 않는다.
 - variation: [원본 문제]가 주어지면 판정한다. ${VARIATION_CRITERIA} 둘 이상이면 "structural", 하나 이하이면 "numbers-only", 원본이 없으면 "n/a". variationNote에 해당하는 항목 번호와 근거를 적는다.
 ${FORMAT}
 반환 JSON 형식:
 {"solution":"핵심 계산을 포함한 풀이","answer":2,"answerValue":"값","confident":true,
- "stepsUsed":[1,2],"shortcuts":[{"step":1,"how":"..."}],"issues":[{"type":"...","detail":"..."}],"rules":[{"id":"...","ok":true,"note":"..."}],
+ "stepsUsed":[1,2],"shortcuts":[{"step":1,"how":"..."}],"issues":[{"type":"...","detail":"..."}],"rules":{"kept":["id"],"broken":[{"id":"...","note":"..."}]},
  "conditions":[{"text":"...","used":true}],"variation":"n/a","variationNote":"..."}`;
 
-function solveText({ item, material, rules, compareOriginal }) {
+function solveParts({ item, material, rules, compareOriginal }) {
   const problemRules = rules.filter((r) => r.target !== 'solution');
-  return [
+  const context = [
     '[참고: 원본 풀이의 STEP 목록 — stepsUsed 판정에만 사용]',
     material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}`).join('\n'),
-    compareOriginal ? '\n[원본 문제 — variation 판정에만 사용. 풀지 않는다]\n' + material.problem.text : '',
+    problemRules.length ? '\n[판정할 교사 지침]\n' + problemRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 교사 지침] 없음. rules의 kept와 broken은 빈 배열.',
+  ].join('\n');
+  const text = [
+    compareOriginal ? '[원본 문제 — variation 판정에만 사용. 풀지 않는다]\n' + material.problem.text : '',
     '\n[풀 문제]',
     item.problem.text,
     item.problem.figure ? '[그림 설명]\n' + item.problem.figure : '',
     item.problem.choices?.length ? item.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') : '(서술형)',
-    problemRules.length ? '\n[판정할 교사 지침]\n' + problemRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 교사 지침] 없음. rules는 빈 배열.',
     '\nJSON만 반환하라.',
   ].filter(Boolean).join('\n');
+  return { context, text };
 }
+const solveText = (args) => joinParts(solveParts(args));
 
 const REPAIR_SYSTEM = `너는 변형 문제 출제자다. 네가 만든 문제에서 서버 검산 또는 독립 풀이 검토가 문제를 발견했다.
 - 먼저 누가 옳은지 스스로 다시 계산해 판단한다. 검토자의 지적이 틀렸으면 문제를 억지로 바꾸지 말고, 오해의 원인이 된 표현만 명확히 한다.
@@ -350,19 +397,22 @@ ${VERIFY_SPEC}
 ${FORMAT}
 ${OUTPUT_SPEC}`;
 
-function repairText({ material, stage, total, mode, rules, item, failures, blind }) {
-  return [
-    materialBlock(material),
+// A repair wrote every rule's appliedRules note out again (about a third of its answer, 2026-10-09) though most stay
+// as they were: only the ones that changed come back, merged by id in the pipeline.
+function repairParts({ material, stage, total, mode, rules, item, failures, blind, lean = false }) {
+  const text = [
     stageInstruction(stage, total, mode),
-    rulesBlock(rules),
     '\n[네가 만든 문제]',
     JSON.stringify({ problem: item.problem, solution: item.solution, usesSteps: item.usesSteps, designNote: item.designNote, appliedRules: item.appliedRules, verification: item.verificationSpec }),
     '\n[발견된 문제]',
     failures.map((f) => '- ' + f).join('\n'),
     blind?.solution ? '\n[독립 풀이 전문 — 정답을 모르는 검토자가 문제만 보고 푼 과정]\n' + blind.solution : '',
-    '\n수정한 전체 결과를 같은 JSON 형식으로만 반환하라. designNote와 appliedRules(지침마다 id와, 수정한 문제에서 어떻게 지켰는지)도 빠짐없이 다시 쓴다.',
+    // A lean repair returns only the changed items (LEAN_REPAIR, added after this text).
+    lean ? '' : '\n수정한 결과를 같은 JSON 형식으로만 반환하라. problem, solution, verification, usesSteps는 고친 문제 전체를 쓰고, designNote는 고친 문제의 수치에 맞게 다시 쓴다. appliedRules에는 이번 수정으로 지키는 방법이 달라진 지침만 넣는다 (나머지는 위의 것이 그대로 남는다).',
   ].join('\n');
+  return { context: designContext({ material, rules }), text };
 }
+const repairText = (args) => joinParts(repairParts(args));
 
 // Every system prompt, by name — shown on the 지침 page and hashed into PROMPT_VERSION so each job, analysis and
 // harness report says which prompt text produced it.
@@ -374,7 +424,9 @@ const SOLUTION_REVIEW_SYSTEM = `너는 교사의 해설 방식을 지키는지 �
   (1) 교사 해설에 없는 논리를 더하거나 다른 방법으로 푼 것 (예: 교사는 한 방향만 가정해 모순을 보이는데 경우를 나누어 모두 검토, 교사가 질량비로 판정하는데 몰수로 판정, 교사가 다음 STEP에서 도입하는 보조 문자를 먼저 도입).
   (2) 교사의 문장 틀·표기·표 구성을 바꾼 것 (예: 교사는 질량비를 A : B 순서로 쓰는데 B : A로 씀, 교사 해설의 표에 있는 열을 뺌).
   (3) 필요한 중간 단계를 건너뛴 것 (예: 문제가 질량비와 전체 질량을 주는데 각 물질의 질량으로 바꾸는 계산 없이 바로 씀).
-- 이탈이 아닌 것: 실험 번호나 실린더·대상 기호의 범위가 다름 (예: (가)~(다) 대신 (가)와 (나)), 문제 구조상 가정하는 실험이나 남는 물질이 바뀜, 문제에 반응식이 없어 계수 관계를 문장으로 씀, 교사 해설과 같은 흐름에서 수치만 다른 표, [이 문제의 범위] 밖의 교사 STEP이 변형 해설에 없음, 문제가 보조 문자나 값을 조건으로 주어 해설이 그것을 새로 도입하지 않음처럼 문제 설계 때문에 생긴 차이.
+- 이탈이 아닌 것: 실험 번호나 실린더·대상 기호의 범위가 다름 (예: (가)~(다) 대신 (가)와 (나)), 문제 구조상 가정하는 실험이나 남는 물질이 바뀜, 문제에 반응식이 없어 계수 관계를 문장으로 씀, 교사 해설과 같은 흐름에서 수치만 다른 표, [이 문제의 범위] 밖의 교사 STEP이 변형 해설에 없음, 변형 문제가 원본과 다른 양을 묻도록 설계되어 마지막 STEP 끝에 그 양을 교사 해설에서 구한 값들로 계산하는 문장이 더해진 것(교사 STEP의 흐름은 그대로일 때), 문제가 보조 문자나 값을 조건으로 주어 해설이 그것을 새로 도입하지 않음처럼 문제 설계 때문에 생긴 차이, 줄바꿈 위치(교사의 한 문장을 두 줄로 나누거나 두 문장을 한 줄에 씀 — 원본 이미지의 줄은 지면 폭에 따른 것이다), 줄 앞 글머리 기호('- ', '•')의 유무(원본 이미지의 줄 표시를 판독마다 다르게 옮긴다)와 STEP 제목 끝 마침표의 유무.
+- ㄱ·ㄴ·ㄷ 문제의 보기 판정: 교사 해설이 보기를 하나씩 판정하고(ㄱ. … (○)/(×)와 근거) '정답은 …이다.'로 끝나면, 변형 해설의 마지막 STEP 끝에도 이 문제의 보기마다 같은 형식의 판정과 '정답은 …이다.'가 있어야 한다. 교사의 보기 판정이 [이 문제의 범위] 밖 STEP에 적혀 있어도 덧붙인 것이 아니며 이탈이 아니다. 해설의 끝을 정하는 지침(마지막 문장과 같은 자리에서 끝낸다 등)도 이 보기 판정과 정답 문장까지를 교사 해설의 끝으로 본다.
+- 정답 문장: 교사 해설이 '정답은 …이다.'로 끝나면, 변형 해설의 마지막 STEP 끝에 있는 '정답은 …이다.' 한 줄은 교사 해설의 그 문장이다. 교사의 그 문장이 [이 문제의 범위] 밖 STEP에 있어도 덧붙인 것이 아니며 이탈이 아니다 (STEP 1 연습의 해설이 'Ⅲ에서는 … 남는다.' 뒤에 '정답은 ② $2w$ g이다.'로 끝나는 것은 이탈이 아니다). 교사 해설의 끝이 '선택지 분석' 머리말과 '② … 이므로 … 이다.' 줄, '정답은 …이다.'로 되어 있으면, 변형 해설의 마지막 STEP 끝에 같은 머리말과 이 문제의 정답 번호로 시작하는 줄이 있는 것도 교사 해설의 그 끝이며 이탈이 아니다 (교사의 그 부분이 [이 문제의 범위] 밖 STEP에 있어도).
 - 교사 해설은 [이 문제의 범위] 안의 STEP만 비교한다.
 - steps에는 이탈이 있는 STEP만 넣고, issues에 무엇이 교사 해설과 어떻게 다른지 구체적으로 적는다. 이탈이 없는 STEP은 넣지 않는다 (모두 같으면 빈 배열).
 - rules: [판정할 해설 지침]을 하나씩 판정해, 지킨 지침은 kept에 id만, 어긴 지침은 broken에 id와 어떻게 어겼는지(note)를 넣는다. 지침이 없으면 둘 다 빈 배열.
@@ -389,10 +441,11 @@ function stageScope(stage, total) {
   return { steps: Array.from({ length: total }, (_, i) => i + 1), text: `원본 STEP 1~${total}을 모두 쓰는 최종 문제다.` };
 }
 
-function solutionReviewText({ item, material, rules }) {
+function solutionReviewParts({ item, material, rules }) {
   const solutionRules = rules.filter((r) => r.target === 'solution' || r.target === 'all');
   const scope = stageScope(item.stage, material.steps.length);
-  return [
+  const context = solutionRules.length ? '[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '[판정할 해설 지침] 없음. rules의 kept와 broken은 빈 배열.';
+  const text = [
     `[이 문제의 범위] ${scope.text}`,
     '\n[교사 해설 — 원본 문제의 풀이 STEP 중 이 문제의 범위]',
     material.steps.map((s, i) => ({ s, n: i + 1 })).filter(({ n }) => scope.steps.includes(n)).map(({ s, n }) => `STEP ${n}. ${s.title}\n${s.work}`).join('\n\n'),
@@ -402,10 +455,11 @@ function solutionReviewText({ item, material, rules }) {
     item.problem.choices?.length ? item.problem.choices.map((c, i) => `${'①②③④⑤⑥⑦⑧⑨'[i] || i + 1} ${c}`).join('  ') + `\n정답: ${'①②③④⑤⑥⑦⑧⑨'[item.problem.answer - 1] || item.problem.answer}` : '(서술형)',
     '\n[변형 문제의 해설]',
     (item.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
-    solutionRules.length ? '\n[판정할 해설 지침]\n' + solutionRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 해설 지침] 없음. rules의 kept와 broken은 빈 배열.',
     '\nJSON만 반환하라.',
   ].join('\n');
+  return { context, text };
 }
+const solutionReviewText = (args) => joinParts(solutionReviewParts(args));
 
 // After a set: the faults the checks found (and fixed or not) become at most three learning items, so the next set
 // avoids them from the start. Only what would have prevented a fault that really happened; nothing the learning
@@ -436,6 +490,8 @@ const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같�
 - common이면 subjectOnly: 이 과목의 내용(예: 화학의 기체 양적 관계, 생명과학의 흥분 전도)에 관한 것이면 true, 과목과 관계없는 출제·해설 원칙이면 false.
 - target: 문제 설계에 관한 것이면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
 - text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓰고, 필요하면 괄호에 짧은 예를 든다. 이번 문제의 수치를 그대로 옮기지 않는다.
+- 변형 문제마다 바뀌는 것(실험 번호 Ⅰ·Ⅱ, 지점 이름, 가정하는 실험, 시냅스 위치)을 지침에 박지 않는다. 역할로 쓴다(예: 'Ⅰ에서 가정하고 Ⅱ로 모순' 대신 '한 실험에서 가정하고 다른 실험으로 모순'). 원본 그대로 박으면 구조를 바꾼 최종 문제가 그 지침을 어기게 된다. 원본 판독의 글자 표기(I와 Ⅰ 같은)도 학습으로 만들지 않는다.
+- 원본 문제와 선생님 해설이 하는 것을 금지하는 항목은 만들지 않는다 (예: 원본이 자극 지점을 문제에 적는데 '자극 지점을 적지 않는다', 선생님 STEP이 같은 값 두 개로 속도를 구하는데 '같은 값을 두지 않는다'). 그런 실수는 원본과 다르게 만든 데서 온 것이니 원본처럼 하라고 쓴다.
 - why에는 이 항목이 막는 실수를 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
@@ -444,7 +500,11 @@ ${FORMAT}
 function learnText({ material, faults, existing }) {
   return [
     `[원본] ${material.title || ''} (${[material.subject, material.topic].filter(Boolean).join(' · ')})`,
-    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}`).join('\n'),
+    // The problem and the teacher's work, so no lesson forbids what the original does: without them the learner wrote
+    // "자극 지점을 적지 않는다" three rounds running though the original says "d3에 자극" (R11~R13, 2026-10-12).
+    material.problem && material.problem.text ? material.problem.text : '',
+    '\n[선생님 해설]',
+    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}${s.work ? '\n' + s.work : ''}`).join('\n'),
     '\n[이번 세트에서 나온 실수]',
     faults.map((f) => `- (${f.label}${f.left ? ', 끝내 남음' : ', 고침'}) ${f.text}`).join('\n'),
     '\n[이미 있는 학습·지침]',
@@ -474,28 +534,34 @@ const WRITE_SOLUTION_SYSTEM = `너는 해설 작성자다. 출제자가 정한 �
 - 선생님 해설의 STEP 제목, 문장 틀, 순서, 표 구성(열), 보조 문자(n, m 등)와 그 도입 위치를 그대로 따른다. 수치, 실험 번호, 실린더·대상 기호의 범위만 이 문제에 맞춘다. 예: 선생님이 "만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 B이다."로 쓰면 같은 틀로 쓴다.
 - 선생님 해설의 STEP에 표가 있으면 그 STEP에도 같은 열 구성의 Markdown 표를 만들어 요지의 값을 채운다 (예: 실험별 반응 후 A, B, C+D의 질량 표, 실험별 양(mol)과 몰분율 표).
 - 선생님 해설에 없는 설명·경우 나누기·검산을 더하지 않는다. 요지에 있는 STEP만 쓴다.
-- 요지에 있는 STEP 번호만 쓴다. 정답 계산과 선택지 판단은 마지막 STEP의 work 끝에 쓰고, 마지막 STEP은 정답 번호와 값으로 끝낸다 (예: 정답은 ④ $\\frac{7}{3}$이다). '선택지 분석' 같은 STEP을 따로 만들지 않는다.
+- 요지에 있는 STEP 번호만 쓴다. 정답 계산과 선택지 판단은 마지막 STEP의 work 끝에 쓰고, 마지막 STEP은 정답을 구하는 계산으로 끝낸다. '정답은 …이다.' 같은 정답 문장은 선생님 해설이 그런 문장으로 끝날 때만 쓴다. '선택지 분석' 같은 STEP을 따로 만들지 않는다. 선생님 해설이 ㄱ·ㄴ·ㄷ 보기를 하나씩 판정하면, 이 문제가 쓰는 STEP 범위가 거기까지 가지 않아도 마지막 STEP 끝에 이 문제의 보기마다 선생님과 같은 형식(ㄱ. … (○)/(×)와 근거)으로 판정하고 '정답은 …이다.'로 끝낸다.
 ${FORMAT}
 반환 JSON 형식:
 {"solution":{"steps":[{"step":1,"title":"...","work":"..."}],"summary":"최종 정답 도출 한 줄"}}`;
 
-function writeSolutionText({ item, material, rules, outline, fixes = [] }) {
+function writeSolutionParts({ item, material, rules, outline, fixes = [] }) {
   const solutionRules = rules.filter((r) => r.target === 'solution' || r.target === 'all');
-  return [
+  const context = [
     '[선생님 해설 — 형식의 기준]',
     material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n'),
-    '\n[문제]',
+    framesBlock(material),
+    solutionRules.length ? '\n[해설 지침 — 지킨다]\n' + solutionRules.map((r) => `- ${r.text}`).join('\n') : '',
+  ].filter(Boolean).join('\n');
+  const text = [
+    '[문제]',
     item.problem.text,
     item.problem.figure ? '[그림 설명]\n' + item.problem.figure : '',
     item.problem.choices?.length ? item.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') + `\n정답: ${item.problem.answer}번` : '',
+    item.serverFacts?.length ? '\n[해설에 쓸 값 — 서버 계산. 해설의 판정·실험·수치는 이것과 같게 쓴다]\n' + item.serverFacts.map((f) => '- ' + f).join('\n') : '',
     '\n[출제자의 풀이 요지 — 이 판정과 값을 그대로 쓴다]',
     outline.steps.map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
     outline.summary ? `요약: ${outline.summary}` : '',
-    solutionRules.length ? '\n[해설 지침 — 지킨다]\n' + solutionRules.map((r) => `- ${r.text}`).join('\n') : '',
     fixes.length ? '\n[앞서 쓴 해설에서 고칠 점 — 반드시 고친다]\n' + fixes.map((f) => '- ' + f).join('\n') : '',
     '\n해설 JSON만 반환하라.',
   ].filter(Boolean).join('\n');
+  return { context, text };
 }
+const writeSolutionText = (args) => joinParts(writeSolutionParts(args));
 
 // The independent solver disagreed with the designer. A weak solver is often simply wrong, so before a (costly)
 // repair the designer checks who is right.
@@ -532,13 +598,24 @@ const SYSTEMS = {
 const PROMPT_VERSION = require('node:crypto').createHash('sha256')
   .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
 
+// The notes a designer left out: Qwen 3.6 wrote 4 of 24 on a STEP 1 practice (2026-10-12, run 3) and the scoring
+// counts a rule with no note as not kept. Asked again for those rules only.
+const RULE_NOTES_SYSTEM = '너는 변형 문제 출제자다. 이미 만든 문제가 교사 지침을 각각 어떻게 지키는지 지침마다 한 문장으로 적는다. 문제는 고치지 않는다. JSON만 반환한다.';
+function ruleNotesParts({ item, rules }) {
+  const steps = (item.solution?.steps || []).map((s) => `STEP ${s.step}: ${String(s.work || '').slice(0, 800)}`).join('\n');
+  return {
+    context: '',
+    text: `[만든 문제]\n${item.problem.text}\n\n[해설]\n${steps}\n${rulesBlock(rules)}\n\n위 지침 각각에 대해 이 문제에서 어떻게 지켰는지 한 문장씩 적는다. 이 문제에 해당하지 않으면 "해당 없음: 이유"로 적는다. 형식: {"appliedRules":[{"id":"지침 id","how":"한 문장"}]}`,
+  };
+}
+
 module.exports = {
-  SYSTEMS, PROMPT_VERSION, MERGE_SYSTEM, mergeText,
+  SYSTEMS, PROMPT_VERSION, MERGE_SYSTEM, mergeText, RULE_NOTES_SYSTEM, ruleNotesParts,
   ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
-  GENERATE_SYSTEM, generateText,
-  SOLVE_SYSTEM, solveText,
-  SOLUTION_REVIEW_SYSTEM, solutionReviewText,
-  REPAIR_SYSTEM, repairText,
-  LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, ADJUDICATE_SYSTEM, adjudicateText,
+  GENERATE_SYSTEM, generateText, generateParts, EXTRACT_FRAMES_SYSTEM, extractFramesText, framesBlock,
+  SOLVE_SYSTEM, solveText, solveParts,
+  SOLUTION_REVIEW_SYSTEM, solutionReviewText, solutionReviewParts,
+  REPAIR_SYSTEM, repairText, repairParts,
+  LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, writeSolutionParts, ADJUDICATE_SYSTEM, adjudicateText,
   LEARN_SYSTEM, learnText, stageScope, stageInstruction, rulesBlock,
 };
