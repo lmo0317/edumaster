@@ -46,7 +46,14 @@ function teacherChoiceHeading(material, item) {
   const last = item.solution?.steps?.[item.solution.steps.length - 1];
   if (!box || !last?.work) return false;
   const lines = String(last.work).split('\n');
-  if (lines.some((l) => /선택지 분석/.test(l))) return false;
+  // A heading the writer gave in its own form ("선택지 분석" for "| 선택지 분석 |") is the teacher's heading.
+  const own = lines.findIndex((l) => /선택지 분석/.test(l));
+  if (own >= 0) {
+    if (lines[own].trim() === box) return false;
+    lines[own] = box;
+    last.work = lines.join('\n');
+    return true;
+  }
   const at = lines.findIndex((l) => /^\s*([①②③④⑤]|정답은)/.test(l));
   if (at < 0) return false;
   const blank = at > 0 && lines[at - 1].trim() ? [''] : [];
@@ -178,11 +185,14 @@ function renderFrames(material, item) {
       .replace(/(?<![\w{])(\d+)\s*([a-z])\s*\/\s*(\d+)(?![\w}])/g, '\\frac{$1}{$3}$2')
       .replace(/(?<![\w{])(\d+)\s*\/\s*(\d+)(?![\w}])/g, '\\frac{$1}{$2}'));
     const original = material.steps?.[step.step - 1]?.title;
-    if (original && step.title && titleKey(step.title) !== titleKey(original)) {
+    // The teacher's words to the letter, not only to titleKey: "Ⅰ 에서" and "A-D" for "Ⅰ에서" and "A~D" passed the key and
+    // stayed in Haiku's set (Gemini's review, 2026-10-16).
+    if (original && step.title) {
       const mine = String(step.title).match(ROMAN) || [];
       const theirs = String(original).match(ROMAN) || [];
       let k = 0;
-      step.title = mine.length === theirs.length ? String(original).replace(ROMAN, () => mine[k++]) : original;
+      const title = mine.length === theirs.length ? String(original).replace(ROMAN, () => mine[k++]) : original;
+      if (step.title !== title) step.title = title;
     }
   }
   teacherChoiceHeading(material, item);

@@ -134,6 +134,9 @@ async function sendCli(config, cli, { messages, effort, signal }) {
   const fail = (msg, status = 502) => Object.assign(new Error(`${NAME[cli]}(구독) ${msg}`), { status });
   try {
     const { text, images } = writeRequest(dir, messages);
+    // Without a model list read yet (a new data folder) the default name may no longer exist: agy dropped
+    // gemini-3.1-pro-high and every call failed (2026-10-16). Read the list first.
+    if (!cachedModels(config)[cli]?.list?.length) await refreshModels(config, cli).catch(() => {});
     const choice = cliChoice(config, cli);
     if (cli === 'agy-cli') {
       const request = `[시스템 지시]\n${messages[0].content}\n\n[요청]\n${images.length ? '[이미지: 파일]이 있는 자리마다 이 폴더의 그 이미지 파일을 열어 자세히 본 뒤 답한다.\n\n' : ''}${text}`;

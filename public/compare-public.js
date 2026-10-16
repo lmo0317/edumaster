@@ -8,6 +8,7 @@
     if (!res.ok) throw new Error(res.status);
     const b = await res.json();
     view.innerHTML = '<h1>모델 비교</h1>' + window.EMCompare.pageHtml(b, { pdfBase: 'api/public/compare' });
+    window.EMCompare.ready();
   } catch {
     view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">비교 자료를 불러오지 못했습니다. 잠시 후 다시 열어 주세요.</div>';
   }

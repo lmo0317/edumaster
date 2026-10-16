@@ -969,3 +969,8 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .ov-legend svg { vertical-align: -2px; margin-right: 4px; }
 .cost-matrix { min-width: 980px; }
 .cost-matrix th, .cost-matrix td { word-break: keep-all; }
+/* 모델 비교 1차 / 2차 */
+.cmp-rounds { display: flex; gap: 8px; margin: 4px 0 16px; flex-wrap: wrap; }
+.cmp-rounds .cmp-tab { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
+.cmp-rounds .cmp-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cmp-rounds .cmp-tab.on .muted { color: rgba(255, 255, 255, .8); }

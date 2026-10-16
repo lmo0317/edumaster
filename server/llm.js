@@ -402,7 +402,12 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
   }
 
   async function sendGemma({ messages, maxTokens, effort, signal, copying = false, dry = true }) {
-    const status = await gemmaStatus();
+    let status = await gemmaStatus();
+    // A busy PC or a tunnel blip misses one 2.5 s check; a final problem was lost to one. Ask again for about a minute.
+    for (let i = 0; !status.available && mode !== 'mock' && i < 6 && !signal?.aborted; i++) {
+      await new Promise((r) => setTimeout(r, 10000));
+      status = await gemmaStatus(true);
+    }
     if (!status.available) throw Object.assign(new Error('Gemma(PC)에 연결할 수 없습니다. PC가 켜져 있고 Gemma가 실행 중인지 확인해 주세요.'), { status: 503 });
     // JSON-constrained output that fits the context. Thinking (design/review calls) gets its own budget: left
     // unbounded, Gemma 26B thought until the whole output limit was used and the answer was never written.

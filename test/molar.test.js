@@ -386,6 +386,14 @@ test('a solution that left out the teacher’s choice heading gets it before its
   assert.equal(harness.teacherChoiceHeading({ steps: [{ work: '정답은 ② 15이다.' }] }, { solution: { steps: [{ work: '정답은 ①' }] } }), false);
 });
 
+test('a choice heading the writer gave in its own form becomes the teacher’s', () => {
+  const material = { steps: [{ work: '' }, { work: '…\n\n| 선택지 분석 |\n② …\n정답은 ② 15이다.' }] };
+  const item = { solution: { steps: [{ work: 'a' }, { work: '풀이\n\n선택지 분석\n③ $x=35$이므로 35이다.\n정답은 ③ 35이다.' }] } };
+  assert.equal(harness.teacherChoiceHeading(material, item), true);
+  assert.equal(item.solution.steps[1].work, '풀이\n\n| 선택지 분석 |\n③ $x=35$이므로 35이다.\n정답은 ③ 35이다.');
+  assert.equal(harness.teacherChoiceHeading(material, item), false);
+});
+
 test('teacher frames: kept only when they match the teacher’s line; a variant line off every frame is found with the nearest frame', () => {
   const material = { steps: [{ work: '만약 Ⅰ에서 A가 모두 반응했다면 A $5w$ g이 반응한다.\n따라서 Ⅰ에서 모두 반응한 것은 B이다.' }] };
   const frames = harness.validateFrames(material, { steps: [{ step: 1, frames: ['만약 《실험》에서 《물질》가 모두 반응했다면 A 《질량》 g이 반응한다.', '따라서 《실험》에서 모두 반응한 것은 《물질》이다.', '틀과 다른 문장 《x》이다.', '《x》'] }] });
@@ -445,4 +453,11 @@ test('renderFrames: \\text{…} braces are not slots, and a formula value outsid
   const item = { solution: { steps: [{ step: 1, work: '[틀 1-1] 질량=3w; 비=4\n[틀 1-2] 실험=Ⅱ; 질량=\\frac{4}{3}w' }] } };
   assert.deepEqual(harness.renderFrames(material, item), []);
   assert.equal(item.solution.steps[0].work, 'A $3w$ g이고 $\\frac{\\text{C의 몰질량}}{\\text{B의 몰질량}}=4$이다.\n만약 Ⅱ에서 A $\\frac{4}{3}w$ g이 반응한다.');
+});
+
+test('STEP titles take the teacher’s exact words, spacing and "~" included, with the problem’s experiments', () => {
+  const material = { steps: [{ title: 'Ⅰ에서 한계 반응물을 구한다.', work: '' }, { title: 'A~D의 몰질량을 구한다.', work: '' }] };
+  const item = { solution: { steps: [{ step: 1, title: 'Ⅲ 에서 한계 반응물을 구한다', work: 'a' }, { step: 2, title: 'A-D의 몰질량을 구한다', work: 'b' }] } };
+  harness.renderFrames(material, item);
+  assert.deepEqual(item.solution.steps.map((s) => s.title), ['Ⅲ에서 한계 반응물을 구한다.', 'A~D의 몰질량을 구한다.']);
 });

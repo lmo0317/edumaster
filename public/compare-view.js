@@ -352,7 +352,7 @@
   }
 
   // One row per model: each problem's result and the PDF. The public page shows only this.
-  function resultsHtml(b, { pdfBase = 'api/compare', fidelity = null } = {}) {
+  function resultsHtml(b, { pdfBase = 'api/compare', fidelity = null, pdfSuffix = '' } = {}) {
     const RESULT = {
       passed: ['ok', '✓ 됨', ''], warning: ['ok', '✓ 됨 (확인할 점)', ''],
       needs_review: ['warn', '△ 검토 필요', ''], failed: ['bad', '✕ 안 됨', ''],
@@ -373,7 +373,7 @@
           const reason = it.status === 'passed' ? '' : why(it) || extra;
           return `<div class="cv2-cell ${tone}"><span class="cv2-stage">${esc(stageName(it))}</span><b>${label}</b>${reason ? `<span class="cv2-why">${esc(reason)}</span>` : ''}</div>`;
         }).join('')}
-        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="${pdfBase}/${b.id}/pdf/${m.key}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
+        <div class="cv2-pdf">${m.pdf ? `<a class="button primary" href="${pdfBase}/${b.id}/pdf/${m.key}${pdfSuffix}" download>PDF 다운로드</a>` : '<span class="muted small">PDF 없음</span>'}</div>
       </div>`;
     };
     return `<div class="cv2">${b.models.map(row).join('')}</div>
@@ -560,7 +560,56 @@
     };
   }
 
-  function pageHtml(b, { pdfBase = 'api/compare', balance = false } = {}) {
+  // 1차 and 2차 (the same setups and settings again with the molar-mass learning, 2026-10-16) as two views of one
+  // page, 2차 first, with what changed between them at its top.
+  function pageHtml(b, opts = {}) {
+    if (!b.round2?.overview) return roundHtml(b, opts);
+    const r2 = { ...b, models: b.round2.models, overview: b.round2.overview, feedback: b.round2.feedback };
+    const intro = '2차 (2026-10-16): 1차와 같은 모델·같은 설정으로 다시 만든 세트입니다. 달라진 것은 몰질량 원본에서 쌓은 학습(교사 지침 113개, 판독 교정 4개)을 모두 같은 묶음으로 받은 것과 지금의 시스템입니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다. 표의 수치 후보는 서버가 계산해 내놓고 학습도 같아서, 구성이 달라도 같은 표를 고른 문제가 많습니다 (예: Opus 단독과 Opus + Qwen의 STEP 1 연습).';
+    return `<div class="cmp-tabs cmp-rounds">
+        <button class="cmp-tab" data-cmp-round-tab="2">2차 <span class="muted tiny">10-16 · 학습 반영</span></button>
+        <button class="cmp-tab" data-cmp-round-tab="1">1차 <span class="muted tiny">10-06 ~ 10-14</span></button>
+      </div>
+      <div data-cmp-round="2">${changeHtml(b.overview, r2.overview)}${roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro })}</div>
+      <div data-cmp-round="1" hidden>${roundHtml(b, opts)}</div>`;
+  }
+
+  // 1차 → 2차 for each setup: the score, the API price of a set and the time of a set.
+  function changeHtml(one, two) {
+    const krw = (usd) => `${(Math.round((usd * two.pricing.krwPerUsd) / 10) * 10).toLocaleString()}원`;
+    // Only the setups measured in 2차 (DeepSeek left out, the user 2026-10-16).
+    const rows = ALL.filter((m) => two.compare.models[m.id])
+      .sort((x, y) => (two.compare.models[y.id]?.score ?? -1) - (two.compare.models[x.id]?.score ?? -1))
+      .map((m) => {
+        const a = one.compare.models[m.id]; const c = two.compare.models[m.id];
+        const delta = (x, y, unit, lowerIsBetter) => {
+          if (x == null || y == null) return '';
+          const d = Math.round(y - x);
+          if (!d) return '<div class="muted tiny">같음</div>';
+          const good = lowerIsBetter ? d < 0 : d > 0;
+          return `<div class="tiny ${good ? 'save-up' : 'save-down'}">${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString()}${unit}</div>`;
+        };
+        const price = (q) => (m.pay === 'pc' ? 0 : q?.cost?.setUsd);
+        const cell = (q, fmt) => (q ? fmt(q) : '<span class="muted small">측정 못 함</span>');
+        const won = (q) => (m.pay === 'pc' ? '0원' : q.cost?.setUsd != null ? krw(q.cost.setUsd) : '-');
+        const usdA = price(a); const usdC = price(c);
+        return `<tr><th>${m.name}${m.trained ? ' <span class="chip run">학습됨</span>' : ''}</th>
+          <td>${cell(a, (q) => `${q.score}점<div class="muted tiny">${q.runs}회 평균</div>`)}</td>
+          <td><b>${c.score}점</b>${delta(a?.score, c.score, '점')}</td>
+          <td>${cell(c, (q) => `${q.metrics.clear.pass}/${q.metrics.clear.total}`)}</td>
+          <td>${cell(a, won)}</td>
+          <td><b>${won(c)}</b>${usdA != null && usdC != null && usdA > 0 ? `<div class="tiny ${usdC <= usdA ? 'save-up' : 'save-down'}">${usdC <= usdA ? '−' : '+'}${Math.abs(Math.round((usdC / usdA - 1) * 100))}%</div>` : ''}</td>
+          <td>${a ? `${a.minutes}분` : '-'} → <b>${c.minutes}분</b></td></tr>`;
+      }).join('');
+    return `<div class="panel"><h2>1차 → 2차 <span class="muted small">같은 모델·같은 설정, 학습만 반영</span></h2>
+      <div class="table-wrap"><table class="cmp-table">
+        <tr><th>구성</th><th>1차 점수</th><th>2차 점수</th><th>2차 바로 쓸 문제</th><th>1차 세트 (API 정가)</th><th>2차 세트 (API 정가)</th><th>세트 시간</th></tr>
+        ${rows}
+      </table></div>
+      <p class="muted small">1차는 구성마다 여러 번 잰 평균, 2차는 1벌씩입니다 (한 번에 ±4/29 정도 흔들립니다). 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.</p></div>`;
+  }
+
+  function roundHtml(b, { pdfBase = 'api/compare', balance = false, pdfSuffix = '', intro = '' } = {}) {
     const fb = b.feedback;
     const MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'] };
     const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
@@ -617,10 +666,10 @@
     const all = parts ? parts.cards + parts.price + parts.subscription + parts.chart
       + '<div class="panel"><h2>문제를 얼마나 잘 만드나 <span class="muted small">만들려고 한 문제 하나하나 기준</span></h2>' + overviewHtml(b.overview, { balance, ids: allKeys, names: allNames, costs: false, cards: false }) + '</div>'
       + strategyHtml(b.overview)
-      + '<h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2><p class="muted">' + ORIGINAL + ' 세트: Opus 단독 2026-10-06, DeepSeek 2026-09-30, Opus + Haiku 10-12 R12(4회 평균), Opus + Qwen + 시스템 10-13 11회차(11~13회차 평균), Qwen 3.8 학습됨 + 시스템 10-14 4회차(3·4회차 평균, 점수는 Opus가 다시 판정). 혼합과 Qwen 3.8 세트는 Claude·Gemini 독립 검수에서 정답 3/3입니다.</p>'
+      + '<h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2><p class="muted">' + ORIGINAL + (intro ? ' ' + intro + '</p>' : ' 세트: Opus 단독 2026-10-06, DeepSeek 2026-09-30, Opus + Haiku 10-12 R12(4회 평균), Opus + Qwen + 시스템 10-13 11회차(11~13회차 평균), Qwen 3.8 학습됨 + 시스템 10-14 4회차(3·4회차 평균, 점수는 Opus가 다시 판정). 혼합과 Qwen 3.8 세트는 Claude·Gemini 독립 검수에서 정답 3/3입니다.</p>')
       + '<div class="panel cv2-orig"><span class="muted small">원본</span><img data-zoom src="' + b.original.problemImage + '" alt="원본 문제">' + (b.original.solutionImage ? '<img data-zoom src="' + b.original.solutionImage + '" alt="교사 해설">' : '') + '<span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>'
       + checklist(allSub)
-      + '<h2 class="cv2-h">모델별 결과와 PDF</h2>' + resultsHtml(allSub, { pdfBase, fidelity }) : '';
+      + '<h2 class="cv2-h">모델별 결과와 PDF</h2>' + resultsHtml(allSub, { pdfBase, fidelity, pdfSuffix }) : '';
     return all;
   }
 
@@ -645,5 +694,22 @@
   // A shared address opened on a page already showing the comparison (e.g. compare.html#mixed pasted in the same tab).
   window.addEventListener('hashchange', () => { if (document.querySelector('[data-cmp-tab]') && (inApp() || !location.hash.startsWith('#/'))) showTab(openTab()); });
 
-  window.EMCompare = { pageHtml, resultsHtml };
+  // 1차 / 2차: 2차 first; the address keeps 1차 (#/compare?round=1, compare.html#round1) without a new history entry.
+  const openRound = () => (/[?&]round=1(&|$)|^#round1$/.test(location.hash) ? '1' : '2');
+  function showRound(n) {
+    document.querySelectorAll('[data-cmp-round-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpRoundTab === n));
+    document.querySelectorAll('[data-cmp-round]').forEach((x) => { x.hidden = x.dataset.cmpRound !== n; });
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-cmp-round-tab]');
+    if (!t) return;
+    const n = t.dataset.cmpRoundTab;
+    showRound(n);
+    const hash = inApp() ? `#/compare${n === '1' ? '?round=1' : ''}` : n === '1' ? '#round1' : '';
+    history.replaceState(null, '', location.pathname + location.search + hash);
+  });
+  // Called by the app and the public page once the page is in the document.
+  const ready = () => { if (document.querySelector('[data-cmp-round-tab]')) showRound(openRound()); };
+
+  window.EMCompare = { pageHtml, resultsHtml, ready };
 })();

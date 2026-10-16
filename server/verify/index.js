@@ -38,7 +38,9 @@ function normalize(verification, choiceCount) {
   // C-style && and || (Qwen writes them) are mathjs and / or.
   const logic = (s) => String(s ?? '').replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false').replace(/&&/g, ' and ').replace(/\|\|/g, ' or ');
   const uncomment = (s) => String(s ?? '').split(/\r?\n/).map((l) => l.replace(/(^|\s)(?:\/\/|#).*$/, '').trim()).filter(Boolean);
-  const program = list(verification.program).flatMap(uncomment).flatMap((s) => assignments(logic(s).trim())).filter(Boolean);
+  // Pascal-style "b := 3" (Qwen writes it) is the assignment "b = 3".
+  const assign = (s) => s.replace(/([A-Za-z_][A-Za-z0-9_]*)\s*:=/g, '$1 =');
+  const program = list(verification.program).flatMap(uncomment).flatMap((s) => assignments(assign(logic(s)).trim())).filter(Boolean);
   if (!program.length) return { error: '검산 프로그램이 비어 있습니다.' };
   if (program.length > MAX_LINES) return { error: `검산 프로그램이 너무 깁니다 (${program.length}줄).` };
   const tooLong = [...program, verification.answer, ...list(verification.choices)].find((s) => String(s ?? '').length > MAX_CHARS);

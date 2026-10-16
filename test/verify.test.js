@@ -128,3 +128,8 @@ test('the problem\'s own unknown used without being listed as free is treated as
   assert.equal(typo.status, 'fail');
   assert.equal(typo.runError, true);
 });
+
+test('Pascal-style ":=" assignments (Qwen writes them) run as assignments', async () => {
+  const r = await codeCheck({ program: ['b := 3', 'x := 15; m := 2', 'ans := b / x * m'], answer: 'ans', choices: ['1/5', '2/5', '3/5', '4/5', '1'] }, { answer: 2, choiceCount: 5 });
+  assert.equal(r.status, 'pass', JSON.stringify(r));
+});
