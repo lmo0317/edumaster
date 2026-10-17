@@ -410,7 +410,7 @@
     ['원본 100개 · 1벌씩', '원본마다 이해·풀이 + 1벌', (c) => 100 * (c.once + c.each)],
     ['원본 100개 · 100벌씩', '원본마다 이해·풀이 + 100벌 (1만 벌)', (c) => 100 * (c.once + 100 * c.each)],
   ];
-  function allHtml(sys, fb) {
+  function allHtml(sys, fb, subject = '화학 몰질량') {
     const P = sys.pricing; const cmp = sys.compare;
     const { won, api, weekly, max } = claudeMoney(P);
     const list = ALL.filter((m) => cmp.models[m.id]).map((m) => ({ ...m, q: cmp.models[m.id], c: splitCost(cmp.models[m.id]) }))
@@ -545,7 +545,7 @@
       }).join('') + '</tr>').join('')
       + '</table></div>';
     return {
-      cards: '<div class="panel"><h2>한눈에 보기 <span class="muted small">몰질량 원본 · 점수 높은 순</span></h2>'
+      cards: '<div class="panel"><h2>한눈에 보기 <span class="muted small">' + subject.replace(/^화학 /, '') + ' 원본 · 점수 높은 순</span></h2>'
         + '<p class="muted small"><b>품질 점수</b>는 모든 구성을 같은 기준(Opus의 독립 풀이·해설 대조를 포함한 자동 검토)으로 매긴 100점 만점이고, <b>요구사항 충실도</b>는 Claude·Gemini 독립 검수와 직접 검산으로 채운 아래 체크리스트의 점수입니다. <b>1벌</b> = 원본 하나로 만드는 STEP 연습 2문제(STEP 1, STEP 1~2)와 쌍둥이 최종 문제 1개, 각각의 풀이·해설. 가격은 바로 아래 따로 정리했습니다.</p>'
         + '<div class="ov-grid">' + cards + '</div></div>',
       price: '<div class="panel"><h2>모델별 가격 <span class="muted small">API 정가</span></h2>'
@@ -565,17 +565,22 @@
   function pageHtml(b, opts = {}) {
     if (!b.round2?.overview) return roundHtml(b, opts);
     const r2 = { ...b, models: b.round2.models, overview: b.round2.overview, feedback: b.round2.feedback };
+    // 3차 (2026-10-16~): the same setups, settings and learning on another original (reaction-density): what carries over.
+    const r3 = b.round3?.overview ? { ...b, id: b.id, models: b.round3.models, overview: b.round3.overview, feedback: b.round3.feedback || null, original: b.round3.original } : null;
+    const intro3 = '3차 (2026-10-16): 2차와 같은 모델·같은 설정·같은 학습 묶음으로, 원본만 화학 반응식·밀도 문제로 바꿔 만든 세트입니다. 이 원본만의 학습은 없고, 몰질량 전용 서버 계산도 쓰이지 않습니다. 몰질량에서 쌓은 시스템과 학습이 다른 문제에도 통하는지를 봅니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
     const intro = '2차 (2026-10-16): 1차와 같은 모델·같은 설정으로 다시 만든 세트입니다. 달라진 것은 몰질량 원본에서 쌓은 학습(교사 지침 113개, 판독 교정 4개)을 모두 같은 묶음으로 받은 것과 지금의 시스템입니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다. 표의 수치 후보는 서버가 계산해 내놓고 학습도 같아서, 구성이 달라도 같은 표를 고른 문제가 많습니다 (예: Opus 단독과 Opus + Qwen의 STEP 1 연습).';
     return `<div class="cmp-tabs cmp-rounds">
+        ${r3 ? '<button class="cmp-tab" data-cmp-round-tab="3">3차 <span class="muted tiny">10-16 · 다른 원본</span></button>' : ''}
         <button class="cmp-tab" data-cmp-round-tab="2">2차 <span class="muted tiny">10-16 · 학습 반영</span></button>
         <button class="cmp-tab" data-cmp-round-tab="1">1차 <span class="muted tiny">10-06 ~ 10-14</span></button>
       </div>
-      <div data-cmp-round="2">${changeHtml(b.overview, r2.overview)}${roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro })}</div>
+      ${r3 ? `<div data-cmp-round="3">${changeHtml(r2.overview, r3.overview, { from: '2차', to: '3차', what: '같은 모델·설정·학습, 원본만 바꿈', note: '2차는 몰질량 원본, 3차는 화학 반응식·밀도 원본입니다. 둘 다 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r3, { ...opts, pdfSuffix: '-r3', intro: intro3, subject: '화학 반응식·밀도' })}</div>` : ''}
+      <div data-cmp-round="2" hidden>${changeHtml(b.overview, r2.overview)}${roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro })}</div>
       <div data-cmp-round="1" hidden>${roundHtml(b, opts)}</div>`;
   }
 
   // 1차 → 2차 for each setup: the score, the API price of a set and the time of a set.
-  function changeHtml(one, two) {
+  function changeHtml(one, two, { from = '1차', to = '2차', what = '같은 모델·같은 설정, 학습만 반영', note = '1차는 구성마다 여러 번 잰 평균, 2차는 1벌씩입니다 (한 번에 ±4/29 정도 흔들립니다). 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' } = {}) {
     const krw = (usd) => `${(Math.round((usd * two.pricing.krwPerUsd) / 10) * 10).toLocaleString()}원`;
     // Only the setups measured in 2차 (DeepSeek left out, the user 2026-10-16).
     const rows = ALL.filter((m) => two.compare.models[m.id])
@@ -594,22 +599,22 @@
         const won = (q) => (m.pay === 'pc' ? '0원' : q.cost?.setUsd != null ? krw(q.cost.setUsd) : '-');
         const usdA = price(a); const usdC = price(c);
         return `<tr><th>${m.name}${m.trained ? ' <span class="chip run">학습됨</span>' : ''}</th>
-          <td>${cell(a, (q) => `${q.score}점<div class="muted tiny">${q.runs}회 평균</div>`)}</td>
+          <td>${cell(a, (q) => `${q.score}점${q.runs > 1 ? `<div class="muted tiny">${q.runs}회 평균</div>` : ''}`)}</td>
           <td><b>${c.score}점</b>${delta(a?.score, c.score, '점')}</td>
           <td>${cell(c, (q) => `${q.metrics.clear.pass}/${q.metrics.clear.total}`)}</td>
           <td>${cell(a, won)}</td>
           <td><b>${won(c)}</b>${usdA != null && usdC != null && usdA > 0 ? `<div class="tiny ${usdC <= usdA ? 'save-up' : 'save-down'}">${usdC <= usdA ? '−' : '+'}${Math.abs(Math.round((usdC / usdA - 1) * 100))}%</div>` : ''}</td>
           <td>${a ? `${a.minutes}분` : '-'} → <b>${c.minutes}분</b></td></tr>`;
       }).join('');
-    return `<div class="panel"><h2>1차 → 2차 <span class="muted small">같은 모델·같은 설정, 학습만 반영</span></h2>
+    return `<div class="panel"><h2>${from} → ${to} <span class="muted small">${what}</span></h2>
       <div class="table-wrap"><table class="cmp-table">
-        <tr><th>구성</th><th>1차 점수</th><th>2차 점수</th><th>2차 바로 쓸 문제</th><th>1차 세트 (API 정가)</th><th>2차 세트 (API 정가)</th><th>세트 시간</th></tr>
+        <tr><th>구성</th><th>${from} 점수</th><th>${to} 점수</th><th>${to} 바로 쓸 문제</th><th>${from} 세트 (API 정가)</th><th>${to} 세트 (API 정가)</th><th>세트 시간</th></tr>
         ${rows}
       </table></div>
-      <p class="muted small">1차는 구성마다 여러 번 잰 평균, 2차는 1벌씩입니다 (한 번에 ±4/29 정도 흔들립니다). 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.</p></div>`;
+      <p class="muted small">${note}</p></div>`;
   }
 
-  function roundHtml(b, { pdfBase = 'api/compare', balance = false, pdfSuffix = '', intro = '' } = {}) {
+  function roundHtml(b, { pdfBase = 'api/compare', balance = false, pdfSuffix = '', intro = '', subject = '화학 몰질량' } = {}) {
     const fb = b.feedback;
     const MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'] };
     const allItems = fb ? fb.groups.flatMap((g) => g.items) : [];
@@ -648,7 +653,7 @@
       ${extra}
       ${costPanels ? subscriptionHtml(b.overview, keys) : ''}
       ${costPanels && keys.some((k) => MIXES.some((x) => x.id === k)) ? scenarioHtml(b.overview) : ''}
-      <h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2>
+      <h2 class="cv2-h">${subject} 문제로 자세히 보기</h2>
       <p class="muted">${intro}</p>
       <div class="panel cv2-orig"><span class="muted small">원본</span>
         <img data-zoom src="${b.original.problemImage}" alt="원본 문제">${b.original.solutionImage ? `<img data-zoom src="${b.original.solutionImage}" alt="교사 해설">` : ''}
@@ -657,16 +662,17 @@
       <h2 class="cv2-h">모델별 결과와 PDF</h2>
       ${resultsHtml(sub, { pdfBase, fidelity })}`;
     };
-    const ORIGINAL = '같은 몰질량 원본 문제와 해설을 모델마다 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.';
-    const parts = allHtml(b.overview, b.feedback);
+    const ORIGINAL = '같은 ' + subject.replace(/^화학 /, '') + ' 원본 문제와 해설을 모델마다 똑같이 넣어, 연습 문제 3개(STEP 1 연습, STEP 1~2 연습, 최종 문제)를 만든 결과입니다. PDF에는 원본과 만든 문제·해설이 모두 들어 있습니다.';
+    const parts = allHtml(b.overview, b.feedback, subject);
     const allKeys = ALL.map((m) => m.id).filter((id) => b.overview?.compare?.models?.[id]);
     const allNames = Object.fromEntries(ALL.map((m) => [m.id, m.name]));
     const allScore = (m) => b.overview?.compare?.models?.[m.key]?.score ?? -1;
     const allSub = { ...b, models: b.models.filter((m) => allKeys.includes(m.key)).map((m) => ({ ...m, label: allNames[m.key] || m.label })).sort((x, y) => allScore(y) - allScore(x)) };
     const all = parts ? parts.cards + parts.price + parts.subscription + parts.chart
       + '<div class="panel"><h2>문제를 얼마나 잘 만드나 <span class="muted small">만들려고 한 문제 하나하나 기준</span></h2>' + overviewHtml(b.overview, { balance, ids: allKeys, names: allNames, costs: false, cards: false }) + '</div>'
-      + strategyHtml(b.overview)
-      + '<h2 class="cv2-h">화학 몰질량 문제로 자세히 보기</h2><p class="muted">' + ORIGINAL + (intro ? ' ' + intro + '</p>' : ' 세트: Opus 단독 2026-10-06, DeepSeek 2026-09-30, Opus + Haiku 10-12 R12(4회 평균), Opus + Qwen + 시스템 10-13 11회차(11~13회차 평균), Qwen 3.8 학습됨 + 시스템 10-14 4회차(3·4회차 평균, 점수는 Opus가 다시 판정). 혼합과 Qwen 3.8 세트는 Claude·Gemini 독립 검수에서 정답 3/3입니다.</p>')
+      // The molar-mass rounds' history: another original's set cost is not its baseline.
+      + (subject === '화학 몰질량' ? strategyHtml(b.overview) : '')
+      + '<h2 class="cv2-h">' + subject + ' 문제로 자세히 보기</h2><p class="muted">' + ORIGINAL + (intro ? ' ' + intro + '</p>' : ' 세트: Opus 단독 2026-10-06, DeepSeek 2026-09-30, Opus + Haiku 10-12 R12(4회 평균), Opus + Qwen + 시스템 10-13 11회차(11~13회차 평균), Qwen 3.8 학습됨 + 시스템 10-14 4회차(3·4회차 평균, 점수는 Opus가 다시 판정). 혼합과 Qwen 3.8 세트는 Claude·Gemini 독립 검수에서 정답 3/3입니다.</p>')
       + '<div class="panel cv2-orig"><span class="muted small">원본</span><img data-zoom src="' + b.original.problemImage + '" alt="원본 문제">' + (b.original.solutionImage ? '<img data-zoom src="' + b.original.solutionImage + '" alt="교사 해설">' : '') + '<span class="muted small">사진을 누르면 크게 볼 수 있습니다.</span></div>'
       + checklist(allSub)
       + '<h2 class="cv2-h">모델별 결과와 PDF</h2>' + resultsHtml(allSub, { pdfBase, fidelity, pdfSuffix }) : '';
@@ -694,8 +700,9 @@
   // A shared address opened on a page already showing the comparison (e.g. compare.html#mixed pasted in the same tab).
   window.addEventListener('hashchange', () => { if (document.querySelector('[data-cmp-tab]') && (inApp() || !location.hash.startsWith('#/'))) showTab(openTab()); });
 
-  // 1차 / 2차: 2차 first; the address keeps 1차 (#/compare?round=1, compare.html#round1) without a new history entry.
-  const openRound = () => (/[?&]round=1(&|$)|^#round1$/.test(location.hash) ? '1' : '2');
+  // 1차 / 2차 / 3차: the newest first; the address keeps another (#/compare?round=1, compare.html#round1) without a new history entry.
+  // The newest round unless the address names one (?round=2, #round2).
+  const openRound = () => { const m = /[?&]round=(d)(&|$)|^#round(d)$/.exec(location.hash); const n = m && (m[1] || m[3]); const tabs = [...document.querySelectorAll('[data-cmp-round-tab]')].map((x) => x.dataset.cmpRoundTab); return n && tabs.includes(n) ? n : tabs[0]; };
   function showRound(n) {
     document.querySelectorAll('[data-cmp-round-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpRoundTab === n));
     document.querySelectorAll('[data-cmp-round]').forEach((x) => { x.hidden = x.dataset.cmpRound !== n; });
@@ -705,7 +712,8 @@
     if (!t) return;
     const n = t.dataset.cmpRoundTab;
     showRound(n);
-    const hash = inApp() ? `#/compare${n === '1' ? '?round=1' : ''}` : n === '1' ? '#round1' : '';
+    const newest = document.querySelector('[data-cmp-round-tab]')?.dataset.cmpRoundTab;
+    const hash = inApp() ? `#/compare${n === newest ? '' : `?round=${n}`}` : n === newest ? '' : `#round${n}`;
     history.replaceState(null, '', location.pathname + location.search + hash);
   });
   // Called by the app and the public page once the page is in the document.

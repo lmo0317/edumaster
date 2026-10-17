@@ -152,6 +152,15 @@ function frameFindings(material, item, limit = 8) {
  */
 const FRAME_REF = /^\s*\[틀\s*(\d+)\s*[-–.]\s*(\d+)\]\s*(.*)$/;
 const ROMAN = /Ⅰ|Ⅱ|Ⅲ|Ⅳ|Ⅴ/g;
+// Frames are kept without \ce (frameLine), so a species the teacher writes as "$\ce{A(s)}$" goes back in that form
+// outside the frame's $…$ (reaction-density, 2026-10-16: every set wrote "A(s)" and the judge failed the notation).
+function teacherCe(material, text) {
+  const species = new Set();
+  for (const s of material.steps || []) for (const m of String(s.work || '').matchAll(/\$\\ce\{([A-Za-z0-9]+\([a-z]+\))\}\$/g)) species.add(m[1]);
+  if (!species.size) return text;
+  const any = new RegExp(`(?<![A-Za-z0-9{])(${[...species].map((x) => x.replace(/[()]/g, '\\$&')).join('|')})`, 'g');
+  return text.split(/(\$[^$]*\$)/).map((part, i) => (i % 2 ? part : part.replace(any, '$\\ce{$1}$'))).join('');
+}
 function renderFrames(material, item) {
   const missing = [];
   const frames = material.frames || [];
@@ -177,7 +186,7 @@ function renderFrames(material, item) {
       });
       // An unfilled frame stays the writer's reference line, to be filled on the next pass (never half a sentence).
       if (empty.length) { missing.push(`해설 STEP ${step.step}: [틀 ${m[1]}-${m[2]}]에 ${empty.map((x) => `《${x}》`).join(', ')} 값이 없습니다. 틀의 자리 이름 그대로 "자리=값"을 모두 쓴다.`); return line; }
-      return text.replace(/\s+(에서|에서는|에서의)(?=\s|$)/g, '$1');
+      return teacherCe(material, text.replace(/\s+(에서|에서는|에서의)(?=\s|$)/g, '$1'));
     });
     // Fractions as the teacher writes them: Qwen 3.8 wrote 24/7w and 21w/2 inside $…$ (round 10).
     step.work = lines.join('\n').replace(/\$[^$\n]*\$/g, (math) => math
@@ -227,7 +236,9 @@ function checkHelpers(material, item) {
   return out;
 }
 
-const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하지|성립하지|불가능/.test(t);
+// "만약 … 이라면 … 그러나 … 이므로" is the same reasoning without the word 모순 (reaction-density's teacher, 2026-10-16:
+// every variant that kept her sentences failed this check).
+const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하지|성립하지|불가능|그러나|하지만/.test(t);
 
 /** The case a solution first assumes and rules out ("만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다"): "A", or '' when none. */
 function assumedCase(text) {

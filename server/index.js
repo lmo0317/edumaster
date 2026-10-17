@@ -746,6 +746,8 @@ function createApp(options = {}) {
   // 모델 비교 2차 (2026-10-16): the same setups and settings again, each given the learning the molar-mass original
   // built up (113 teacher's rules, 4 reading corrections) and the system as it is now. Runs from then on are 2차.
   const ROUND2_FROM = '20261016T0643';
+  // 3차 (2026-10-16): the same setups, settings and learning on another original (round3.case); runs from then on.
+  const ROUND3_FROM = '20261016T1111';
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
@@ -753,10 +755,12 @@ function createApp(options = {}) {
     return { id: b.id, title: b.title, models: b.models.map((m) => ({ key: m.key, label: m.label, score: m.score?.make || null })) };
   }) : []));
   const PDF_NAME = { 'claude-cli': 'Claude_Opus_5.5', 'opus-haiku': 'Claude_Opus_5.5+Haiku_5.5', 'opus-qwen': 'Claude_Opus_5.5+Qwen_3.6-35B', 'opus-qwen-sys': 'Claude_Opus_5.5+Qwen_3.8-27B+시스템', deepseek: 'DeepSeek_V4_Flash', qwen38q4: 'Qwen_3.8-27B+시스템', qwen36: 'Qwen_3.6-35B', gemma12: 'Gemma_4_12B' };
-  function comparePdf(res, id, key, r2 = false) {
-    const file = path.join(compareDir, id, `${key}${r2 ? '-r2' : ''}.pdf`);
+  function comparePdf(res, id, key, round = '') {
+    const file = path.join(compareDir, id, `${key}${round ? `-r${round}` : ''}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
-    const name = `${id}_${PDF_NAME[key]}${r2 ? '_2차' : ''}.pdf`;
+    // 3차's sets are of another original: the file is named after it.
+    const original = round === '3' ? JSON.parse(fs.readFileSync(path.join(compareDir, `${id}.json`), 'utf8')).round3?.case || id : id;
+    const name = `${original}_${PDF_NAME[key]}${round ? `_${round}차` : ''}.pdf`;
     // A header takes ASCII only: the name in UTF-8 goes in filename* (RFC 6266), with an ASCII fallback — a Korean name
     // ("…+시스템") in filename= failed the whole download with a 500 (2026-10-14).
     const ascii = name.replace(/[^\x20-\x7e]/g, '').replace(/\+(?=\.pdf$)/, '') || 'compare.pdf';
@@ -783,9 +787,15 @@ function createApp(options = {}) {
       bundle.round2.overview = { compare: modelComparison(id, COMPARED, verdicts2, { from: ROUND2_FROM }), pricing };
       bundle.round2.feedback = bundle.feedback && fb2 ? { ...bundle.feedback, ...fb2 } : null;
     }
+    if (bundle.round3) {
+      const fb3 = bundle.feedback?.round3;
+      const verdicts3 = Object.fromEntries(Object.entries(fb3?.models || {}).map(([k, v]) => [k, v.final?.[0]]).filter(([, v]) => v));
+      bundle.round3.overview = { compare: modelComparison(bundle.round3.case, COMPARED, verdicts3, { from: ROUND3_FROM }), pricing };
+      bundle.round3.feedback = bundle.feedback && fb3 ? { ...bundle.feedback, ...fb3 } : null;
+    }
     return bundle;
   }
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(-r2)?$/, (req, res, [id, key, r2]) => comparePdf(res, id, key, Boolean(r2)));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([23]))?$/, (req, res, [id, key, round]) => comparePdf(res, id, key, round || ''));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
@@ -794,11 +804,12 @@ function createApp(options = {}) {
     const bundle = compareBundle(PUBLIC_COMPARE);
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     if (bundle.round2?.feedback) bundle.round2.feedback = { ...bundle.round2.feedback, quote: '' };
+    if (bundle.round3?.feedback) bundle.round3.feedback = { ...bundle.round3.feedback, quote: '' };
     return bundle;
   }, { open: true });
-  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(-r2)?$/, (req, res, [id, key, r2]) => {
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([23]))?$/, (req, res, [id, key, round]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
-    return comparePdf(res, id, key, Boolean(r2));
+    return comparePdf(res, id, key, round || '');
   }, { open: true });
   // 학습 (docs/learning.md): each problem's own items (문제별 학습) and the every-problem items by layer and stage, with where each was learned and how
   // it fared; the reading corrections (공통 학습 of analysis); the persona and, read-only, how results are checked (지침).

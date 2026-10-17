@@ -57,7 +57,11 @@ try {
                 foreach($url in 'https://minohlee.mooo.com/edumaster/api/status','https://minohlee.mooo.com/edumasterv2/api/status'){
                     try{ if((Invoke-RestMethod -Uri $url -TimeoutSec 5).providers.gemma.available){$seen=$true;break} }catch{}
                 }
-                if($seen){$healthFailures=0}else{$healthFailures++}
+                # A model busy with a long request answers the server's 2.5 s check late; reconnecting then cut the
+                # requests going through the tunnel (both Qwen runs of 모델 비교 3차, 2026-10-17). Busy is not down.
+                $busy=$false
+                try{$busy=[bool](@(Invoke-RestMethod -Uri 'http://127.0.0.1:8092/slots' -TimeoutSec 3) | Where-Object { $_.is_processing })}catch{}
+                if($seen -or $busy){$healthFailures=0}else{$healthFailures++}
             }
             if($healthFailures -ge 2 -and $null -ne $tunnelProcess -and -not $tunnelProcess.HasExited){
                 Add-Content (Join-Path $logs 'connection-health.log') ('{0:o} server could not reach the PC model twice; reconnecting owned SSH tunnel' -f [DateTime]::UtcNow)

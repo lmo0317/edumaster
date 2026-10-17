@@ -40,6 +40,13 @@ test('v1 d2aa fixture: STEP 1 practice keeps the assumption→contradiction; a s
   assert.ok(ids({ ...item, solution: { steps: [{ step: 1, work: '실험 Ⅰ에서 남은 것은 A이므로 한계 반응물은 B이다.' }] } }).includes('source-assumption'));
 });
 
+test('"만약 … 이라면 … 그러나 … 이므로" is the assumption→contradiction without the word 모순', () => {
+  const work = '만약 실험 Ⅰ에서 B가 한계 반응물이라면 반응 전 : 반응 후$=1:16$이다.\n그러나 주어진 밀도 비는 $1:7$이므로 실험 Ⅰ에서 A가 한계 반응물이다.';
+  const material = { problem: { text: '', choices: [] }, steps: [{ title: 'Ⅰ에서 한계 반응물을 찾는다.', work, technique: '' }] };
+  const item = { stage: { kind: 'upto', upto: 1 }, problem: { text: '문제', choices: [], answer: 0 }, solution: { steps: [{ step: 1, work: work.replace('16', '12') }] } };
+  assert.equal(harness.inspectItem(material, item, 'integrated').find((c) => c.id === 'source-assumption').state, 'pass');
+});
+
 test('the substance the teacher supposes used up stays the same (R11 molar final supposed B)', () => {
   const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'S1', work: '만약 Ⅰ에서 A가 모두 반응했다면 … 주어진 자료와 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 B이다.' }] };
   const check = (work) => harness.inspectItem(material, { stage: { kind: 'twin' }, problem: { text: '문제', choices: [] }, solution: { steps: [{ step: 1, work }] } }, 'integrated').find((c) => c.id === 'source-assumption-substance');

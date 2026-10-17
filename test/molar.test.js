@@ -455,6 +455,14 @@ test('renderFrames: \\text{…} braces are not slots, and a formula value outsid
   assert.equal(item.solution.steps[0].work, 'A $3w$ g이고 $\\frac{\\text{C의 몰질량}}{\\text{B의 몰질량}}=4$이다.\n만약 Ⅱ에서 A $\\frac{4}{3}w$ g이 반응한다.');
 });
 
+test('renderFrames: a species the teacher writes as $\\ce{…}$ is written so again, not as the frame’s plain "A(s)"', () => {
+  const material = { steps: [{ work: '화학 반응식에서 $\\ce{A(s)}$는 고체이고, 기체가 $\\ce{B(g)}$만 있을 때 밀도 비는 $1:7$이다.' }] };
+  material.frames = harness.validateFrames(material, { steps: [{ step: 1, frames: ['화학 반응식에서 A(s)는 고체이고, 기체가 B(g)만 있을 때 밀도 비는 $1:《비》$이다.'] }] });
+  const item = { solution: { steps: [{ step: 1, work: '[틀 1-1] 비=3' }] } };
+  assert.deepEqual(harness.renderFrames(material, item), []);
+  assert.equal(item.solution.steps[0].work, '화학 반응식에서 $\\ce{A(s)}$는 고체이고, 기체가 $\\ce{B(g)}$만 있을 때 밀도 비는 $1:3$이다.');
+});
+
 test('STEP titles take the teacher’s exact words, spacing and "~" included, with the problem’s experiments', () => {
   const material = { steps: [{ title: 'Ⅰ에서 한계 반응물을 구한다.', work: '' }, { title: 'A~D의 몰질량을 구한다.', work: '' }] };
   const item = { solution: { steps: [{ step: 1, title: 'Ⅲ 에서 한계 반응물을 구한다', work: 'a' }, { step: 2, title: 'A-D의 몰질량을 구한다', work: 'b' }] } };

@@ -1,7 +1,7 @@
 """Lease for this SSH session's EduMaster reverse tunnel; no credentials needed.
 
 Run on the server as the remote command of the PC's tunnel (scripts/start-web.ps1). While the PC model answers on
-127.0.0.1:18283 the session stays; after three failed probes it closes, and the PC watcher opens a new one.
+127.0.0.1:18283 the session stays; after two minutes without an answer it closes, and the PC watcher opens a new one.
 """
 import os
 import pwd
@@ -32,11 +32,19 @@ def validate_parent(parent_pid):
         raise RuntimeError('Parent is not this dedicated SSH command session')
 
 
-def monitor(check, pause, terminate):
-    failures = 0
+# A model reading an image (encoded on the CPU) answers nothing for half a minute or more; three missed probes
+# (about 25 s) closed the tunnel under both Qwen runs of 모델 비교 3차 (2026-10-17). A PC that is gone stays silent.
+SILENT_LIMIT = 120
+
+
+def monitor(check, pause, terminate, clock=time.monotonic):
+    since = None
     while True:
-        failures = 0 if check() else failures + 1
-        if failures >= 3:
+        if check():
+            since = None
+        elif since is None:
+            since = clock()
+        elif clock() - since >= SILENT_LIMIT:
             terminate()
             return
         pause(5)
