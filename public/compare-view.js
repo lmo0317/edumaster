@@ -568,13 +568,18 @@
     // 3차 (2026-10-16~): the same setups, settings and learning on another original (reaction-density): what carries over.
     const r3 = b.round3?.overview ? { ...b, id: b.id, models: b.round3.models, overview: b.round3.overview, feedback: b.round3.feedback || null, original: b.round3.original } : null;
     const intro3 = '3차 (2026-10-16): 2차와 같은 모델·같은 설정·같은 학습 묶음으로, 원본만 화학 반응식·밀도 문제로 바꿔 만든 세트입니다. 이 원본만의 학습은 없고, 몰질량 전용 서버 계산도 쓰이지 않습니다. 몰질량에서 쌓은 시스템과 학습이 다른 문제에도 통하는지를 봅니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
+    // 4차 (2026-10-17): 3차 again on the same original, with the system fixed after it.
+    const r4 = b.round4?.overview ? { ...b, id: b.id, models: b.round4.models, overview: b.round4.overview, feedback: b.round4.feedback || null, original: b.round4.original } : null;
+    const intro4 = '4차 (2026-10-17): 3차와 같은 원본·같은 모델·같은 설정·같은 학습 묶음으로 다시 만든 세트입니다. 달라진 것은 3차를 보고 고친 시스템뿐입니다: 선생님이 "모순" 대신 "만약 … 그러나 …"로 쓴 가정→모순을 그대로 인정하고, 선생님이 화학식 표기로 쓴 A(s) 같은 물질을 해설에도 그렇게 쓰고, PC 모델이 오래 일할 때 연결을 끊지 않습니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
     const intro = '2차 (2026-10-16): 1차와 같은 모델·같은 설정으로 다시 만든 세트입니다. 달라진 것은 몰질량 원본에서 쌓은 학습(교사 지침 113개, 판독 교정 4개)을 모두 같은 묶음으로 받은 것과 지금의 시스템입니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다. 표의 수치 후보는 서버가 계산해 내놓고 학습도 같아서, 구성이 달라도 같은 표를 고른 문제가 많습니다 (예: Opus 단독과 Opus + Qwen의 STEP 1 연습).';
     return `<div class="cmp-tabs cmp-rounds">
+        ${r4 ? '<button class="cmp-tab" data-cmp-round-tab="4">4차 <span class="muted tiny">10-17 · 시스템 수정</span></button>' : ''}
         ${r3 ? '<button class="cmp-tab" data-cmp-round-tab="3">3차 <span class="muted tiny">10-16 · 다른 원본</span></button>' : ''}
         <button class="cmp-tab" data-cmp-round-tab="2">2차 <span class="muted tiny">10-16 · 학습 반영</span></button>
         <button class="cmp-tab" data-cmp-round-tab="1">1차 <span class="muted tiny">10-06 ~ 10-14</span></button>
       </div>
-      ${r3 ? `<div data-cmp-round="3">${changeHtml(r2.overview, r3.overview, { from: '2차', to: '3차', what: '같은 모델·설정·학습, 원본만 바꿈', note: '2차는 몰질량 원본, 3차는 화학 반응식·밀도 원본입니다. 둘 다 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r3, { ...opts, pdfSuffix: '-r3', intro: intro3, subject: '화학 반응식·밀도' })}</div>` : ''}
+      ${r4 ? `<div data-cmp-round="4">${changeHtml(r3.overview, r4.overview, { from: '3차', to: '4차', what: '같은 원본·모델·설정·학습, 시스템만 고침', note: '3차와 4차 모두 화학 반응식·밀도 원본, 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r4, { ...opts, pdfSuffix: '-r4', intro: intro4, subject: '화학 반응식·밀도' })}</div>` : ''}
+      ${r3 ? `<div data-cmp-round="3"${r4 ? ' hidden' : ''}>${changeHtml(r2.overview, r3.overview, { from: '2차', to: '3차', what: '같은 모델·설정·학습, 원본만 바꿈', note: '2차는 몰질량 원본, 3차는 화학 반응식·밀도 원본입니다. 둘 다 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r3, { ...opts, pdfSuffix: '-r3', intro: intro3, subject: '화학 반응식·밀도' })}</div>` : ''}
       <div data-cmp-round="2" hidden>${changeHtml(b.overview, r2.overview)}${roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro })}</div>
       <div data-cmp-round="1" hidden>${roundHtml(b, opts)}</div>`;
   }
@@ -700,9 +705,9 @@
   // A shared address opened on a page already showing the comparison (e.g. compare.html#mixed pasted in the same tab).
   window.addEventListener('hashchange', () => { if (document.querySelector('[data-cmp-tab]') && (inApp() || !location.hash.startsWith('#/'))) showTab(openTab()); });
 
-  // 1차 / 2차 / 3차: the newest first; the address keeps another (#/compare?round=1, compare.html#round1) without a new history entry.
+  // 1차 ~ 4차: the newest first; the address keeps another (#/compare?round=1, compare.html#round1) without a new history entry.
   // The newest round unless the address names one (?round=2, #round2).
-  const openRound = () => { const m = /[?&]round=(d)(&|$)|^#round(d)$/.exec(location.hash); const n = m && (m[1] || m[3]); const tabs = [...document.querySelectorAll('[data-cmp-round-tab]')].map((x) => x.dataset.cmpRoundTab); return n && tabs.includes(n) ? n : tabs[0]; };
+  const openRound = () => { const m = /[?&]round=(\d)(&|$)|^#round(\d)$/.exec(location.hash); const n = m && (m[1] || m[3]); const tabs = [...document.querySelectorAll('[data-cmp-round-tab]')].map((x) => x.dataset.cmpRoundTab); return n && tabs.includes(n) ? n : tabs[0]; };
   function showRound(n) {
     document.querySelectorAll('[data-cmp-round-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpRoundTab === n));
     document.querySelectorAll('[data-cmp-round]').forEach((x) => { x.hidden = x.dataset.cmpRound !== n; });

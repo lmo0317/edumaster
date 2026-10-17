@@ -2,14 +2,14 @@
 // Builds one model-comparison file for the 모델 비교 page: the original (images + the teacher's STEP titles) and,
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
 //   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
-//     [--keys <jobId>=<key>,...] [--merge] [--round 2 | --round 3 --into chem-molar-mass]
+//     [--keys <jobId>=<key>,...] [--merge] [--round 2 | --round 3|4 --into chem-molar-mass]
 // Each model has a key (claude-cli, deepseek, or the local model: gemma12, qwen36); a PC job is gemma12 unless --keys
 // says otherwise. --merge keeps the models already in the file and replaces only those with the same key.
 // Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
 // eval/compare/<case>/<key>.pdf, are offered for download on the page.
 // --round 2 writes the sets as the comparison's 2차 (round2.models, PDFs as <key>-r2.pdf) and keeps 1차 as it is.
 // --round 3 --into <case> writes another original's sets into that comparison as its 3차 (round3: the case, its
-// original and models; PDFs as eval/compare/<into>/<key>-r3.pdf).
+// original and models; PDFs as eval/compare/<into>/<key>-r3.pdf); --round 4 the same as its 4차 (round4, <key>-r4.pdf).
 // Writes eval/compare/<case>.json (deploy ships it; the page reads it, nothing is stored in data/).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,7 +25,7 @@ const LABEL = { 'claude-cli': 'Claude Opus 5.5', 'opus-haiku': 'Claude Opus 5.5 
 const ORDER = ['claude-cli', 'opus-haiku', 'opus-qwen', 'opus-qwen-sys', 'deepseek', 'qwen38q4', 'qwen36', 'gemma12'];
 const ROUND = String(args.round || '');
 const R2 = ROUND === '2';
-const R3 = ROUND === '3';
+const R3 = ROUND === '3' || ROUND === '4';
 const into = R3 ? args.into || 'chem-molar-mass' : args.case;
 const pdfName = (key) => `${key}${ROUND ? `-r${ROUND}` : ''}.pdf`;
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));
@@ -76,16 +76,16 @@ for (const f of fs.readdirSync(jobsDir).filter((x) => x.endsWith('.json'))) {
 const file = path.join(__dirname, 'compare', `${into}.json`);
 if (R3) {
   const bundle = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const before = args.merge ? bundle.round3?.models || [] : [];
+  const before = args.merge ? bundle[`round${ROUND}`]?.models || [] : [];
   models.push(...before.filter((p) => !models.some((m) => m.key === p.key)));
   models.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
-  bundle.round3 = {
+  bundle[`round${ROUND}`] = {
     case: args.case, title: spec.title, createdAt: new Date().toISOString(),
     original: { problemImage: dataUrl(path.join(caseDir, spec.problem)), solutionImage: spec.solution ? dataUrl(path.join(caseDir, spec.solution)) : null, answer: spec.expect?.answer, steps: spec.expect?.stepTitles || [] },
     models,
   };
   fs.writeFileSync(file, JSON.stringify(bundle));
-  console.log(file, '3차', models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '));
+  console.log(file, `${ROUND}차`, models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '));
   process.exit(0);
 }
 if (R2) {

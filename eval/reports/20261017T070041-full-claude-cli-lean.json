@@ -1,0 +1,426 @@
+{
+ "stamp": "20261017T070041",
+ "stage": "full",
+ "mode": "integrated",
+ "promptVersion": "2365f78037",
+ "reviewVersion": "review-2026-09-30b",
+ "learning": {
+  "used": "/tmp/learn-v2",
+  "rules": 113,
+  "corrections": 4
+ },
+ "results": [
+  {
+   "case": "chem-d76-reaction-density",
+   "title": "화학 · 화학 반응식과 기체의 밀도 (밀도비로 한계 반응물, 반응 계수 b와 x)",
+   "provider": "claude-cli",
+   "model": "claude-opus-5-5",
+   "designModel": "claude-haiku-5-5",
+   "stage": "full",
+   "mode": "integrated",
+   "lean": true,
+   "analysisUsage": {
+    "calls": 6,
+    "input": 52513,
+    "output": 6490,
+    "reasoning": 0,
+    "total": 59003,
+    "maxCalls": 11,
+    "maxTokens": 100000000
+   },
+   "analysis": [
+    {
+     "name": "정답 번호",
+     "pass": true,
+     "detail": "읽음 2 / 기대 2"
+    },
+    {
+     "name": "선택지 수",
+     "pass": true,
+     "detail": "읽음 5 / 기대 5"
+    },
+    {
+     "name": "해설 STEP 수",
+     "pass": true,
+     "detail": "정리 3 / 해설 3"
+    },
+    {
+     "name": "STEP 제목이 해설과 일치",
+     "pass": true,
+     "detail": "1.00, 1.00, 1.00"
+    },
+    {
+     "name": "문제에 \"반응 계수\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"1/16\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"밀도\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"온도와 압력은 일정\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"16M\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"B의 분자량=M\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"2B(g)\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "문제에 \"2×10\" 미포함 (필기·오독)",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"한계 반응물\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"b=2\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "해설 STEP에 \"x=10\" 포함",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "원본 정답 검산 통과",
+     "pass": true,
+     "detail": "해설대로 계산한 값이 원본 정답과 일치"
+    }
+   ],
+   "timing": {
+    "analysis": 1,
+    "generation": 20.5,
+    "items": [
+     {
+      "label": "STEP 1 연습",
+      "minutes": 10,
+      "repairs": 2,
+      "made": true
+     },
+     {
+      "label": "STEP 1~2 연습",
+      "minutes": 3.1,
+      "repairs": 0,
+      "made": true
+     },
+     {
+      "label": "최종 문제",
+      "minutes": 6.9,
+      "repairs": 0,
+      "made": true
+     }
+    ]
+   },
+   "read": {
+    "steps": [
+     "밀도와 B, C의 분자량 비를 이용하여 실험 Ⅰ에서 한계 반응물을 찾는다.",
+     "실험 Ⅰ에서 화학 반응식을 완성한다.",
+     "실험 Ⅱ에서 화학 반응식을 완성하고, $x$를 구한다."
+    ],
+    "question": "$b\\times x$는? (단, 기체의 온도와 압력은 일정하다.) (3점)",
+    "proofread": [
+     "과거 교사 교정 4건을 판독에 참고했습니다."
+    ]
+   },
+   "generationUsage": {
+    "calls": 27,
+    "input": 259910,
+    "output": 224663,
+    "reasoning": 0,
+    "total": 484573,
+    "maxCalls": 60,
+    "maxTokens": 100000000
+   },
+   "generation": [
+    {
+     "name": "세트 완료",
+     "pass": true,
+     "detail": "done"
+    },
+    {
+     "name": "STEP 1 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 2 / 표시 2"
+    },
+    {
+     "name": "STEP 1 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1 연습: 확인할 점 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "STEP 1~2 연습: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "STEP 1~2 연습: 확인할 점 없음",
+     "pass": false,
+     "detail": "독립 풀이 지적(other): 실험이 Ⅰ 하나뿐인데 '양(mol)을 달리하여 넣고'라고 써서 표현이 어색하다. 풀이에는 영향이 없다.; 풀어 쓴 해설에 출제자 요지의 값((M:42M-2bM/12-2b))이 보이지 않습니다."
+    },
+    {
+     "name": "최종 문제: 문제 생성",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 코드 검산",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 독립 풀이 정답 일치",
+     "pass": true,
+     "detail": "독립 3 / 표시 3"
+    },
+    {
+     "name": "최종 문제: 모든 조건이 풀이에 쓰임",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 목표 STEP 범위로 풀림",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 교사 풀이 방법 보존",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 교사 지침 준수",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 교사 검토 필요 없음",
+     "pass": true,
+     "detail": ""
+    },
+    {
+     "name": "최종 문제: 확인할 점 없음",
+     "pass": false,
+     "detail": "풀어 쓴 해설에 출제자 요지의 값(M:49M-2bM/19-2b), (18-2x)M+16xM)이 보이지 않습니다."
+    },
+    {
+     "name": "최종 문제: 구조 변형(숫자만 바꾸지 않음)",
+     "pass": true,
+     "detail": "structural"
+    }
+   ],
+   "rulesAttached": 24,
+   "jobId": "7084d552f5b249ebebff8a64",
+   "cost": {
+    "usd": 1.55,
+    "byProvider": {
+     "claude-cli": {
+      "calls": 33,
+      "input": 312423,
+      "cached": 164868,
+      "output": 231153,
+      "peakCalls": 0,
+      "usd": 1.55
+     }
+    },
+    "byModel": {
+     "claude-haiku-5-5": {
+      "calls": 12,
+      "tokens": 325191,
+      "usd": 0.11
+     },
+     "claude-opus-5-5": {
+      "calls": 21,
+      "tokens": 218385,
+      "usd": 1.44
+     }
+    },
+    "byStage": {
+     "learn": {
+      "claude-haiku-5-5": {
+       "calls": 2,
+       "tokens": 25941,
+       "usd": 0.006
+      }
+     },
+     "solve": {
+      "claude-opus-5-5": {
+       "calls": 19,
+       "tokens": 195320,
+       "usd": 1.285
+      }
+     },
+     "design": {
+      "claude-haiku-5-5": {
+       "calls": 5,
+       "tokens": 259120,
+       "usd": 0.1
+      }
+     },
+     "read": {
+      "claude-opus-5-5": {
+       "calls": 2,
+       "tokens": 23065,
+       "usd": 0.155
+      },
+      "claude-haiku-5-5": {
+       "calls": 5,
+       "tokens": 40130,
+       "usd": 0.005
+      }
+     }
+    },
+    "byPart": {
+     "learn": {
+      "claude-haiku-5-5": {
+       "calls": 2,
+       "tokens": 25941,
+       "usd": 0.006
+      }
+     },
+     "practice": {
+      "claude-opus-5-5": {
+       "calls": 11,
+       "tokens": 101650,
+       "usd": 0.673
+      },
+      "claude-haiku-5-5": {
+       "calls": 4,
+       "tokens": 192368,
+       "usd": 0.073
+      }
+     },
+     "twin": {
+      "claude-opus-5-5": {
+       "calls": 8,
+       "tokens": 93670,
+       "usd": 0.612
+      },
+      "claude-haiku-5-5": {
+       "calls": 1,
+       "tokens": 66752,
+       "usd": 0.027
+      }
+     },
+     "solution": {
+      "claude-opus-5-5": {
+       "calls": 1,
+       "tokens": 4192,
+       "usd": 0.045
+      },
+      "claude-haiku-5-5": {
+       "calls": 3,
+       "tokens": 28126,
+       "usd": 0.004
+      }
+     },
+     "understand": {
+      "claude-haiku-5-5": {
+       "calls": 2,
+       "tokens": 12004,
+       "usd": 0.001
+      },
+      "claude-opus-5-5": {
+       "calls": 1,
+       "tokens": 18873,
+       "usd": 0.111
+      }
+     }
+    }
+   },
+   "minutes": 21.5
+  }
+ ]
+}
