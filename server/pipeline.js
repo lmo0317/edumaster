@@ -711,7 +711,7 @@ function repeatsPrior(item, prior) {
 // shortcuts, numbers-only, STEP coverage, problem-rule checks) stay in the record but do not send the problem back —
 // a weak solver raised them falsely (Qwen 3.6, 2026-09-30: three of four repairs); an answer mismatch is first put
 // to the designer, who decides whether the problem or the solver is wrong. Code checks stay as they are.
-const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'explanation-complete', 'source-step-titles', 'source-tables']);
+const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'explanation-complete', 'source-step-titles', 'source-tables', 'source-hidden-limiting']);
 const solutionOnly = (c) => SOLUTION_CHECKS.has(c.id) || (c.id === 'format' && c.evidence.split('; ').every((e) => e.startsWith('해설')));
 
 const flat = (s) => harness.plain(s).replace(/\\left|\\right|\s/g, '');

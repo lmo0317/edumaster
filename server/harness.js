@@ -71,7 +71,7 @@ function teacherChoiceHeading(material, item) {
 const frameLine = (l) => String(l || '').replace(/\$\\ce\{([^{}]*)\}\$/g, '$1').replace(/\\ce\{([^{}]*)\}/g, '$1').replace(/\s+/g, ' ').trim();
 // Not held to a frame: table rows, a line of formulas only (a proportion, the choice's own numbers — the teacher's has
 // other numbers in it, so its frame is all slots), and the closing choice and answer lines (teacherChoiceHeading).
-const frameSkip = (l) => !l || /^\|.*\|$/.test(l) || /^\|?\s*-{3}/.test(l) || /^([①②③④⑤]|정답은)/.test(l)
+const frameSkip = (l) => !l || /^\|.*\|$/.test(l) || /^\|?\s*-{3}/.test(l) || /^[★*•\s]*([①②③④⑤]|정답은)/.test(l)
   || String(l).replace(/\$[^$]*\$/g, '').replace(/[^가-힣]/g, '').length < 4;
 function frameRegex(frame) {
   const parts = String(frame).split(/《[^《》]{1,20}》/);
@@ -204,8 +204,46 @@ function renderFrames(material, item) {
       if (step.title !== title) step.title = title;
     }
   }
+  answerLine(item);
   teacherChoiceHeading(material, item);
   return missing;
+}
+
+/**
+ * "정답은 …이다." says the item's own answer: the teacher's "★ 정답은 ② 20이다." was kept as a frame with no slot and
+ * Qwen 3.8 copied it under its answer ④ 27 (reaction-density 4차, 2026-10-17, Claude's and Gemini's reviews). The
+ * teacher's form stays (a leading ★, a mark without its value).
+ */
+function answerLine(item) {
+  const p = item.problem;
+  const n = Number(p?.answer);
+  const choice = p?.choices?.[n - 1];
+  if (!(n >= 1 && n <= 5) || choice == null) return;
+  const mark = '①②③④⑤'[n - 1];
+  const shown = String(choice).trim().replace(/^\$\s*(-?[\d.]+)\s*\$$/, '$1');
+  for (const step of item.solution?.steps || []) {
+    step.work = String(step.work || '').replace(/^(.*?정답은\s*)([①②③④⑤])(.*)$/gm, (all, head, had, rest) => (
+      /^\s*(이다|입니다)/.test(rest) ? `${head}${mark}${rest}` : `${head}${mark} ${shown}이다.`));
+  }
+}
+
+/**
+ * An experiment whose amount put in is hidden (x) does not show which reactant runs out, so the solution says it for
+ * that experiment as the teacher says it for the experiment of STEP 1: Opus + Haiku and Opus + Qwen hid Ⅱ's amount
+ * and went straight to Ⅱ's reaction table (reaction-density 4차, 2026-10-17, Claude's reviews).
+ */
+function checkHiddenLimiting(material, item) {
+  if (!/한계 반응물|모두 반응/.test((material.steps || []).map((s) => s.work).join('\n'))) return [];
+  const lines = String(item.problem?.text || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
+  if (lines.length < 3 || !(item.solution?.steps || []).length) return [];
+  const cells = (l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim());
+  const given = cells(lines[0]).map((h, i) => (i > 0 && /넣어\s*준/.test(h) ? i : -1)).filter((i) => i > 0);
+  const hidden = lines.slice(1).map(cells).filter((c) => /^(Ⅰ|Ⅱ|Ⅲ|Ⅳ)$/.test(c[0]) && given.some((i) => /^[a-z]$/.test(c[i] || ''))).map((c) => c[0]);
+  const work = (item.solution.steps || []).flatMap((s) => String(s.work || '').split('\n')).map(plain);
+  const said = (r) => work.some((l) => l.includes(r) && /한계 반응물|모두 반응/.test(l));
+  const missing = hidden.filter((r) => !said(r));
+  return [result('source-hidden-limiting', '넣어 준 양을 숨긴 실험의 한계 반응물을 해설이 판정함', !missing.length,
+    missing.length ? `실험 ${missing.join(', ')}은 넣어 준 양을 숨겨 무엇이 모두 반응하는지 문제에 바로 보이지 않는데, 해설이 그 실험의 한계 반응물을 판정하지 않고 반응 표로 갑니다. 그 실험의 표 앞에 선생님 STEP 1의 판정 문장(가정→모순 또는 근거 한 줄)으로 판정을 쓴다.` : '')];
 }
 
 /** Original STEPs a stage uses (1-based). */
@@ -1168,6 +1206,7 @@ function inspectItem(material, item, mode) {
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
     ...checkSolutionTables(material, item),
+    ...checkHiddenLimiting(material, item),
     ...checkEquation(material, item),
     ...checkUnusedCoefficient(item),
     ...checkObviousLeftover(material, item),
