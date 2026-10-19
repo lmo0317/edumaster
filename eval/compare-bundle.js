@@ -2,14 +2,14 @@
 // Builds one model-comparison file for the 모델 비교 page: the original (images + the teacher's STEP titles) and,
 // per model, the problem set it made for the same eval case, with the review results and harness scores.
 //   node eval/compare-bundle.js --data <data dir holding the eval jobs> --case chem-molar-mass [--title "화학 몰질량 · "]
-//     [--keys <jobId>=<key>,...] [--merge] [--round 2 | --round 3|4 --into chem-molar-mass]
+//     [--keys <jobId>=<key>,...] [--merge] [--round 2 | --round 3|4|5 --into chem-molar-mass]
 // Each model has a key (claude-cli, deepseek, or the local model: gemma12, qwen36); a PC job is gemma12 unless --keys
 // says otherwise. --merge keeps the models already in the file and replaces only those with the same key.
 // Jobs are picked by title (default: the eval runner's "<case> · <model>"); PDFs of each set, if printed to
 // eval/compare/<case>/<key>.pdf, are offered for download on the page.
 // --round 2 writes the sets as the comparison's 2차 (round2.models, PDFs as <key>-r2.pdf) and keeps 1차 as it is.
 // --round 3 --into <case> writes another original's sets into that comparison as its 3차 (round3: the case, its
-// original and models; PDFs as eval/compare/<into>/<key>-r3.pdf); --round 4 the same as its 4차 (round4, <key>-r4.pdf).
+// original and models; PDFs as eval/compare/<into>/<key>-r3.pdf); --round 4 and 5 the same as its 4차 and 5차 (round4, <key>-r4.pdf; round5).
 // Writes eval/compare/<case>.json (deploy ships it; the page reads it, nothing is stored in data/).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,7 +25,7 @@ const LABEL = { 'claude-cli': 'Claude Opus 5.5', 'opus-haiku': 'Claude Opus 5.5 
 const ORDER = ['claude-cli', 'opus-haiku', 'opus-qwen', 'opus-qwen-sys', 'deepseek', 'qwen38q4', 'qwen36', 'gemma12'];
 const ROUND = String(args.round || '');
 const R2 = ROUND === '2';
-const R3 = ROUND === '3' || ROUND === '4';
+const R3 = ['3', '4', '5'].includes(ROUND);
 const into = R3 ? args.into || 'chem-molar-mass' : args.case;
 const pdfName = (key) => `${key}${ROUND ? `-r${ROUND}` : ''}.pdf`;
 const KEYS = Object.fromEntries((args.keys || '').split(',').filter(Boolean).map((p) => p.split('=')));

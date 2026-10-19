@@ -750,6 +750,9 @@ function createApp(options = {}) {
   const ROUND3_FROM = '20261016T1111';
   // 4차 (2026-10-17): 3차 again on the same original with the system fixed after it (assumption check, \ce, tunnel).
   const ROUND4_FROM = '20261017T0700';
+  // 5차 (2026-10-18): 4차 again with the system fixed after its reviews (answer line, hidden limiting reactant, shortcut
+  // look); Opus alone and Opus + Haiku only — the PC's Qwen was dropped for the PC's other work (the user, 2026-10-19).
+  const ROUND5_FROM = '20261018T0433';
   // 모델 비교 page: the same original made into problems by each model (files built by eval/compare-bundle.js).
   const compareDir = path.join(cfg.root, 'eval', 'compare');
   route('GET', /^\/api\/compare$/, () => (fs.existsSync(compareDir) ? fs.readdirSync(compareDir).filter((f) => f.endsWith('.json') && !f.endsWith('.feedback.json')).map((f) => {
@@ -760,8 +763,8 @@ function createApp(options = {}) {
   function comparePdf(res, id, key, round = '') {
     const file = path.join(compareDir, id, `${key}${round ? `-r${round}` : ''}.pdf`);
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
-    // 3차's and 4차's sets are of another original: the file is named after it.
-    const original = round === '3' || round === '4' ? JSON.parse(fs.readFileSync(path.join(compareDir, `${id}.json`), 'utf8'))[`round${round}`]?.case || id : id;
+    // 3차's to 5차's sets are of another original: the file is named after it.
+    const original = ['3', '4', '5'].includes(round) ? JSON.parse(fs.readFileSync(path.join(compareDir, `${id}.json`), 'utf8'))[`round${round}`]?.case || id : id;
     const name = `${original}_${PDF_NAME[key]}${round ? `_${round}차` : ''}.pdf`;
     // A header takes ASCII only: the name in UTF-8 goes in filename* (RFC 6266), with an ASCII fallback — a Korean name
     // ("…+시스템") in filename= failed the whole download with a 500 (2026-10-14).
@@ -789,7 +792,7 @@ function createApp(options = {}) {
       bundle.round2.overview = { compare: modelComparison(id, COMPARED, verdicts2, { from: ROUND2_FROM }), pricing };
       bundle.round2.feedback = bundle.feedback && fb2 ? { ...bundle.feedback, ...fb2 } : null;
     }
-    for (const [n, from, to] of [[3, ROUND3_FROM, ROUND4_FROM], [4, ROUND4_FROM]]) {
+    for (const [n, from, to] of [[3, ROUND3_FROM, ROUND4_FROM], [4, ROUND4_FROM, ROUND5_FROM], [5, ROUND5_FROM]]) {
       const round = bundle[`round${n}`];
       if (!round) continue;
       const fb = bundle.feedback?.[`round${n}`];
@@ -799,7 +802,7 @@ function createApp(options = {}) {
     }
     return bundle;
   }
-  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([234]))?$/, (req, res, [id, key, round]) => comparePdf(res, id, key, round || ''));
+  route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([2-5]))?$/, (req, res, [id, key, round]) => comparePdf(res, id, key, round || ''));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
@@ -809,10 +812,10 @@ function createApp(options = {}) {
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     if (bundle.round2?.feedback) bundle.round2.feedback = { ...bundle.round2.feedback, quote: '' };
     if (bundle.round3?.feedback) bundle.round3.feedback = { ...bundle.round3.feedback, quote: '' };
-    if (bundle.round4?.feedback) bundle.round4.feedback = { ...bundle.round4.feedback, quote: '' };
+    for (const n of [4, 5]) if (bundle[`round${n}`]?.feedback) bundle[`round${n}`].feedback = { ...bundle[`round${n}`].feedback, quote: '' };
     return bundle;
   }, { open: true });
-  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([234]))?$/, (req, res, [id, key, round]) => {
+  route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([2-5]))?$/, (req, res, [id, key, round]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key, round || '');
   }, { open: true });
