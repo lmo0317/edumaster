@@ -360,6 +360,11 @@ test('a row that gives as numbers what the original hid (a = 12 in its solution)
   const at = (rows) => ({ problem: { text: head + rows }, stage: { kind: 'upto' } });
   assert.match(numbersReused(at('| (가) | $\mathrm{XY_2}$ | 23 |  | 12 | 1 |'), [], material).join(), /원본의 실험 수치\(23,12\)/);
   assert.deepEqual(numbersReused(at('| (가) | $\mathrm{XY_2}$ | 16 |  | 6 | 1 |'), [], material), []);
+  // Asking for the value the original hid (a = 12 again) is a remembered answer.
+  const asks = (a) => ({ ...at(`| (가) | $\mathrm{XY_2}$ | 16 |  | 6 | 1 |
+| (나) | $\mathrm{ZX_2}$ | 22 |  | $a$ | 2 |`), solution: { steps: [{ work: `(나)의 부피는 ${a}L이고, $a=${a}$이다.` }] } });
+  assert.match(numbersReused(asks(12), [], material).join(), /숨긴 값과 같은 값\(a=12\)/);
+  assert.deepEqual(numbersReused(asks(9), [], material), []);
 });
 
 // chem-c32-molar-volume (2026-10-19): the analysis review found the teacher's '/몰' moved; every solution followed it.

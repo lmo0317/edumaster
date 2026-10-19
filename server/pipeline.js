@@ -807,9 +807,15 @@ function numbersReused(item, prior, material) {
   const mine = designedRows(item.problem.text, vocab);
   if (!mine.length) return [];
   const notes = [];
+  // The value a hidden letter comes to is the answer the student works out: the same as the original's (a = 12 asked
+  // again, chem-c32-molar-volume 2026-10-19: the final review found it in a third round, past the repairs) is a
+  // remembered answer, not a worked one.
+  const myHidden = hiddenValues(item.problem.text, item.solution?.steps);
   const compare = (text, steps, whose) => {
-    const theirs = new Set([...designedRows(text, vocab), ...designedRows(text, vocab, hiddenValues(text, steps))].map((r) => r.sig));
+    const theirHidden = hiddenValues(text, steps);
+    const theirs = new Set([...designedRows(text, vocab), ...designedRows(text, vocab, theirHidden)].map((r) => r.sig));
     for (const r of mine) if (theirs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
+    for (const [l, v] of Object.entries(myHidden)) if (theirHidden[l] === v) notes.push(`${whose}에서 숨긴 값과 같은 값(${l}=${v})을 구하게 합니다. ${l}가 다른 값이 되게 수치를 잡습니다.`);
   };
   compare(material.problem.text, material.steps, '원본');
   if (item.stage.kind === 'twin') for (const other of prior) if (other.problem && other.index !== item.index) compare(other.problem.text, other.solution?.steps, `앞 문제(${other.label})`);
