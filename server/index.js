@@ -17,6 +17,9 @@ const learningMap = require('./learning-map');
 const pipeline = require('./pipeline');
 const prompts = require('./prompts');
 const harness = require('./harness');
+const reviewCriteria = () => { try { return fs.readFileSync(require('./final-review').CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## A\.)/, ''); } catch { return ''; } };
+const finalReviewRows = require('./final-review').checklistOf;
+const REVIEW_CHECKLIST = require('./final-review').CHECKLIST.map((g) => ({ title: g.title, items: g.items.map(({ id, text, analysis }) => ({ id, text, analysis: Boolean(analysis) })) }));
 
 const VERSION = '2.0.0';
 
@@ -508,7 +511,14 @@ function createApp(options = {}) {
     return store.jobs.all().filter((j) => (!materialId || j.materialId === materialId) && (j.type !== 'analyze' || url.searchParams.get('all'))).slice(0, 100).map(jobSummary);
   });
   // The problem's name as it is now (it may have been renamed since the set was made).
-  route('GET', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => { const job = getJob(id); return { ...job, materialTitle: store.materials.get(job.materialId)?.title || job.title }; });
+  // The set page's review table has the 모델 비교 checklist's rows (server/final-review.js).
+  route('GET', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => {
+    const job = getJob(id);
+    // A set made before its review was kept as a checklist (2026-10-19) has it worked out from the kept review.
+    const items = (job.items || []).map((it) => (it.finalReview && !it.finalReview.checklist
+      ? { ...it, finalReview: { ...it.finalReview, checklist: finalReviewRows(it.finalReview.review, { final: it.stage?.kind === 'twin' }) } } : it));
+    return { ...job, items, materialTitle: store.materials.get(job.materialId)?.title || job.title, reviewChecklist: REVIEW_CHECKLIST, reviewCriteria: reviewCriteria() };
+  });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/cancel$/, (req, res, [id]) => { getJob(id); return { cancelled: jobs.cancel(id) }; });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/resume$/, (req, res, [id]) => ({ jobId: jobs.resume(getJob(id)).id }));
   route('DELETE', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => {

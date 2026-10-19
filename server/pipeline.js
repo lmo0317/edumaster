@@ -2,6 +2,7 @@
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
 const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, grams, overlap } = require('./learning');
+const crypto = require('node:crypto');
 const harness = require('./harness');
 const finalReview = require('./final-review');
 
@@ -653,10 +654,39 @@ async function finalGate(ctx, item, material, prior) {
     const review = (data?.items || [])[0] || null;
     const faults = finalReview.itemFaults(data);
     ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+    // Every round is kept for the set page: what each review found, and that the next one passed.
+    (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
+    ctx.save();
     return { faults, review };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
+  }
+}
+
+/** The analysis (the original read and its STEPs) under the same criteria, once per original as it now reads: kept with
+ *  the original, so the set page shows the rows 원본을 정확히 읽는다 and 선생님 STEP을 그대로 쓴다 of the checklist. */
+async function reviewAnalysis(ctx, material) {
+  const stored = ctx.store?.materials?.get(ctx.job.materialId);
+  const key = crypto.createHash('sha1').update(JSON.stringify([material.problem?.text, material.problem?.choices, material.problem?.answer, (material.steps || []).map((s) => [s.title, s.work])])).digest('hex');
+  if (stored?.analysisReview?.key === key) { ctx.job.analysisReview = stored.analysisReview; ctx.save(); return; }
+  if (ctx.budget.affords && !ctx.budget.affords(4)) return;
+  ctx.log('원본 분석을 최종 검수 기준으로 검토 중');
+  try {
+    const { data } = await ctx.llm.json({
+      purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 16000, vision: true,
+      system: finalReview.reviewSystem({ ...material, id: ctx.job.materialId }, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+      text: finalReview.analysisText(material), images: originalImages(ctx.store, material),
+    });
+    const a = data?.analysis || {};
+    const review = { key, at: new Date().toISOString(), verdict: a.verdict === 'issues' ? 'issues' : 'ok', issues: arr(a.issues).slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
+    ctx.job.analysisReview = review;
+    if (stored) ctx.store.materials.put({ ...stored, analysisReview: review });
+    ctx.log(`원본 분석 검토: ${review.issues.length ? `${review.issues.length}건 — 분석 결과에서 고칠 수 있습니다` : '이상 없음'}`);
+    ctx.save();
+  } catch (e) {
+    if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) throw e;
+    ctx.log(`원본 분석 검토를 하지 못했습니다 (${e.message})`);
   }
 }
 
@@ -1260,6 +1290,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   const examples = examplesFor(item, allExamples);
   item.examplesUsed = examples.length;
   item.attempts = [];
+  item.reviewRounds = [];
   item.redesigned = 0;
   let best = null;
   let left = previous;
@@ -1303,7 +1334,12 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   // is listed with the problem as 남은 점.
   // A problem the final review still finds fault with is not made: it goes to the teacher with what is left.
   const gate = check.gate || null;
-  item.finalReview = ctx.finalGate ? { passed: Boolean(gate && !gate.skipped && !gate.faults.length), faults: gate?.faults || [], skipped: gate?.skipped || (gate ? '' : '앞의 검토에서 고칠 점이 남아 최종 검수까지 가지 못했습니다.'), review: gate?.review || null } : null;
+  item.finalReview = ctx.finalGate ? {
+    passed: Boolean(gate && !gate.skipped && !gate.faults.length), faults: gate?.faults || [],
+    skipped: gate?.skipped || (gate ? '' : '앞의 검토에서 고칠 점이 남아 최종 검수까지 가지 못했습니다.'), review: gate?.review || null,
+    // The 모델 비교 checklist's rows, filled from this review (server/final-review.js).
+    checklist: finalReview.checklistOf(gate?.review, { final: item.stage?.kind === 'twin' }),
+  } : null;
   item.problems = [...new Set([...check.invalid, ...(gate?.faults || []).map((f) => '최종 검수: ' + f)])];
   item.warnings = [...new Set([
     ...best.reasons.filter((r) => !check.invalid.some((x) => r.endsWith(x)) && !r.startsWith('최종 검수: ')),
@@ -1438,6 +1474,7 @@ async function runGeneration(ctx) {
   // What the teacher adopted from earlier sets of this original (examples for the same stages).
   const examples = adoptedExamples(store, job.materialId, {});
   await ensureFrames(ctx, material);
+  if (ctx.finalGate && !job.analysisReview) await reviewAnalysis(ctx, material);
   for (const item of job.items) {
     if (ctx.signal.aborted) throw new Error('작업이 취소되었습니다.');
     if (['passed', 'warning', 'needs_review'].includes(item.status)) continue; // resume keeps finished work

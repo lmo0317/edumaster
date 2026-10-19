@@ -1113,10 +1113,62 @@
       <p><b>${done.length === job.items.length ? `${done.length}문제 모두 완성` : `${job.items.length}문제 중 ${done.length}문제 완성`}</b>${first.length ? ` · 첫 설계로 통과 ${first.length}` : ''}${left.length ? ` · 남은 점이 있는 문제 ${left.length}` : ''}${unsure.length ? ` · <span class="bad">정답 확인 필요 ${unsure.length}</span>` : ''}</p>
       ${quotaLine ? `<p class="muted">이 세트가 쓴 구독 한도: ${quotaLine}. 같은 시간에 이 구독을 쓴 다른 작업이 있었다면 그 몫도 들어 있습니다.</p>` : ''}
       ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 문제마다 아래 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
+      ${reviewTable(job)}
       ${learned ? (learned.length ? `<div class="jt-learned"><b>이번 세트에서 배운 학습 ${learned.length}개</b> — 다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.
         <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''} <a href="#/learn/map/${l.scope === 'common' ? 'common' : 'p-' + job.materialId}">보기</a></li>`).join('')}</ul></div>`
         : '<p class="muted">이번 세트에서 새로 추가할 학습은 없었습니다.</p>') : ''}
     </section>`;
+  }
+  // 최종 검수 (server/final-review.js): the 모델 비교 page's checklist for this set — a column per problem, filled from the
+  // review each problem passed while it was made (review-criteria.md, the same review a finished set gets); the rows on
+  // reading the original from the review of the analysis. ✓ counts 1 and △ half, as on that page.
+  const REVIEW_MARK = { ok: ['ok', '✓'], partial: ['warn', '△'], no: ['bad', '✕'], na: ['', '–'] };
+  function itemRow(item, id) {
+    if (id === 'complete') {
+      const f = item.finalReview;
+      if (item.status === 'passed' || item.status === 'warning') return ['ok', f?.passed ? `최종 검수 통과${(item.reviewRounds || []).length > 1 ? ` (검수 ${item.reviewRounds.length}번)` : ''}` : '완성'];
+      if (item.status === 'needs_review') return ['no', f && !f.passed ? `미완료 — ${f.skipped || f.faults[0] || '최종 검수를 통과하지 못함'}` : '정답 확인 필요'];
+      return item.status === 'failed' ? ['no', item.error || '못 만듦'] : null;
+    }
+    return item.finalReview?.checklist?.[id] || null;
+  }
+  function reviewTable(job) {
+    const rows = job.reviewChecklist || [];
+    const items = job.items.filter((i) => i.finalReview);
+    if (!rows.length || (!items.length && !job.analysisReview)) return '';
+    const a = job.analysisReview?.checklist || {};
+    const cell = (x) => (x ? `<div class="cv2-mark ${REVIEW_MARK[x[0]]?.[0] || ''}">${REVIEW_MARK[x[0]]?.[1] || '?'}</div>${x[1] ? `<div class="cv2-note">${inlineRich(x[1])}</div>` : ''}` : '<span class="muted small">–</span>');
+    const score = (marks) => {
+      const m = marks.filter((x) => x && x[0] !== 'na');
+      return m.length ? Math.round(((m.filter((x) => x[0] === 'ok').length + m.filter((x) => x[0] === 'partial').length / 2) / m.length) * 100) : null;
+    };
+    const ids = rows.flatMap((g) => g.items);
+    const own = (item) => ids.filter((r) => !r.analysis).map((r) => itemRow(item, r.id));
+    const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
+    const setPct = score([...ids.filter((r) => r.analysis).map((r) => a[r.id]), ...items.flatMap(own)]);
+    return `<div class="cv2-check jt-review">
+      <h3>최종 검수 체크리스트${setPct != null ? ` <span class="cv2-pct ${tone(setPct)}">${setPct}%</span>` : ''}</h3>
+      <p class="muted small">모델 비교 페이지와 같은 항목입니다. 문제마다 만들 때 아래 검수 기준으로 이 세트의 판정 모델이 원본과 대조해 직접 풀어 보고, 걸린 점을 고친 뒤 통과해야 완성으로 칩니다. ✓ 지킴 · △ 사소한 점 · ✕ 결함 · – 해당 없음.</p>
+      <div class="table-wrap"><table class="cv2-table" style="min-width:${170 + items.length * 150}px">
+        <tr><th>항목</th>${items.map((i) => { const pct = score(own(i)); return `<th><div>문제 ${i.index + 1} ${esc(i.label)}</div>${pct != null ? `<div class="cv2-score ${tone(pct)}">${pct}%</div>` : ''}</th>`; }).join('')}</tr>
+        ${rows.map((g) => `<tr class="grp"><td colspan="${items.length + 1}"><span class="grp-label">${esc(g.title)}</span></td></tr>${g.items.map((r) => `<tr><th>${esc(r.text)}</th>${r.analysis
+          ? `<td colspan="${items.length}">${job.analysisReview ? cell(a[r.id]) : '<span class="muted small">원본 분석 검토 없음</span>'}${r.id === 'read' ? '<div class="muted tiny">원본 분석은 문제마다 같아서 한 칸으로 봅니다.</div>' : ''}</td>`
+          : items.map((i) => `<td>${cell(itemRow(i, r.id))}</td>`).join('')}</tr>`).join('')}`).join('')}
+      </table></div>
+      ${job.reviewCriteria ? `<details class="cv2-quote" data-k="criteria"><summary>검수 기준 전문 보기</summary><div class="rich small">${rich(job.reviewCriteria)}</div></details>` : ''}</div>`;
+  }
+  // Under a problem: each round of its final review (what it found, then the one that passed) and the reviewer's own answer.
+  function finalReviewHtml(item) {
+    const f = item.finalReview;
+    // A set from before the rounds were kept: each repair for the final review's faults was one round, and the last passed.
+    const rounds = item.reviewRounds || (f ? [...(item.attempts || []).filter((a) => (a.failures || []).some((x) => /^최종 검수: /.test(x)))
+      .map((a) => ({ design: a.design, faults: a.failures.filter((x) => /^최종 검수: /.test(x)).map((x) => x.replace(/^최종 검수: /, '')) })), ...(f.passed ? [{ faults: [] }] : [])] : []);
+    if (!f && !rounds.length) return '';
+    const head = f?.passed ? `<b>최종 검수 통과</b>${rounds.length > 1 ? ` — ${rounds.length}번 검수, 앞의 ${rounds.length - 1}번에서 찾은 점을 고침` : ' — 첫 검수에서 통과'}`
+      : `<b class="bad">최종 검수 미통과 (미완료)</b> — ${esc(f?.skipped || `${(f?.faults || []).length}건이 남음`)}`;
+    const answer = f?.review?.myAnswer ? `<p class="small">검수자가 직접 푼 답: ${inlineRich(f.review.myAnswer)}${f.review.answerOk === false ? ' <span class="chip bad">표시된 정답과 다름</span>' : ' <span class="chip ok">표시된 정답과 같음</span>'}</p>` : '';
+    const list = rounds.length ? `<ol class="jt-steps">${rounds.map((r, k) => `<li>${k + 1}번째 검수${r.design > 1 ? ` (${r.design}번째 설계)` : ''}: ${r.faults.length ? `${r.faults.length}건${k < rounds.length - 1 || !f?.passed ? ' → 고침' : ''}<ul class="lt-ul">${r.faults.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>` : '통과'}</li>`).join('')}</ol>` : '';
+    return `<div class="jt-report-item ${f?.passed ? 'ok' : 'bad'}"><p>${head}</p>${answer || list ? `<details data-k="final-review"><summary>검수 내용 보기</summary><div class="jt-check-in">${answer}${list}</div></details>` : ''}</div>`;
   }
   function bindHead(job) {
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
@@ -1177,7 +1229,9 @@
     const unsure = [...new Set((item.problems || []).map(plain))];
     const fixed = steps.length ? `자동으로 ${steps.length}번 고쳐 완성했습니다.` : '첫 설계로 검토를 통과했습니다.';
     // One sentence on what the teacher has to do, if anything.
-    const head = item.status === 'needs_review'
+    const head = item.status === 'needs_review' && item.finalReview && !item.finalReview.passed
+      ? `<b>최종 검수를 통과하지 못해 미완료입니다.</b> ${(item.redesigned || 0) + 1}번 설계하고 고쳐 봤지만 아래 점이 남았습니다. 🔄 다시 만들기를 누르거나, 남은 점을 ✏️ 고칠 점으로 남겨 주세요.`
+      : item.status === 'needs_review'
       ? `<b>정답을 확정하지 못했습니다.</b> ${(item.redesigned || 0) + 1}번 설계하고 고쳐 봤지만 검산이나 독립 풀이와 정답이 맞지 않았습니다. 학생에게 내기 전에 정답을 확인해 주세요.`
       : inProblem.length ? `<b>${fixed}</b> 정답은 검증됐지만 문제 설계에서 끝내 못 고친 점이 ${inProblem.length}개 있습니다. 리포트를 보고 연습용으로 쓰기 어렵다면 🔄 다시 만들기를 누르세요.`
       : inSolution.length ? `<b>${fixed}</b> 문제와 정답은 검증됐습니다. 해설 표현이 선생님 해설과 다른 곳이 ${inSolution.length}군데 남았지만 따로 할 일은 없습니다. 학습지에 쓰기 전에 해설만 한번 훑어보세요.`
@@ -1185,7 +1239,7 @@
     const tone = item.status === 'needs_review' ? 'bad' : inProblem.length ? 'warn' : 'ok';
     const body = [
       steps.length && `<ol class="jt-steps">${steps.map((x) => `<li>${ATTEMPT_TXT[x.kind]((x.failures || []).length)}${(x.failures || []).length ? list(x.failures.map((f) => inlineRich(plain(f)))) : ''}</li>`).join('')}</ol>`,
-      unsure.length && `<div><b>정답이 맞지 않은 이유</b>${list(unsure.map((x) => inlineRich(x)))}</div>`,
+      unsure.length && `<div><b>${item.finalReview && !item.finalReview.passed ? '남은 점' : '정답이 맞지 않은 이유'}</b>${list(unsure.map((x) => inlineRich(x)))}</div>`,
       inProblem.length && `<div><b>문제에 남은 점</b>${list(inProblem.map((x) => inlineRich(x)))}</div>`,
       inSolution.length && `<div><b>해설에 남은 점</b>${list(inSolution.map((x) => inlineRich(x)))}</div>`,
       ok + bad.length && `<div><b>학습 지킴 ${ok}/${ok + bad.length}</b>${bad.length ? list(bad.map((r) => `어김: ${inlineRich(r.text)}${r.judged.note ? ` <span class="muted">— ${inlineRich(r.judged.note)}</span>` : ''}`)) : ''}</div>`,
@@ -1204,7 +1258,8 @@
     const finished = p && ['passed', 'warning', 'needs_review'].includes(item.status);
     const state = item.adopted ? '<span class="chip ok">채택됨</span>'
       : item.status === 'warning' ? ((item.warnings || []).some((x) => !/^해설: /.test(x)) ? `<span class="chip warn">완성 · 남은 점 있음</span>` : '<span class="chip ok">완성</span>')
-      : legacyReview(item) ? '<span class="chip bad">검토 필요</span>' : chip(ITEM_STATUS, item.status);
+      : legacyReview(item) ? '<span class="chip bad">검토 필요</span>'
+      : item.status === 'needs_review' && item.finalReview && !item.finalReview.passed ? '<span class="chip bad">미완료 · 최종 검수 미통과</span>' : chip(ITEM_STATUS, item.status);
     const made = [
       item.examplesUsed && `채택한 문제 ${item.examplesUsed}개를 본보기로 참고`,
       repairs && `검토 후 고친 횟수 ${repairs}회`,
@@ -1220,7 +1275,8 @@
           <div class="rich">${rich(p.text)}</div>
           ${p.figure ? `<div class="note info"><b>그림</b><div class="rich">${rich(p.figure)}</div></div>` : ''}
           ${choicesHtml(p)}
-          ${checkLine(item)}`}
+          ${checkLine(item)}
+          ${finalReviewHtml(item)}`}
       </div>
       ${finished || item.status === 'failed' ? `<div class="review-bar">
         ${finished ? `<button class="rv-adopt${item.adopted ? ' on' : ''}" data-rv="adopt">${item.adopted ? '✓ 채택됨' : '👍 채택'}</button>` : ''}

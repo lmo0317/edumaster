@@ -274,3 +274,19 @@ test('a wrong answer found by the final reviewer is a fault even when its verdic
   assert.match(item.attempts.find((a) => a.kind === 'repair').failures.join(), /직접 푼 정답은 ④ 6/);
   assert.equal(item.status, 'passed');
 });
+
+// The set page shows the 모델 비교 checklist filled from each problem's final review (server/final-review.js).
+test('a final review fills the checklist rows: a mid fault is ✕, a low one △, the final-only row is – for practice', () => {
+  const { checklistOf } = require('../server/final-review');
+  const review = { answerOk: true, myAnswer: '③ 6', checks: { 정답: 'ok', 조건: 'fix', 구조: 'na', '정답 줄': 'fix' },
+    issues: [{ severity: 'mid', rule: '조건', detail: '"달리하여"가 남음' }, { severity: 'low', rule: '정답 줄', detail: '정답 줄 없음' }] };
+  const rows = checklistOf(review);
+  assert.deepEqual(rows.clean, ['no', '"달리하여"가 남음']);
+  assert.deepEqual(rows.method, ['partial', '정답 줄 없음']);
+  assert.deepEqual(rows.correct, ['ok', '검수자 풀이 ③ 6']);
+  assert.equal(rows.final[0], 'na');
+  assert.equal(rows.read, undefined, 'the analysis rows come from the analysis review');
+  assert.equal(checklistOf({ ...review, answerOk: false }).correct[0], 'no');
+  assert.equal(checklistOf({ checks: {}, issues: [{ severity: 'high', rule: '구조', detail: '숫자만 바뀜' }] }, { final: true }).final[0], 'no');
+  assert.deepEqual(checklistOf({ checks: { 판독: 'ok' }, issues: [{ severity: 'mid', rule: '용어', detail: '몰질량을 물질량으로' }] }, { analysis: true }).read, ['no', '몰질량을 물질량으로']);
+});
