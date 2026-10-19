@@ -392,3 +392,20 @@ test('what the analysis review finds is fixed against the original before the pr
   await reviewAnalysis({ ...ctx, job: { id: 'j2', materialId: 'm', rules: [] } }, JSON.parse(JSON.stringify(stored)));
   assert.deepEqual(calls, []);
 });
+
+test('a fault the review of the fixed analysis finds is fixed in a second round', async () => {
+  const { reviewAnalysis } = require('../server/pipeline');
+  const material = { problem: { text: '표', choices: ['ㄱ'], answer: 1 }, steps: [{ title: 'S1', work: 'A이다. B이다.' }] };
+  let stored = { id: 'm', ...JSON.parse(JSON.stringify(material)) };
+  const issue = (d) => ({ analysis: { verdict: 'issues', issues: [{ severity: 'low', rule: '풀이 방식', detail: d }] }, items: [] });
+  const reviews = [issue('A가 다름'), issue('B가 다름'), { analysis: { verdict: 'ok', issues: [] }, items: [] }];
+  const fixes = [{ field: 'steps[0].work', wrong: 'A이다', right: 'A1이다' }, { field: 'steps[0].work', wrong: 'B이다', right: 'B1이다' }];
+  const calls = [];
+  const llm = { json: async ({ purpose }) => { calls.push(purpose); return { data: purpose === 'fix-analysis' ? { fixes: [fixes.shift()] } : reviews.shift() }; } };
+  const ctx = { llm, store: { materials: { get: () => stored, put: (m) => { stored = m; } }, rules: { all: () => [] } }, job: { id: 'j', materialId: 'm', rules: [] }, budget: new Budget({ maxCalls: 60, maxTokens: 1e7 }), effort: { solve: 'low' }, save() {}, log() {} };
+  await reviewAnalysis(ctx, material);
+  assert.deepEqual(calls, ['final-review', 'fix-analysis', 'final-review', 'fix-analysis', 'final-review']);
+  assert.equal(material.steps[0].work, 'A1이다. B1이다.');
+  assert.equal(stored.steps[0].work, 'A1이다. B1이다.');
+  assert.deepEqual([ctx.job.analysisReview.verdict, ctx.job.analysisReview.fixed.length], ['ok', 2]);
+});

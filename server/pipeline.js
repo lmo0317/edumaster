@@ -671,17 +671,26 @@ const analysisKey = (material) => crypto.createHash('sha1').update(JSON.stringif
 // fixed analysis is reviewed once more: on chem-c32-molar-volume (2026-10-19) the review found the analysis had moved
 // the teacher's '/몰' and dropped "분자량=질량/양(mol)이고 …", every problem's solution followed the analysis, and Claude
 // and Gemini then found both in all three problems of the set.
-async function reviewAnalysis(ctx, material) {
-  const first = await reviewAnalysisOnce(ctx, material);
-  if (first?.verdict !== 'issues' || !first.issues.length) return;
-  const fixed = await fixAnalysis(ctx, material, first.issues);
-  if (!fixed.length) return;
-  const again = await reviewAnalysisOnce(ctx, material);
-  if (!again) return;
-  Object.assign(again, { fixed, before: first.issues });
-  ctx.job.analysisReview = again;
+// One look does not find everything: on the third c32 run the first review found one fault, and the review of the fixed
+// analysis three more (one of them the '분자량=질량/양(mol)이고 …' line the run before had found first). Up to two rounds.
+async function reviewAnalysis(ctx, material, rounds = 2) {
+  let review = await reviewAnalysisOnce(ctx, material);
+  const fixed = [];
+  const before = [];
+  for (let round = 0; round < rounds && review?.verdict === 'issues' && review.issues.length; round++) {
+    const done = await fixAnalysis(ctx, material, review.issues);
+    if (!done.length) break;
+    fixed.push(...done);
+    before.push(...review.issues);
+    const again = await reviewAnalysisOnce(ctx, material);
+    if (!again) break;
+    review = again;
+  }
+  if (!fixed.length || !review) return;
+  Object.assign(review, { fixed, before });
+  ctx.job.analysisReview = review;
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
-  if (stored) ctx.store.materials.put({ ...stored, analysisReview: again });
+  if (stored) ctx.store.materials.put({ ...stored, analysisReview: review });
   ctx.save();
 }
 
