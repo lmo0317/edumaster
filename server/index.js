@@ -765,7 +765,8 @@ function createApp(options = {}) {
     if (!fs.existsSync(file)) throw fail(404, 'PDF를 찾지 못했습니다.');
     // 3차's to 5차's sets are of another original: the file is named after it.
     const original = ['3', '4', '5'].includes(round) ? JSON.parse(fs.readFileSync(path.join(compareDir, `${id}.json`), 'utf8'))[`round${round}`]?.case || id : id;
-    const name = `${original}_${PDF_NAME[key]}${round ? `_${round}차` : ''}.pdf`;
+    // Each original numbers its own rounds: the bundle's round 3~5 are the reaction-density original's 1~3차.
+    const name = `${original}_${PDF_NAME[key]}${round ? `_${{ 3: 1, 4: 2, 5: 3 }[round] || round}차` : ''}.pdf`;
     // A header takes ASCII only: the name in UTF-8 goes in filename* (RFC 6266), with an ASCII fallback — a Korean name
     // ("…+시스템") in filename= failed the whole download with a 500 (2026-10-14).
     const ascii = name.replace(/[^\x20-\x7e]/g, '').replace(/\+(?=\.pdf$)/, '') || 'compare.pdf';

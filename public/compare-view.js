@@ -560,33 +560,45 @@
     };
   }
 
-  // 1차 and 2차 (the same setups and settings again with the molar-mass learning, 2026-10-16) as two views of one
-  // page, 2차 first, with what changed between them at its top.
+  // The rounds by original, each original's rounds numbered on their own (the user, 2026-10-19: one list 1차~5차 read as
+  // one problem made five times): 화학 반응식·밀도 1~3차 (the bundle's round3~5) first, then 화학 몰질량 1·2차 (the bundle
+  // itself and round2). A tab's id is <original>-<n>; the bundle keeps its own round numbers.
   function pageHtml(b, opts = {}) {
     if (!b.round2?.overview) return roundHtml(b, opts);
     const r2 = { ...b, models: b.round2.models, overview: b.round2.overview, feedback: b.round2.feedback };
-    // 3차 (2026-10-16~): the same setups, settings and learning on another original (reaction-density): what carries over.
-    const r3 = b.round3?.overview ? { ...b, id: b.id, models: b.round3.models, overview: b.round3.overview, feedback: b.round3.feedback || null, original: b.round3.original } : null;
-    const intro3 = '3차 (2026-10-16): 2차와 같은 모델·같은 설정·같은 학습 묶음으로, 원본만 화학 반응식·밀도 문제로 바꿔 만든 세트입니다. 이 원본만의 학습은 없고, 몰질량 전용 서버 계산도 쓰이지 않습니다. 몰질량에서 쌓은 시스템과 학습이 다른 문제에도 통하는지를 봅니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
-    // 4차 (2026-10-17): 3차 again on the same original, with the system fixed after it.
-    const r4 = b.round4?.overview ? { ...b, id: b.id, models: b.round4.models, overview: b.round4.overview, feedback: b.round4.feedback || null, original: b.round4.original } : null;
-    // 5차 (2026-10-18): 4차 again with the system fixed after its reviews; Opus alone and Opus + Haiku only.
-    const r5 = b.round5?.overview ? { ...b, id: b.id, models: b.round5.models, overview: b.round5.overview, feedback: b.round5.feedback || null, original: b.round5.original } : null;
-    const intro5 = '5차 (2026-10-18): 4차와 같은 원본·같은 설정·같은 학습 묶음으로 다시 만든 세트입니다. 달라진 것은 4차 검수를 보고 고친 시스템뿐입니다: 해설의 "정답은 …이다." 줄을 그 문제의 번호와 값으로 코드가 쓰고, 넣어 준 양을 숨긴 실험은 반응 표 앞에서 한계 반응물을 선생님 STEP 1의 문장 틀로 판정하게 하고(서버 검사 추가), 독립 풀이가 답을 구한 뒤 STEP을 건너뛰는 지름길이 있는지 따로 찾습니다. 이번에는 Opus 단독과 Opus + Haiku만 만들었습니다(PC의 Qwen은 PC의 다른 작업 때문에 뺐습니다). 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
-    const intro4 = '4차 (2026-10-17): 3차와 같은 원본·같은 모델·같은 설정·같은 학습 묶음으로 다시 만든 세트입니다. 달라진 것은 3차를 보고 고친 시스템뿐입니다: 선생님이 "모순" 대신 "만약 … 그러나 …"로 쓴 가정→모순을 그대로 인정하고, 선생님이 화학식 표기로 쓴 A(s) 같은 물질을 해설에도 그렇게 쓰고, PC 모델이 오래 일할 때 연결을 끊지 않습니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
+    const rN = (n) => (b[`round${n}`]?.overview ? { ...b, id: b.id, models: b[`round${n}`].models, overview: b[`round${n}`].overview, feedback: b[`round${n}`].feedback || null, original: b[`round${n}`].original } : null);
+    // 반응식·밀도 1차 (2026-10-16): the molar-mass 2차's setups, settings and learning on this original: what carries over.
+    const r3 = rN(3);
+    const intro3 = '1차 (2026-10-16): 몰질량 2차와 같은 모델·같은 설정·같은 학습 묶음으로, 원본만 화학 반응식·밀도 문제로 바꿔 만든 세트입니다. 이 원본만의 학습은 없고, 몰질량 전용 서버 계산도 쓰이지 않습니다. 몰질량에서 쌓은 시스템과 학습이 다른 문제에도 통하는지를 봅니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
+    // 2차 (2026-10-17): 1차 again on the same original, with the system fixed after it.
+    const r4 = rN(4);
+    const intro4 = '2차 (2026-10-17): 1차와 같은 원본·같은 모델·같은 설정·같은 학습 묶음으로 다시 만든 세트입니다. 달라진 것은 1차를 보고 고친 시스템뿐입니다: 선생님이 "모순" 대신 "만약 … 그러나 …"로 쓴 가정→모순을 그대로 인정하고, 선생님이 화학식 표기로 쓴 A(s) 같은 물질을 해설에도 그렇게 쓰고, PC 모델이 오래 일할 때 연결을 끊지 않습니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
+    // 3차 (2026-10-18): 2차 again with the system fixed after its reviews; Opus alone and Opus + Haiku only.
+    const r5 = rN(5);
+    const intro5 = '3차 (2026-10-18): 2차와 같은 원본·같은 설정·같은 학습 묶음으로 다시 만든 세트입니다. 달라진 것은 2차 검수를 보고 고친 시스템뿐입니다: 해설의 "정답은 …이다." 줄을 그 문제의 번호와 값으로 코드가 쓰고, 넣어 준 양을 숨긴 실험은 반응 표 앞에서 한계 반응물을 선생님 STEP 1의 문장 틀로 판정하게 하고(서버 검사 추가), 독립 풀이가 답을 구한 뒤 STEP을 건너뛰는 지름길이 있는지 따로 찾습니다. 이번에는 Opus 단독과 Opus + Haiku만 만들었습니다(PC의 Qwen은 PC의 다른 작업 때문에 뺐습니다). 구성마다 1벌씩, 점수는 모두 Opus 판정입니다.';
     const intro = '2차 (2026-10-16): 1차와 같은 모델·같은 설정으로 다시 만든 세트입니다. 달라진 것은 몰질량 원본에서 쌓은 학습(교사 지침 113개, 판독 교정 4개)을 모두 같은 묶음으로 받은 것과 지금의 시스템입니다. 구성마다 1벌씩, 점수는 모두 Opus 판정입니다. 표의 수치 후보는 서버가 계산해 내놓고 학습도 같아서, 구성이 달라도 같은 표를 고른 문제가 많습니다 (예: Opus 단독과 Opus + Qwen의 STEP 1 연습).';
-    return `<div class="cmp-tabs cmp-rounds">
-        ${r5 ? '<button class="cmp-tab" data-cmp-round-tab="5">5차 <span class="muted tiny">10-18 · 4차 검수 반영</span></button>' : ''}
-        ${r4 ? '<button class="cmp-tab" data-cmp-round-tab="4">4차 <span class="muted tiny">10-17 · 시스템 수정</span></button>' : ''}
-        ${r3 ? '<button class="cmp-tab" data-cmp-round-tab="3">3차 <span class="muted tiny">10-16 · 다른 원본</span></button>' : ''}
-        <button class="cmp-tab" data-cmp-round-tab="2">2차 <span class="muted tiny">10-16 · 학습 반영</span></button>
-        <button class="cmp-tab" data-cmp-round-tab="1">1차 <span class="muted tiny">10-06 ~ 10-14</span></button>
+    const density = '화학 반응식·밀도';
+    const note = (a, c) => `${a}와 ${c} 모두 ${density} 원본, 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.`;
+    const rounds = {
+      density: [
+        r5 && { id: 'density-3', tab: '3차', when: '10-18 · 2차 검수 반영', body: changeHtml(r4.overview, r5.overview, { from: '2차', to: '3차', what: '같은 원본·설정·학습, 2차 검수를 보고 시스템을 고침', note: `${note('2차', '3차')} 3차는 Opus 단독과 Opus + Haiku만 만들었습니다.` }) + roundHtml(r5, { ...opts, pdfSuffix: '-r5', intro: intro5, subject: density }) },
+        r4 && { id: 'density-2', tab: '2차', when: '10-17 · 시스템 수정', body: changeHtml(r3.overview, r4.overview, { from: '1차', to: '2차', what: '같은 원본·모델·설정·학습, 시스템만 고침', note: note('1차', '2차') }) + roundHtml(r4, { ...opts, pdfSuffix: '-r4', intro: intro4, subject: density }) },
+        r3 && { id: 'density-1', tab: '1차', when: '10-16 · 몰질량 학습 그대로', body: changeHtml(r2.overview, r3.overview, { from: '몰질량 2차', to: '반응식·밀도 1차', what: '같은 모델·설정·학습, 원본만 바꿈', note: '몰질량 2차는 몰질량 원본, 반응식·밀도 1차는 화학 반응식·밀도 원본입니다. 둘 다 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' }) + roundHtml(r3, { ...opts, pdfSuffix: '-r3', intro: intro3, subject: density }) },
+      ].filter(Boolean),
+      molar: [
+        { id: 'molar-2', tab: '2차', when: '10-16 · 학습 반영', body: changeHtml(b.overview, r2.overview) + roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro }) },
+        { id: 'molar-1', tab: '1차', when: '10-06 ~ 10-14', body: roundHtml(b, opts) },
+      ],
+    };
+    const problems = [['density', density], ['molar', '화학 몰질량']].filter(([k]) => rounds[k].length);
+    const first = problems[0][0];
+    return `<div class="cmp-tabs cmp-rounds cmp-problems">
+        ${problems.map(([k, name]) => `<button class="cmp-tab" data-cmp-problem-tab="${k}">${name} <span class="muted tiny">${rounds[k].length}번 만듦</span></button>`).join('')}
       </div>
-      ${r5 ? `<div data-cmp-round="5">${changeHtml(r4.overview, r5.overview, { from: '4차', to: '5차', what: '같은 원본·설정·학습, 4차 검수를 보고 시스템을 고침', note: '4차와 5차 모두 화학 반응식·밀도 원본, 구성마다 1벌씩입니다. 5차는 Opus 단독과 Opus + Haiku만 만들었습니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r5, { ...opts, pdfSuffix: '-r5', intro: intro5, subject: '화학 반응식·밀도' })}</div>` : ''}
-      ${r4 ? `<div data-cmp-round="4"${r5 ? ' hidden' : ''}>${changeHtml(r3.overview, r4.overview, { from: '3차', to: '4차', what: '같은 원본·모델·설정·학습, 시스템만 고침', note: '3차와 4차 모두 화학 반응식·밀도 원본, 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r4, { ...opts, pdfSuffix: '-r4', intro: intro4, subject: '화학 반응식·밀도' })}</div>` : ''}
-      ${r3 ? `<div data-cmp-round="3"${r4 ? ' hidden' : ''}>${changeHtml(r2.overview, r3.overview, { from: '2차', to: '3차', what: '같은 모델·설정·학습, 원본만 바꿈', note: '2차는 몰질량 원본, 3차는 화학 반응식·밀도 원본입니다. 둘 다 구성마다 1벌씩입니다. 세트 비용은 원본 분석을 포함한 3문제 1벌의 API 정가입니다.' })}${roundHtml(r3, { ...opts, pdfSuffix: '-r3', intro: intro3, subject: '화학 반응식·밀도' })}</div>` : ''}
-      <div data-cmp-round="2" hidden>${changeHtml(b.overview, r2.overview)}${roundHtml(r2, { ...opts, pdfSuffix: '-r2', intro })}</div>
-      <div data-cmp-round="1" hidden>${roundHtml(b, opts)}</div>`;
+      ${problems.map(([k]) => `<div data-cmp-problem="${k}"${k === first ? '' : ' hidden'}>
+        <div class="cmp-tabs cmp-rounds cmp-round-sub">${rounds[k].map((r) => `<button class="cmp-tab" data-cmp-round-tab="${r.id}">${r.tab} <span class="muted tiny">${r.when}</span></button>`).join('')}</div>
+        ${rounds[k].map((r, i) => `<div data-cmp-round="${r.id}"${k === first && !i ? '' : ' hidden'}>${r.body}</div>`).join('')}
+      </div>`).join('')}`;
   }
 
   // 1차 → 2차 for each setup: the score, the API price of a set and the time of a set.
@@ -710,21 +722,35 @@
   // A shared address opened on a page already showing the comparison (e.g. compare.html#mixed pasted in the same tab).
   window.addEventListener('hashchange', () => { if (document.querySelector('[data-cmp-tab]') && (inApp() || !location.hash.startsWith('#/'))) showTab(openTab()); });
 
-  // 1차 ~ 5차: the newest first; the address keeps another (#/compare?round=1, compare.html#round1) without a new history entry.
-  // The newest round unless the address names one (?round=2, #round2).
-  const openRound = () => { const m = /[?&]round=(\d)(&|$)|^#round(\d)$/.exec(location.hash); const n = m && (m[1] || m[3]); const tabs = [...document.querySelectorAll('[data-cmp-round-tab]')].map((x) => x.dataset.cmpRoundTab); return n && tabs.includes(n) ? n : tabs[0]; };
-  function showRound(n) {
-    document.querySelectorAll('[data-cmp-round-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpRoundTab === n));
-    document.querySelectorAll('[data-cmp-round]').forEach((x) => { x.hidden = x.dataset.cmpRound !== n; });
+  // An original, then its rounds: the newest first; the address keeps another (#/compare?round=molar-1,
+  // compare.html#round=molar-1) without a new history entry. Addresses from before the rounds were split by original
+  // (?round=3, #round3) still open the same set.
+  const OLD_ROUND = { 1: 'molar-1', 2: 'molar-2', 3: 'density-1', 4: 'density-2', 5: 'density-3' };
+  const openRound = () => {
+    const m = /(?:[?&]round=|^#round=?)([a-z]+-\d|\d)(?:&|$)/.exec(location.hash);
+    const id = m && (OLD_ROUND[m[1]] || m[1]);
+    const tabs = [...document.querySelectorAll('[data-cmp-round-tab]')].map((x) => x.dataset.cmpRoundTab);
+    return id && tabs.includes(id) ? id : tabs[0];
+  };
+  function showRound(id) {
+    const problem = id.split('-')[0];
+    document.querySelectorAll('[data-cmp-problem-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpProblemTab === problem));
+    document.querySelectorAll('[data-cmp-problem]').forEach((x) => { x.hidden = x.dataset.cmpProblem !== problem; });
+    document.querySelectorAll('[data-cmp-round-tab]').forEach((x) => x.classList.toggle('on', x.dataset.cmpRoundTab === id));
+    document.querySelectorAll('[data-cmp-round]').forEach((x) => { x.hidden = x.dataset.cmpRound !== id; });
+  }
+  function pickRound(id) {
+    showRound(id);
+    const newest = document.querySelector('[data-cmp-round-tab]')?.dataset.cmpRoundTab;
+    const hash = inApp() ? `#/compare${id === newest ? '' : `?round=${id}`}` : id === newest ? '' : `#round=${id}`;
+    history.replaceState(null, '', location.pathname + location.search + hash);
   }
   document.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-cmp-problem-tab]');
+    // An original opens on its newest round.
+    if (p) { const r = document.querySelector(`[data-cmp-problem="${p.dataset.cmpProblemTab}"] [data-cmp-round-tab]`); if (r) pickRound(r.dataset.cmpRoundTab); return; }
     const t = e.target.closest('[data-cmp-round-tab]');
-    if (!t) return;
-    const n = t.dataset.cmpRoundTab;
-    showRound(n);
-    const newest = document.querySelector('[data-cmp-round-tab]')?.dataset.cmpRoundTab;
-    const hash = inApp() ? `#/compare${n === newest ? '' : `?round=${n}`}` : n === newest ? '' : `#round${n}`;
-    history.replaceState(null, '', location.pathname + location.search + hash);
+    if (t) pickRound(t.dataset.cmpRoundTab);
   });
   // Called by the app and the public page once the page is in the document.
   const ready = () => { if (document.querySelector('[data-cmp-round-tab]')) showRound(openRound()); };

@@ -974,3 +974,6 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .cmp-rounds .cmp-tab { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
 .cmp-rounds .cmp-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cmp-rounds .cmp-tab.on .muted { color: rgba(255, 255, 255, .8); }
+/* An original's own rounds, under the originals. */
+.cmp-round-sub { margin: 0 0 16px; }
+.cmp-round-sub .cmp-tab { padding: 6px 13px; font-size: .92em; font-weight: 500; }
