@@ -11,6 +11,16 @@ $watchMutex=[Threading.Mutex]::new($false,'Local\EduMasterWebWatcher')
 if(-not $watchMutex.WaitOne(0)){exit}
 $tunnelProcess=$null
 $lastHealthCheck=[DateTime]::MinValue;$healthFailures=0
+$lastSpeedCheck=[DateTime]::UtcNow;$slowChecks=0
+
+# A model that has run for days can drop from ~52 to ~4 tokens a second and stay there (part of it pushed out of the
+# GPU's memory and never brought back): 모델 비교 5차's Qwen runs timed out three times from 2026-10-18 13:30 on, and a
+# restart of llama-server alone brought 52.7 tok/s back with the same apps open. Measured on an idle model only.
+function Test-ModelSpeed {
+    try{ if(@(Invoke-RestMethod -Uri 'http://127.0.0.1:8092/slots' -TimeoutSec 3) | Where-Object { $_.is_processing }){return $null} }catch{return $null}
+    $body='{"messages":[{"role":"user","content":"Count from 1 to 100 separated by spaces."}],"max_tokens":64,"reasoning_budget":0}'
+    try{ return [double](Invoke-RestMethod -Uri 'http://127.0.0.1:8092/v1/chat/completions' -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 120).timings.predicted_per_second }catch{ return 0 }
+}
 
 function Start-LocalModel {
     $pidFile=Join-Path $logs 'local-model-pid.txt'
@@ -67,6 +77,19 @@ try {
                 Add-Content (Join-Path $logs 'connection-health.log') ('{0:o} server could not reach the PC model twice; reconnecting owned SSH tunnel' -f [DateTime]::UtcNow)
                 Stop-Process -Id $tunnelProcess.Id -ErrorAction SilentlyContinue
                 $tunnelProcess=$null
+            }
+        }
+        if($Watch -and ([DateTime]::UtcNow - $lastSpeedCheck) -ge [TimeSpan]::FromMinutes(10)){
+            $lastSpeedCheck=[DateTime]::UtcNow
+            $speed=Test-ModelSpeed
+            if($null -ne $speed){
+                if($speed -lt 15){$slowChecks++}else{$slowChecks=0}
+                # Twice slow in a row: stop it and Start-LocalModel starts it again on the next pass.
+                if($slowChecks -ge 2){
+                    Add-Content (Join-Path $logs 'connection-health.log') ('{0:o} PC model at {1:N1} tok/s twice; restarting llama-server' -f [DateTime]::UtcNow,$speed)
+                    Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+                    $slowChecks=0
+                }
             }
         }
         @{tunnelPid=$tunnelProcess.Id;watcherPid=$PID} | ConvertTo-Json | Set-Content (Join-Path $logs 'runtime.json')
