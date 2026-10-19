@@ -75,6 +75,14 @@ function itemReviewText(material, item, prior = [], hints = []) {
   ].filter(Boolean).join('\n');
 }
 
+// The criteria of D (the solution): a fault only there is fixed by rewriting the solution, not by a new problem.
+const SOLUTION_NAMES = ['STEP 제목', '범위', '풀이 방식', '보기 분석', '덧붙임', '숨긴 값의 판단', '정답 줄', '표기'];
+/** Whether a reviewer's faults on one problem are all in its solution (the answer right, the problem itself fine). */
+function solutionOnly(review) {
+  const it = (review?.items || [])[0];
+  return Boolean(it && it.answerOk !== false && it.issues?.length && it.issues.every((x) => SOLUTION_NAMES.includes(x.rule)));
+}
+
 /** A reviewer's verdict on one problem → what must still be fixed (empty when it can be used as it is). */
 function itemFaults(review) {
   const it = (review?.items || [])[0];
@@ -130,4 +138,4 @@ function checklistOf(part, { analysis = false, final = false } = {}) {
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, checklistOf, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, solutionOnly, checklistOf, CHECKLIST, CRITERIA_FILE };

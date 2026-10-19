@@ -657,7 +657,7 @@ async function finalGate(ctx, item, material, prior, hints = []) {
     // Every round is kept for the set page: what each review found, and that the next one passed.
     (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
     ctx.save();
-    return { faults, review };
+    return { faults, review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(data) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
@@ -885,7 +885,7 @@ function reviewNotes(review, rules, blind) {
 
 /** The solution review a check skipped (a repair was due), added for the version the teacher gets. */
 async function addSolutionReview(ctx, item, material, rules, check) {
-  if (!check.verification.solutionReview?.skipped) return;
+  if (ctx.finalGate || !check.verification.solutionReview?.skipped) return;
   if (ctx.budget.affords && !ctx.budget.affords(1 + (ctx.reserveCalls || 0))) return;
   const review = await reviewSolution(ctx, item, material, rules);
   check.verification.solutionReview = review;
@@ -994,7 +994,10 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // the problem itself needs no repair (the version the teacher gets is reviewed in the end: addSolutionReview). 42% of the reviews of
   // eight Opus sets were thrown away that way (2026-10-09).
   const repairNeeded = hard.length || (!lean && coverageNotes.length) || designNotes.length;
-  const solutionReview = repairNeeded ? { skipped: true, steps: [], rules: [] } : await reviewSolution(ctx, item, material, rules);
+  // With the final review on, it judges the solution against the teacher's too (review-criteria.md D): a second judge
+  // went back and forth six times over one line of chem-c32-molar-volume's final (2026-10-19) — the inverse step to
+  // the hidden volume "is not the teacher's", then without it "36L with no ground" — and the final review passed it.
+  const solutionReview = repairNeeded || gated ? { skipped: true, steps: [], rules: [] } : await reviewSolution(ctx, item, material, rules);
   rewriteNotes.push(...reviewNotes(solutionReview, rules, blind));
   soft.push(...designNotes, ...hints);
   const ruleResults = rules.map((r) => {
@@ -1268,6 +1271,17 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     // What the checks above find is fixed first; a problem they pass gets the final review, and what that finds is
     // repaired in the same loop (and, past the repairs, by a fresh design).
     if (ctx.finalGate && !repairReasons(check).length && !check.gate) check.gate = await finalGate(ctx, item, material, prior, check.hints);
+    // What the final review finds only in the solution is rewritten by the writer, the problem and its solve kept.
+    if (check.gate?.solutionOnly && !item.serverWritten && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(3 + (ctx.reserveCalls || 0)))) {
+      rewrites++;
+      const notes = check.gate.faults.map((n) => '최종 검수: ' + n);
+      item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: notes });
+      if (!lean) item.outline = item.solution;
+      writeNotes = await writeSolution(ctx, item, material, rules, notes, trusted(), ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
+      await polish();
+      check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
+      continue;
+    }
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
     if (lastRepair && same(repairReasons(check), lastRepair)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
@@ -1380,7 +1394,7 @@ async function learnFromSet(ctx) {
     const seen = new Set();
     const left = new Set(gated ? (item.finalReview?.faults || []).map((f) => '최종 검수: ' + f) : [...(item.problems || []), ...(item.warnings || [])]);
     for (const a of item.attempts || []) for (const f of a.failures || []) {
-      if (gated && !['repair', 'redesign'].includes(a.kind)) continue;
+      if (gated && !['repair', 'redesign'].includes(a.kind) && !String(f).startsWith('최종 검수: ')) continue;
       const text = String(f).replace(/^(문제 설계|STEP 범위|해설|최종 검수): /, '');
       if (seen.has(text)) continue;
       seen.add(text);

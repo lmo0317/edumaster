@@ -275,6 +275,17 @@ test('a wrong answer found by the final reviewer is a fault even when its verdic
   assert.equal(item.status, 'passed');
 });
 
+// chem-c32-molar-volume (2026-10-19): the solution review and the final review judged the same solution and disagreed.
+test('with the final review on, the solution is judged by that review alone and a fault only there is a rewrite', async () => {
+  const { item, purposes } = await gated([verdict('fix', [{ severity: 'low', rule: '표기', detail: '수식이 $ 밖에 있음' }]), verdict('use')]);
+  assert.equal(purposes.filter((p) => p === 'final-review').length, 2);
+  assert.ok(!purposes.includes('solution-review') && !purposes.includes('review-solution'), purposes.join());
+  const rewrite = item.attempts.find((a) => a.kind === 'rewrite');
+  assert.match(rewrite.failures.join(), /최종 검수: \[표기 · low\]/);
+  assert.ok(!item.attempts.some((a) => a.kind === 'repair'), 'the problem was not redesigned for its solution');
+  assert.equal(item.status, 'passed');
+});
+
 // The set page shows the 모델 비교 checklist filled from each problem's final review (server/final-review.js).
 test('a final review fills the checklist rows: a mid fault is ✕, a low one △, the final-only row is – for practice', () => {
   const { checklistOf } = require('../server/final-review');
