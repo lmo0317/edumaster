@@ -74,7 +74,9 @@ function generated(text) {
     problem: {
       text: `[모의 생성 · ${stageMatch ? stageMatch[1] : '문제'}] 반응 후 남은 A의 질량이 $a=${a}w$, B의 질량이 $b=${b}w$일 때 $a+b$의 값은? (단위 $w$)`,
       choices: rotated.map(String),
-      answer: counter === 2 && !wantsFix ? (answer % 5) + 1 : answer, // second problem starts wrong to exercise repair
+      // The second call starts wrong to exercise repair; a test that needs a repair whatever came before sets
+      // EDUMASTER_MOCK_WRONG_STAGE to the stage whose first design is wrong.
+      answer: !wantsFix && (counter === 2 || (process.env.EDUMASTER_MOCK_WRONG_STAGE && (stageMatch?.[1] || '').startsWith(process.env.EDUMASTER_MOCK_WRONG_STAGE))) ? (answer % 5) + 1 : answer,
       figure: '',
     },
     // Keeps the teacher's STEP titles and method, as a good answer does (assume → contradiction, then n and m).

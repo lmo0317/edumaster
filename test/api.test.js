@@ -275,6 +275,8 @@ test('mixed run: designWith sends problem design and repairs to that model; solv
     await call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const created = await call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
     await wait(created.jobId);
+    // The STEP 1~2 problem's first design is wrong, so a repair is due whatever the mock's other calls were.
+    process.env.EDUMASTER_MOCK_WRONG_STAGE = 'STEP 1~2';
     const gen = await call('POST', '/api/generations', { materialId: created.material.id, mode: 'integrated', designWith: 'relay' });
     const job = await wait(gen.jobId);
     assert.equal(job.status, 'done', job.error);
@@ -285,6 +287,7 @@ test('mixed run: designWith sends problem design and repairs to that model; solv
     assert.deepEqual(by('repair'), ['relay'], 'the mock\'s deliberately wrong answer was repaired by the design model');
     assert.deepEqual(by('solve'), ['deepseek']);
   } finally {
+    delete process.env.EDUMASTER_MOCK_WRONG_STAGE;
     await new Promise((r) => app.server.close(r));
   }
 });

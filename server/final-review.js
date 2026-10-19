@@ -63,11 +63,14 @@ function setText(material, items) {
 }
 
 /** One problem of a set being made: the earlier ones are shown (numbers must not repeat) but not reviewed. */
-function itemReviewText(material, item, prior = []) {
+function itemReviewText(material, item, prior = [], hints = []) {
   return [
     ...materialText(material),
     prior.length ? `\n[같은 세트의 앞 문제 — 검토하지 않는다. 수치·구성이 겹치는지 볼 때만 쓴다]\n${prior.map((it) => itemText(material, it)).join('\n\n')}` : '',
     `\n[검토할 변형 문제]\n${itemText(material, item)}`,
+    // What the earlier checks noted is weighed here, not taken as it is: a note that goes against the criteria (keeping
+    // the original's cylinders, its table, 'E. 결함이 아닌 것') is not a fault.
+    hints.length ? `\n[앞선 자동 검토가 짚은 점 — 참고만 한다]\n아래는 독립 풀이와 코드 검사가 짚은 점이다. [검수 기준]에 비추어 실제 결함인 것만 네 판정으로 적는다. 기준과 부딪히면(예: 원본의 용기·실험 구성이나 표 구조를 지키느라 연습 문제에서 쓰이지 않는 값, 합답형이라 같은 선택지) 결함이 아니다.\n${hints.map((h) => `- ${h}`).join('\n')}` : '',
     '\n분석 결과는 이미 검토되었으니 analysis는 {"verdict":"ok","issues":[]}로 둔다. [검토할 변형 문제] 하나만 직접 끝까지 풀어 검토하고, items에는 그 문제 하나만 넣는다.',
   ].filter(Boolean).join('\n');
 }

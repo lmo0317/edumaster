@@ -290,3 +290,22 @@ test('a final review fills the checklist rows: a mid fault is ✕, a low one △
   assert.equal(checklistOf({ checks: {}, issues: [{ severity: 'high', rule: '구조', detail: '숫자만 바뀜' }] }, { final: true }).final[0], 'no');
   assert.deepEqual(checklistOf({ checks: { 판독: 'ok' }, issues: [{ severity: 'mid', rule: '용어', detail: '몰질량을 물질량으로' }] }, { analysis: true }).read, ['no', '몰질량을 물질량으로']);
 });
+
+// chem-c38-gas-density (2026-10-19): the solver's "unused condition" took out a cylinder the final review wanted back,
+// round and round. With the final review on, such a judgement is its hint, not a repair of its own.
+test('with the final review on, a condition the solver did not use is weighed by that review, not repaired on its own', async () => {
+  const texts = [];
+  let made = 0;
+  const llm = { json: async ({ system, purpose, text }) => {
+    if (purpose === 'final-review') { texts.push(text); return { data: verdict('use') }; }
+    if (system === prompts.SOLVE_SYSTEM) return { data: { answer: 3, stepsUsed: [1], conditions: [{ text: '(가)의 Y/X 원자 수 = 1', used: false }] } };
+    if (system === prompts.SOLUTION_REVIEW_SYSTEM) return { data: { steps: [], rules: [] } };
+    return { data: generated(++made) };
+  } };
+  const ctx = { llm, job: { id: 'j', rules: [] }, budget: new Budget({ maxCalls: 60, maxTokens: 1e7 }), effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, finalGate: true, save() {}, log() {} };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  await produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' });
+  assert.equal(item.attempts.filter((a) => a.kind === 'repair').length, 0);
+  assert.match(texts[0], /앞선 자동 검토가 짚은 점[\s\S]*풀이에 쓰이지 않는 조건: \(가\)의 Y\/X 원자 수 = 1/);
+  assert.equal(item.status, 'passed');
+});

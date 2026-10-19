@@ -638,7 +638,7 @@ function originalImages(store, material) {
 /** 최종 검수 while the problem is made: the review of review-criteria.md a finished set gets afterwards (scripts/
  *  review-problem.js), on this one problem by the job's judging model. What it finds goes back for repair like any other
  *  fault, and a problem is made only once it passes (server/final-review.js). Returns the faults left (none = passed). */
-async function finalGate(ctx, item, material, prior) {
+async function finalGate(ctx, item, material, prior, hints = []) {
   if (ctx.budget.affords && !ctx.budget.affords(1 + (ctx.reserveCalls || 0))) {
     return { faults: [], skipped: '세트의 AI 호출·토큰 상한 때문에 최종 검수를 하지 못했습니다.' };
   }
@@ -648,7 +648,7 @@ async function finalGate(ctx, item, material, prior) {
     const { data } = await ctx.llm.json({
       purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000, vision: true,
       system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.job.rules || []),
-      text: finalReview.itemReviewText(material, item, prior),
+      text: finalReview.itemReviewText(material, item, prior, hints),
       images: originalImages(ctx.store, material),
     });
     const review = (data?.items || [])[0] || null;
@@ -940,7 +940,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const cov = coverage(item.stage, material.steps.length, blind.stepsUsed, blind.shortcuts);
   if (!lean) {
     // The final problem exists to need every STEP; one that skips a STEP goes to the teacher, not just a warning.
-    if (item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
+    if (!ctx.finalGate && item.stage.kind === 'twin' && cov.expected.some((n) => !cov.used.includes(n))) hard.push(...cov.notes.filter((n) => n.includes('없이')));
     soft.push(...cov.notes);
   }
   // Code checks carried over from v1's quality harness (teacher method, choices, O/X consistency, clue leak, format).
@@ -966,29 +966,37 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // totals "unused", and the repair that followed printed z's value and left the server's tables (2026-10-13, run 14).
   const onServerTable = Boolean(item.verificationSpec && harness.molarSpec(material, item, mode, prior));
   const hiddenCell = (t) => onServerTable && /(^|[^A-Za-z\\])[xz]($|[^A-Za-z])/.test(String(t).replace(/\$/g, ' '));
-  const designNotes = [
+  // A problem rule the independent solver finds broken goes back for repair like any other design fault (in a lean
+  // run it is only recorded).
+  const ruleNotes = lean ? [] : rules.map((r) => [r, blind.rules.find((b) => b.id === r.id)]).filter(([, j]) => j && !j.ok).map(([r, j]) => `교사 지침 미준수: ${r.text.slice(0, 80)} — ${j.note}`);
+  // What is a judgement against the criteria — a condition the solver did not use, numbers only, a rule it finds broken,
+  // choices like an earlier problem's, a STEP reached another way — is weighed by the final review when it is on, as a
+  // hint, instead of sending the problem to a repair of its own: the solver's "unused condition" took out a practice
+  // problem's cylinder the final review then wanted back, round and round until the set's calls ran out
+  // (chem-c38-gas-density, 2026-10-19: the final problem of Opus alone and two practice problems of Opus + Haiku never
+  // reached the final review). What code settles (the answer, the check program, numbers reused) is repaired as before.
+  const judgement = [
     ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text) && !hiddenCell(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
     ...(!lean && integratedFinal && numbersOnly ? [[`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim(), harness.shapeOptions(material.problem.text, material.problem.figure)].filter(Boolean).join('\n')] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
+    ...ruleNotes,
+  ];
+  const gated = Boolean(ctx.finalGate);
+  const designNotes = [
+    ...(gated ? [] : judgement),
     ...numbersReused(item, prior, material),
     ...failed.filter((c) => c.severity === 'design' && !solutionOnly(c)).map((c) => `${c.label}: ${c.evidence}`),
     ...handNotes,
   ];
-  // A problem rule the independent solver finds broken goes back for repair like any other design fault (in a lean
-  // run it is only recorded).
-  if (!lean) {
-    for (const r of rules) {
-      const judged = blind.rules.find((b) => b.id === r.id);
-      if (judged && !judged.ok) designNotes.push(`교사 지침 미준수: ${r.text.slice(0, 80)} — ${judged.note}`);
-    }
-  }
+  const hints = gated ? [...judgement, ...(lean ? [] : cov.notes.map((n) => 'STEP 범위: ' + n))] : [];
+  const coverageNotes = gated ? [] : cov.notes;
   // The solution review only feeds a rewrite of the solution, which a repair or a fresh design makes moot: it runs when
   // the problem itself needs no repair (the version the teacher gets is reviewed in the end: addSolutionReview). 42% of the reviews of
   // eight Opus sets were thrown away that way (2026-10-09).
-  const repairNeeded = hard.length || (!lean && cov.notes.length) || designNotes.length;
+  const repairNeeded = hard.length || (!lean && coverageNotes.length) || designNotes.length;
   const solutionReview = repairNeeded ? { skipped: true, steps: [], rules: [] } : await reviewSolution(ctx, item, material, rules);
   rewriteNotes.push(...reviewNotes(solutionReview, rules, blind));
-  soft.push(...designNotes);
+  soft.push(...designNotes, ...hints);
   const ruleResults = rules.map((r) => {
     const self = item.appliedRules.find((a) => a.id === r.id);
     // Problem rules are judged by the independent solver, solution rules by the solution reviewer.
@@ -997,7 +1005,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     return { id: r.id, text: r.text, target: r.target, how: self?.how || '', judged: judged ? { ok: judged.ok, note: judged.note } : null };
   });
   return {
-    hard, invalid, soft, coverageNotes: cov.notes, designNotes, rewriteNotes,
+    hard, invalid, soft, coverageNotes, designNotes, rewriteNotes, hints,
     verification: {
       ...(adjudication ? { adjudication } : {}),
       code: { status: code.status, reasons: code.reasons || [], warnings: code.warnings || [], mode: code.mode, values: code.trials?.[0]?.values || [], checks: code.trials?.[0]?.checks || [] },
@@ -1259,7 +1267,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     }
     // What the checks above find is fixed first; a problem they pass gets the final review, and what that finds is
     // repaired in the same loop (and, past the repairs, by a fresh design).
-    if (ctx.finalGate && !repairReasons(check).length && !check.gate) check.gate = await finalGate(ctx, item, material, prior);
+    if (ctx.finalGate && !repairReasons(check).length && !check.gate) check.gate = await finalGate(ctx, item, material, prior, check.hints);
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
     if (lastRepair && same(repairReasons(check), lastRepair)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
