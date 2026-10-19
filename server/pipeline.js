@@ -1369,11 +1369,19 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
 async function learnFromSet(ctx) {
   const { job, store } = ctx;
   const faults = [];
+  // With the final review on, it alone judges: a set learns what that review found and what code settled on the way
+  // (a wrong answer, numbers reused), not the solution review's rewrites or what the review let stand. On
+  // chem-c32-molar-volume (2026-10-19) the solution review went back and forth six times over the final's ㄷ (the
+  // inverse step to the hidden volume "is not the teacher's", then "36L with no ground"), the final review passed the
+  // problem, and the set learned "never hide that volume" from the back-and-forth — the lesson Claude and Gemini then
+  // held the passed problem to.
+  const gated = job.items.some((it) => it.finalReview);
   for (const item of job.items) {
     const seen = new Set();
-    const left = new Set([...(item.problems || []), ...(item.warnings || [])]);
+    const left = new Set(gated ? (item.finalReview?.faults || []).map((f) => '최종 검수: ' + f) : [...(item.problems || []), ...(item.warnings || [])]);
     for (const a of item.attempts || []) for (const f of a.failures || []) {
-      const text = String(f).replace(/^(문제 설계|STEP 범위|해설): /, '');
+      if (gated && !['repair', 'redesign'].includes(a.kind)) continue;
+      const text = String(f).replace(/^(문제 설계|STEP 범위|해설|최종 검수): /, '');
       if (seen.has(text)) continue;
       seen.add(text);
       faults.push({ label: item.label, text: text.slice(0, 400), left: [...left].some((x) => x.includes(text.slice(0, 60))) });

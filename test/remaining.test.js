@@ -309,3 +309,35 @@ test('with the final review on, a condition the solver did not use is weighed by
   assert.match(texts[0], /앞선 자동 검토가 짚은 점[\s\S]*풀이에 쓰이지 않는 조건: \(가\)의 Y\/X 원자 수 = 1/);
   assert.equal(item.status, 'passed');
 });
+
+test('with the final review on, a set learns what that review found, not the solution review back-and-forth', async () => {
+  const { learnFromSet } = require('../server/pipeline');
+  let sent = '';
+  const put = [];
+  const item = (finalReview, failures) => ({ label: 'p', finalReview, problems: [], warnings: ['해설: 교사 해설에 없는 역산'], attempts: [{ kind: 'rewrite', failures }] });
+  const job = {
+    id: 'j', materialId: 'm', title: 't', material: { subject: '화학', problem: { text: '' }, steps: [] },
+    items: [
+      { ...item({ passed: true, faults: [] }, ['해설이 선생님 해설과 다름 (STEP 3): 교사 해설에 없는 역산']), attempts: [
+        { kind: 'rewrite', failures: ['해설이 선생님 해설과 다름 (STEP 3): 교사 해설에 없는 역산'] },
+        { kind: 'repair', failures: ['최종 검수: [구조 · mid] 원본과 같은 구조'] },
+      ] },
+      item({ passed: true, faults: [] }, ['해설이 선생님 해설과 다름: 36L를 근거 없이 씀']),
+    ],
+  };
+  const ctx = {
+    job, store: { rules: { all: () => [], put: (r) => put.push(r) } }, budget: new Budget({ maxCalls: 5, maxTokens: 1e6 }),
+    effort: { solve: 'low' }, signal: {}, log() {}, save() {},
+    llm: { json: async ({ text }) => { sent = text; return { data: { items: [{ text: '최종 문제는 원본과 다른 구조로 만든다.', scope: 'problem' }] } }; } },
+  };
+  await learnFromSet(ctx);
+  assert.match(sent, /원본과 같은 구조/);
+  assert.doesNotMatch(sent, /역산|36L/);
+  assert.equal(put.length, 1);
+  // A set none of whose problems went past a final-review fault learns nothing.
+  sent = ''; put.length = 0;
+  job.items = [job.items[1]];
+  await learnFromSet(ctx);
+  assert.equal(sent, '');
+  assert.equal(put.length, 0);
+});
