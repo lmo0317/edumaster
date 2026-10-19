@@ -1155,6 +1155,7 @@
           ? `<td colspan="${items.length}">${job.analysisReview ? cell(a[r.id]) : '<span class="muted small">원본 분석 검토 없음</span>'}${r.id === 'read' ? '<div class="muted tiny">원본 분석은 문제마다 같아서 한 칸으로 봅니다.</div>' : ''}</td>`
           : items.map((i) => `<td>${cell(itemRow(i, r.id))}</td>`).join('')}</tr>`).join('')}`).join('')}
       </table></div>
+      ${job.analysisReview?.fixed?.length ? `<details class="cv2-quote" data-k="analysis-fixed"><summary>원본 분석 검토에서 걸려 만들기 전에 고친 곳 ${job.analysisReview.fixed.length}개</summary><ul class="small">${job.analysisReview.fixed.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></details>` : ''}
       ${job.reviewCriteria ? `<details class="cv2-quote" data-k="criteria"><summary>검수 기준 전문 보기</summary><div class="rich small">${rich(job.reviewCriteria)}</div></details>` : ''}</div>`;
   }
   // Under a problem: each round of its final review (what it found, then the one that passed) and the reviewer's own answer.

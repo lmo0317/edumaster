@@ -224,7 +224,7 @@ function answerText(events, result) {
 // The calls that design or judge take the LLM tab's thinking effort; writing a solution out, proofreading, learning and
 // the like keep the effort the pipeline asks for — at the tab's "high" every one of them thought like a design
 // (write-solution, learn and proofread: 10% of an Opus set, 2026-10-09).
-const JUDGING = new Set(['generate', 'repair', 'repair-lean', 'solve', 'review-solution', 'adjudicate', 'review', 'final-review']);
+const JUDGING = new Set(['generate', 'repair', 'repair-lean', 'solve', 'review-solution', 'adjudicate', 'review', 'final-review', 'fix-analysis']);
 
 function claudeCliChoice(config) {
   const s = config.dataDir ? llmSettings(config.dataDir).claude || {} : {};

@@ -666,11 +666,64 @@ async function finalGate(ctx, item, material, prior, hints = []) {
 
 /** The analysis (the original read and its STEPs) under the same criteria, once per original as it now reads: kept with
  *  the original, so the set page shows the rows 원본을 정확히 읽는다 and 선생님 STEP을 그대로 쓴다 of the checklist. */
+const analysisKey = (material) => crypto.createHash('sha1').update(JSON.stringify([material.problem?.text, material.problem?.choices, material.problem?.answer, (material.steps || []).map((s) => [s.title, s.work])])).digest('hex');
+// What the analysis review finds is fixed against the original before any problem is made from the analysis, and the
+// fixed analysis is reviewed once more: on chem-c32-molar-volume (2026-10-19) the review found the analysis had moved
+// the teacher's '/몰' and dropped "분자량=질량/양(mol)이고 …", every problem's solution followed the analysis, and Claude
+// and Gemini then found both in all three problems of the set.
 async function reviewAnalysis(ctx, material) {
+  const first = await reviewAnalysisOnce(ctx, material);
+  if (first?.verdict !== 'issues' || !first.issues.length) return;
+  const fixed = await fixAnalysis(ctx, material, first.issues);
+  if (!fixed.length) return;
+  const again = await reviewAnalysisOnce(ctx, material);
+  if (!again) return;
+  Object.assign(again, { fixed, before: first.issues });
+  ctx.job.analysisReview = again;
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
-  const key = crypto.createHash('sha1').update(JSON.stringify([material.problem?.text, material.problem?.choices, material.problem?.answer, (material.steps || []).map((s) => [s.title, s.work])])).digest('hex');
-  if (stored?.analysisReview?.key === key) { ctx.job.analysisReview = stored.analysisReview; ctx.save(); return; }
-  if (ctx.budget.affords && !ctx.budget.affords(4)) return;
+  if (stored) ctx.store.materials.put({ ...stored, analysisReview: again });
+  ctx.save();
+}
+
+/** The review's findings → fixes of the analysis fields against the images (applyFixes), on the job's copy and the original. */
+async function fixAnalysis(ctx, material, issues) {
+  if (ctx.budget.affords && !ctx.budget.affords(5)) return [];
+  ctx.log(`원본 분석 검토에서 걸린 ${issues.length}건을 원본과 대조해 고치는 중`);
+  const fields = { 'problem.text': material.problem.text, 'problem.figure': material.problem.figure || '' };
+  (material.problem.choices || []).forEach((c, i) => { fields[`problem.choices[${i}]`] = c; });
+  material.steps.forEach((s, i) => { for (const k of ['title', 'work', 'result']) if (s[k]) fields[`steps[${i}].${k}`] = s[k]; });
+  let data;
+  try {
+    ({ data } = await ctx.llm.json({
+      purpose: 'fix-analysis', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 16000, vision: true,
+      system: prompts.FIX_ANALYSIS_SYSTEM, text: prompts.fixAnalysisText(fields, issues), images: originalImages(ctx.store, material),
+    }));
+  } catch (e) {
+    if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) throw e;
+    ctx.log(`원본 분석을 고치지 못했습니다 (${e.message})`);
+    return [];
+  }
+  const fixes = arr(data?.fixes).slice(0, 20);
+  const { applied } = applyFixes(material, fixes);
+  if (!applied.length) { ctx.log('원본 분석: 고칠 곳을 찾지 못했습니다'); return []; }
+  // The teacher's frames were cut from the analysis as it read; they are cut again from the fixed one.
+  delete material.frames;
+  const stored = ctx.store?.materials?.get(ctx.job.materialId);
+  if (stored) {
+    const copy = JSON.parse(JSON.stringify({ problem: stored.problem, steps: stored.steps }));
+    applyFixes(copy, fixes);
+    const { frames, ...rest } = stored;
+    ctx.store.materials.put({ ...rest, problem: copy.problem, steps: copy.steps, analysisFixes: [...(stored.analysisFixes || []), { at: new Date().toISOString(), jobId: ctx.job.id, applied }] });
+  }
+  ctx.log(`원본 분석 ${applied.length}곳을 고쳤습니다`);
+  return applied;
+}
+
+async function reviewAnalysisOnce(ctx, material) {
+  const stored = ctx.store?.materials?.get(ctx.job.materialId);
+  const key = analysisKey(material);
+  if (stored?.analysisReview?.key === key) { ctx.job.analysisReview = stored.analysisReview; ctx.save(); return null; }
+  if (ctx.budget.affords && !ctx.budget.affords(4)) return null;
   ctx.log('원본 분석을 최종 검수 기준으로 검토 중');
   try {
     const { data } = await ctx.llm.json({
@@ -682,11 +735,13 @@ async function reviewAnalysis(ctx, material) {
     const review = { key, at: new Date().toISOString(), verdict: a.verdict === 'issues' ? 'issues' : 'ok', issues: arr(a.issues).slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
     ctx.job.analysisReview = review;
     if (stored) ctx.store.materials.put({ ...stored, analysisReview: review });
-    ctx.log(`원본 분석 검토: ${review.issues.length ? `${review.issues.length}건 — 분석 결과에서 고칠 수 있습니다` : '이상 없음'}`);
+    ctx.log(`원본 분석 검토: ${review.issues.length ? `${review.issues.length}건` : '이상 없음'}`);
     ctx.save();
+    return review;
   } catch (e) {
     if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) throw e;
     ctx.log(`원본 분석 검토를 하지 못했습니다 (${e.message})`);
+    return null;
   }
 }
 
@@ -701,13 +756,15 @@ const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revea
 
 // Table rows as number signatures: "| Ⅰ | $8w$ | $6w$ | ..." -> "8w,6w". Only the first two data cells
 // (the given amounts) are compared, so a row reusing an earlier experiment's inputs is caught.
-function tableRows(text) {
+function tableRows(text, hidden = {}) {
   const rows = [];
   for (const line of String(text || '').split('\n')) {
     if (!/^\s*\|/.test(line) || /^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;
     const cells = line.trim().replace(/^\||\|$/g, '').split('|').slice(1)
       .map((c) => c.replace(/\\ce\{[^}]*\}|\$|\s|\\,/g, '').replace(/\\(d?frac)\{(\d+)\}\{(\d+)\}/g, '$2/$3'))
-      .filter((c) => /\d/.test(c) && c.length <= 24);
+      .map((c) => hidden[c] ?? c)
+      // A formula (\mathrm{ZX_2}) names the row, it is not an amount: with it the row's amounts were never compared.
+      .filter((c) => /\d/.test(c) && c.length <= 24 && !/(mathrm|text)\{/.test(c));
     if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(','), cells });
   }
   return rows;
@@ -722,7 +779,18 @@ function readingVocabulary(material) {
   const bare = (v) => v.replace(/^\+/, '');
   return new Set([...count].filter(([v, n]) => n >= 2 || figure.has(v) || figure.has(bare(v))).map(([v]) => v));
 }
-const designedRows = (text, vocab) => tableRows(text).filter((r) => !r.sig.split(',').every((v) => vocab.has(v)));
+const designedRows = (text, vocab, hidden) => tableRows(text, hidden).filter((r) => !r.sig.split(',').every((v) => vocab.has(v)));
+// A table's hidden letters (a, b) with the values its solution works out ("a=12"): a row that gives as numbers what the
+// original hid reuses it all the same. On chem-c32-molar-volume (2026-10-19) STEP 1~2's (가) was 23 g, 12 L — the
+// original's (나), 23 g and a = 12 — and only Claude's later review saw it.
+function hiddenValues(text, steps) {
+  const letters = new Set();
+  for (const row of String(text || '').split('\n')) if (/^\s*\|/.test(row)) for (const c of row.split('|')) { const m = /^\s*\$?\s*([a-z])\s*\$?\s*$/.exec(c); if (m) letters.add(m[1]); }
+  const work = (steps || []).map((s) => `${s.work || ''}\n${s.result || ''}`).join('\n').replace(/\$/g, '');
+  const out = {};
+  for (const l of letters) { const m = new RegExp(`(?:^|[^A-Za-z\\\\])${l}\\s*=\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])`).exec(work); if (m) out[l] = m[1]; }
+  return out;
+}
 
 /** Experiment rows whose given amounts match the original's or (for the final problem) an earlier problem's. */
 function numbersReused(item, prior, material) {
@@ -730,12 +798,12 @@ function numbersReused(item, prior, material) {
   const mine = designedRows(item.problem.text, vocab);
   if (!mine.length) return [];
   const notes = [];
-  const compare = (text, whose) => {
-    const theirs = new Set(designedRows(text, vocab).map((r) => r.sig));
+  const compare = (text, steps, whose) => {
+    const theirs = new Set([...designedRows(text, vocab), ...designedRows(text, vocab, hiddenValues(text, steps))].map((r) => r.sig));
     for (const r of mine) if (theirs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
   };
-  compare(material.problem.text, '원본');
-  if (item.stage.kind === 'twin') for (const other of prior) if (other.problem && other.index !== item.index) compare(other.problem.text, `앞 문제(${other.label})`);
+  compare(material.problem.text, material.steps, '원본');
+  if (item.stage.kind === 'twin') for (const other of prior) if (other.problem && other.index !== item.index) compare(other.problem.text, other.solution?.steps, `앞 문제(${other.label})`);
   return [...new Set(notes)];
 }
 
@@ -1503,8 +1571,8 @@ async function runGeneration(ctx) {
   const rules = job.rules;
   // What the teacher adopted from earlier sets of this original (examples for the same stages).
   const examples = adoptedExamples(store, job.materialId, {});
-  await ensureFrames(ctx, material);
   if (ctx.finalGate && !job.analysisReview) await reviewAnalysis(ctx, material);
+  await ensureFrames(ctx, material);
   for (const item of job.items) {
     if (ctx.signal.aborted) throw new Error('작업이 취소되었습니다.');
     if (['passed', 'warning', 'needs_review'].includes(item.status)) continue; // resume keeps finished work
@@ -1599,4 +1667,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

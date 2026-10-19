@@ -352,3 +352,43 @@ test('with the final review on, a set learns what that review found, not the sol
   assert.equal(sent, '');
   assert.equal(put.length, 0);
 });
+
+// chem-c32-molar-volume (2026-10-19): STEP 1~2's (가) was the original's (나), 23 g and the hidden a = 12.
+test('a row that gives as numbers what the original hid (a = 12 in its solution) reuses the original', () => {
+  const head = '| 기체 | 분자식 | 질량(g) | 분자량 | 부피(L) | 전체 원자 수(상댓값) |\n|---|---|---|---|---|---|\n';
+  const material = { problem: { text: head + '| (가) | $\mathrm{XY_2}$ | 18 |  | 8 | 1 |\n| (나) | $\mathrm{ZX_2}$ | 23 |  | $a$ | 1.5 |' }, steps: [{ work: '따라서 (나)의 부피는 12L이고, $a=12$이다.' }] };
+  const at = (rows) => ({ problem: { text: head + rows }, stage: { kind: 'upto' } });
+  assert.match(numbersReused(at('| (가) | $\mathrm{XY_2}$ | 23 |  | 12 | 1 |'), [], material).join(), /원본의 실험 수치\(23,12\)/);
+  assert.deepEqual(numbersReused(at('| (가) | $\mathrm{XY_2}$ | 16 |  | 6 | 1 |'), [], material), []);
+});
+
+// chem-c32-molar-volume (2026-10-19): the analysis review found the teacher's '/몰' moved; every solution followed it.
+test('what the analysis review finds is fixed against the original before the problems, and reviewed again', async () => {
+  const { reviewAnalysis } = require('../server/pipeline');
+  const material = { problem: { text: '표', choices: ['ㄱ'], answer: 1 }, steps: [{ title: 'S1', work: '분자량$=\frac{18g}{\frac{8L}{24L/몰}}$이다.' }], frames: [{ step: 1 }] };
+  let stored = { id: 'm', ...JSON.parse(JSON.stringify(material)) };
+  const calls = [];
+  const reviews = [
+    { analysis: { verdict: 'issues', issues: [{ severity: 'low', rule: '표기', where: 'STEP 1', detail: "'/몰'은 분자 쪽 8L에 붙어 있다" }] }, items: [] },
+    { analysis: { verdict: 'ok', checks: { 판독: 'ok' }, issues: [] }, items: [] },
+  ];
+  const llm = { json: async ({ purpose, text }) => {
+    calls.push(purpose);
+    if (purpose === 'fix-analysis') { assert.match(text, /분자 쪽 8L/); return { data: { fixes: [{ field: 'steps[0].work', wrong: '\frac{8L}{24L/몰}', right: '\frac{8L/몰}{24L}' }] } }; }
+    return { data: reviews.shift() };
+  } };
+  const store = { materials: { get: () => stored, put: (m) => { stored = m; } }, rules: { all: () => [] }, files: null };
+  const ctx = { llm, store, job: { id: 'j', materialId: 'm', rules: [] }, budget: new Budget({ maxCalls: 60, maxTokens: 1e7 }), effort: { solve: 'low' }, save() {}, log() {} };
+  await reviewAnalysis(ctx, material);
+  assert.deepEqual(calls, ['final-review', 'fix-analysis', 'final-review']);
+  assert.match(material.steps[0].work, /\frac\{8L\/몰\}\{24L\}/);
+  assert.equal(material.frames, undefined, 'the frames are cut again from the fixed analysis');
+  assert.match(stored.steps[0].work, /\frac\{8L\/몰\}\{24L\}/);
+  assert.equal(stored.analysisFixes.length, 1);
+  assert.equal(ctx.job.analysisReview.verdict, 'ok');
+  assert.equal(ctx.job.analysisReview.fixed.length, 1);
+  // The next set of this original finds the fixed analysis reviewed: no call.
+  calls.length = 0;
+  await reviewAnalysis({ ...ctx, job: { id: 'j2', materialId: 'm', rules: [] } }, JSON.parse(JSON.stringify(stored)));
+  assert.deepEqual(calls, []);
+});

@@ -62,6 +62,19 @@ const PROOFREAD_SYSTEM = `너는 교정자다. 이미지에 인쇄된 원본과,
 - 오류가 없으면 fixes는 빈 배열.
 반환 JSON: {"fixes":[{"field":"problem.text","wrong":"...","right":"...","reason":"..."}],"solutionStepCount":3}`;
 
+// The analysis review (server/final-review.js) found where the analysis differs from the original; this fixes those
+// places against the images before any problem is made from it.
+const FIX_ANALYSIS_SYSTEM = `너는 원본 분석을 고치는 교정자다. 검토자가 원본 이미지와 대조해, 옮겨 적은 문제와 STEP으로 정리한 선생님 해설에서 원본과 다른 곳을 찾았다.
+- 지적마다 이미지에서 직접 확인한다. 맞으면 그 필드를 원본에 인쇄된 대로 고친다. 이미지와 다른 지적이면 고치지 않는다.
+- 선생님 해설의 문장과 식은 인쇄된 모양 그대로 옮긴다: 단위가 붙은 자리, 분수의 위아래, 괄호, 빠뜨린 설명 문장까지. LaTeX로 쓰되 모양을 바꾸지 않는다.
+- 지적에 없는 곳은 고치지 않는다. STEP을 더하거나 빼거나 합치지 않는다. 필기(연필·색 펜)는 옮기지 않는다.
+- wrong에는 필드에 실제로 있는 그대로의 짧은 구간을(필드에서 한 번만 나오도록 앞뒤 몇 글자 포함), right에는 같은 구간을 원본대로 고친 것을 쓴다. 빠진 문장은 그 앞 구간을 wrong으로 잡고 right에 문장을 더해 쓴다.
+반환 JSON: {"fixes":[{"field":"steps[0].work","wrong":"...","right":"...","reason":"어느 지적인지"}]}`;
+
+function fixAnalysisText(fields, issues) {
+  return `[검토자가 찾은 점]\n${issues.map((x) => `- [${x.rule || '기준'}${x.where ? ` · ${x.where}` : ''}] ${x.detail || ''}`).join('\n')}\n\n[옮겨 적은 필드]\n${JSON.stringify(fields, null, 1)}\n\n이미지와 대조해 JSON만 반환하라.`;
+}
+
 const REGROUP_SYSTEM = `너는 풀이 정리 편집자다. 정리된 풀이 STEP 목록을 교사 해설에 인쇄된 단계 수에 맞게 묶는다.
 - 순서를 바꾸지 않고, 이웃한 STEP끼리만 묶는다. 모든 STEP은 정확히 한 묶음에 들어간다.
 - 각 묶음이 해설의 한 단계와 같은 논리 단위가 되게 한다 (예: 같은 값을 구하는 계산이 둘로 나뉘었다면 합친다).
@@ -614,7 +627,7 @@ function ruleNotesParts({ item, rules }) {
 
 module.exports = {
   SYSTEMS, PROMPT_VERSION, MERGE_SYSTEM, mergeText, RULE_NOTES_SYSTEM, ruleNotesParts,
-  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
+  ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, FIX_ANALYSIS_SYSTEM, fixAnalysisText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
   GENERATE_SYSTEM, generateText, generateParts, EXTRACT_FRAMES_SYSTEM, extractFramesText, framesBlock,
   SOLVE_SYSTEM, solveText, solveParts,
   SOLUTION_REVIEW_SYSTEM, solutionReviewText, solutionReviewParts,
