@@ -478,17 +478,15 @@ test('renderFrames: the answer line says the item’s own answer, not the teache
   const bare = { problem: { choices: ['$1$', '$2$', '$3$', '$4$', '$5$'], answer: 1 }, solution: { steps: [{ step: 1, work: '정답은 ③이다.\n정답은 ② $2$이다.' }] } };
   harness.renderFrames({ steps: [{}] }, bare);
   assert.equal(bare.solution.steps[0].work, '정답은 ①이다.\n정답은 ① 1이다.');
+  // A solution that ends without the line gets it at the end of its last STEP (반응식·밀도 3차, Opus's STEP 1~2).
+  const none = { problem: { choices: ['$1$', '$2$', '$3$'], answer: 3 }, solution: { steps: [{ step: 1, work: 'a' }, { step: 2, work: '| 표 |\n' }] } };
+  harness.renderFrames({ steps: [{}, {}] }, none);
+  assert.equal(none.solution.steps[1].work, '| 표 |\n정답은 ③ 3이다.');
 });
 
-test('an experiment whose amount put in is hidden has its limiting reactant judged in the solution (4차)', () => {
-  const material = { problem: { text: '', choices: [] }, steps: [{ work: '그러나 … 이므로 실험 Ⅰ에서 A가 한계 반응물이다.' }] };
-  const text = '| 실험 | 넣어 준 물질의 양(mol) $\\ce{A(s)}$ | 넣어 준 물질의 양(mol) $\\ce{B(g)}$ | 밀도 반응 전 | 밀도 반응 후 |\n|---|---|---|---|---|\n| Ⅰ | 2 | 8 | 1 | 3 |\n| Ⅱ | 3 | $x$ | 1 | 4 |';
-  const item = { stage: { kind: 'twin' }, problem: { text, choices: [] }, solution: { steps: [{ step: 1, work: '그러나 … 이므로 실험 Ⅰ에서 A가 한계 반응물이다.' }, { step: 3, work: '실험 Ⅱ에서의 화학 반응식은 다음과 같다.' }] } };
-  const check = (it) => harness.inspectItem(material, it, 'integrated').find((x) => x.id === 'source-hidden-limiting');
-  assert.equal(check(item).state, 'fail');
-  assert.match(check(item).evidence, /실험 Ⅱ/);
-  const shown = { ...item, problem: { text: text.replace('$x$', '12'), choices: [] } };
-  assert.equal(check(shown).state, 'pass');
-  item.solution.steps[1].work = '실험 Ⅱ에서도 밀도 비가 1:5가 아니므로 A가 한계 반응물이다.\n' + item.solution.steps[1].work;
-  assert.equal(check(item).state, 'pass');
+test('a line break written as the letters \\n is a line break; a LaTeX command is not (반응식·밀도 3차, Haiku)', () => {
+  const { normalizeGenerated } = require('../server/pipeline');
+  const g = normalizeGenerated({ problem: { text: '반응식이다.\\n\\n$a \\ne b$, $\\nu$\\n| 실험 | x |', choices: ['1', '2'], answer: 1 }, solution: { steps: [{ step: 1, title: 't', work: 'a\\nb' }] } });
+  assert.equal(g.problem.text, '반응식이다.\n\n$a \\ne b$, $\\nu$\n| 실험 | x |');
+  assert.equal(g.solution.steps[0].work, 'a\nb');
 });

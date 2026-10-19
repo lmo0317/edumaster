@@ -3,6 +3,7 @@ const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
 const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, grams, overlap } = require('./learning');
 const harness = require('./harness');
+const finalReview = require('./final-review');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
 const fixMath = (s) => s.replace(/\\ce\{([^{}]*)\}/g, (m, body) => (body.includes('$') ? `\\ce{${body.replace(/\$/g, '')}}` : m));
@@ -16,9 +17,13 @@ const answerNumber = (v, count) => {
 };
 const stripChoiceNumber = (c) => str(c, 2000).replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/, '');
 
+// A line break a model wrote as the two letters \n (Haiku 5.5's final in reaction-density 3차, 2026-10-18: the equation,
+// the sentences and the table ran on one line). Inside $…$ a LaTeX command (\ne, \nu) goes on with a letter, and stays.
+const breaks = (t) => t.split(/(\$\$?[^$]*\$\$?)/).map((seg) => (seg.startsWith('$') ? seg.replace(/\\n(?![A-Za-z])/g, '\n') : seg.replace(/\\n/g, '\n'))).join('');
+
 function normalizeProblem(p) {
   const choices = arr(p?.choices).map(stripChoiceNumber).filter(Boolean).slice(0, 9);
-  let text = str(p?.text, 12000);
+  let text = breaks(str(p?.text, 12000));
   // Choices belong in the choices array only; drop "① … ② …" lines copied into the body as well.
   if (choices.length > 1) text = text.split('\n').filter((line) => !(/^\s*①/.test(line) && line.includes('②'))).join('\n').trim();
   return { text, choices, answer: answerNumber(p?.answer, choices.length), figure: str(p?.figure, 4000) };
@@ -192,7 +197,7 @@ const ROMAN = { I: 'Ⅰ', II: 'Ⅱ', III: 'Ⅲ', IV: 'Ⅳ' };
 const stepTitle = (t) => str(t, 300).replace(/^\s*STEP\s*\d+\s*[.:)·]\s*/i, '').replace(/(^|[^A-Za-z])(IV|III|II|I)(?=$|[^A-Za-z])/g, (m, pre, r) => pre + ROMAN[r]);
 function normalizeSolution(solution) {
   return {
-    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: str(s?.work, 8000) })).filter((s) => s.work).slice(0, 12),
+    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: breaks(str(s?.work, 8000)) })).filter((s) => s.work).slice(0, 12),
     summary: str(solution?.summary, 1000),
   };
 }
@@ -615,6 +620,46 @@ async function reviewSolution(ctx, item, material, rules) {
   };
 }
 
+// The original's pictures for the final review (the analysis's zoomed pieces when it made them).
+function originalImages(store, material) {
+  const out = [];
+  for (const [key, label] of [['problem', '원본 문제'], ['solution', '원본 해설']]) {
+    const views = material.images?.views?.[key] || [];
+    const list = views.length ? views : [material.images?.[key]].filter(Boolean);
+    list.forEach((id, i) => {
+      const dataUrl = store?.files?.dataUrl(id);
+      if (dataUrl) out.push({ label: `${label}${list.length > 1 ? ` (${i + 1}/${list.length})` : ''}`, dataUrl });
+    });
+  }
+  return out;
+}
+
+/** 최종 검수 while the problem is made: the review of review-criteria.md a finished set gets afterwards (scripts/
+ *  review-problem.js), on this one problem by the job's judging model. What it finds goes back for repair like any other
+ *  fault, and a problem is made only once it passes (server/final-review.js). Returns the faults left (none = passed). */
+async function finalGate(ctx, item, material, prior) {
+  if (ctx.budget.affords && !ctx.budget.affords(1 + (ctx.reserveCalls || 0))) {
+    return { faults: [], skipped: '세트의 AI 호출·토큰 상한 때문에 최종 검수를 하지 못했습니다.' };
+  }
+  ctx.log(`${item.label}: 최종 검수 기준으로 검토 중`);
+  const subject = { ...material, id: ctx.job.materialId };
+  try {
+    const { data } = await ctx.llm.json({
+      purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000, vision: true,
+      system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+      text: finalReview.itemReviewText(material, item, prior),
+      images: originalImages(ctx.store, material),
+    });
+    const review = (data?.items || [])[0] || null;
+    const faults = finalReview.itemFaults(data);
+    ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+    return { faults, review };
+  } catch (e) {
+    if (e.name !== 'LlmFormatError') throw e;
+    return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
+  }
+}
+
 /** A judge's rule verdicts: {kept: [id], broken: [{id, note}]}, or the older shape (every rule with ok and a note). */
 function judgedRules(rules) {
   const list = Array.isArray(rules) ? rules
@@ -711,7 +756,7 @@ function repeatsPrior(item, prior) {
 // shortcuts, numbers-only, STEP coverage, problem-rule checks) stay in the record but do not send the problem back —
 // a weak solver raised them falsely (Qwen 3.6, 2026-09-30: three of four repairs); an answer mismatch is first put
 // to the designer, who decides whether the problem or the solver is wrong. Code checks stay as they are.
-const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'explanation-complete', 'source-step-titles', 'source-tables', 'source-hidden-limiting']);
+const SOLUTION_CHECKS = new Set(['source-method', 'source-method-order', 'source-assumption', 'explanation-consistency', 'explanation-complete', 'source-step-titles', 'source-tables']);
 const solutionOnly = (c) => SOLUTION_CHECKS.has(c.id) || (c.id === 'format' && c.evidence.split('; ').every((e) => e.startsWith('해설')));
 
 const flat = (s) => harness.plain(s).replace(/\\left|\\right|\s/g, '');
@@ -1161,7 +1206,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
 
   let check = await verifyItem(ctx, item, material, rules, mode, prior);
   // In a lean run the solver's STEP tagging does not send the problem back (see verifyItem).
-  const repairReasons = (c) => [...c.hard, ...(lean ? [] : c.coverageNotes.map((n) => 'STEP 범위: ' + n)), ...c.designNotes.map((n) => '문제 설계: ' + n)];
+  const repairReasons = (c) => [...c.hard, ...(lean ? [] : c.coverageNotes.map((n) => 'STEP 범위: ' + n)), ...c.designNotes.map((n) => '문제 설계: ' + n), ...(c.gate?.faults || []).map((n) => '최종 검수: ' + n)];
   // Up to ctx.maxRepairs repairs, a further one only when the previous one changed what is wrong (the same complaints
   // twice means the model is stuck: a fresh design does better). The solution alone is rewritten up to twice.
   const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
@@ -1182,6 +1227,9 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
       if (same(before, check.rewriteNotes)) rewrites = Infinity; // the same notes again: rewriting more will not help
       continue;
     }
+    // What the checks above find is fixed first; a problem they pass gets the final review, and what that finds is
+    // repaired in the same loop (and, past the repairs, by a fresh design).
+    if (ctx.finalGate && !repairReasons(check).length && !check.gate) check.gate = await finalGate(ctx, item, material, prior);
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
     if (lastRepair && same(repairReasons(check), lastRepair)) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
@@ -1253,15 +1301,22 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   item.design = best.design;
   // Only a problem whose answer cannot be trusted is held back for the teacher; anything else the checks could not fix
   // is listed with the problem as 남은 점.
-  item.problems = [...new Set(check.invalid)];
+  // A problem the final review still finds fault with is not made: it goes to the teacher with what is left.
+  const gate = check.gate || null;
+  item.finalReview = ctx.finalGate ? { passed: Boolean(gate && !gate.skipped && !gate.faults.length), faults: gate?.faults || [], skipped: gate?.skipped || (gate ? '' : '앞의 검토에서 고칠 점이 남아 최종 검수까지 가지 못했습니다.'), review: gate?.review || null } : null;
+  item.problems = [...new Set([...check.invalid, ...(gate?.faults || []).map((f) => '최종 검수: ' + f)])];
   item.warnings = [...new Set([
-    ...best.reasons.filter((r) => !check.invalid.some((x) => r.endsWith(x))),
+    ...best.reasons.filter((r) => !check.invalid.some((x) => r.endsWith(x)) && !r.startsWith('최종 검수: ')),
     ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w) && !check.invalid.includes(w)),
     ...check.rewriteNotes.map((n) => '해설: ' + n), ...best.writeNotes,
   ])];
-  item.status = item.problems.length ? 'needs_review' : item.warnings.length ? 'warning' : 'passed';
+  // With the final review on, made means it passed: a problem that never reached it (other faults left) is not made
+  // either, and what the earlier checks noted but the final review does not count as a fault stays as a note.
+  const unreviewed = ctx.finalGate && !item.finalReview.passed;
+  if (unreviewed && !item.problems.length) item.problems = [`최종 검수: ${item.finalReview.skipped || '통과하지 못함'}`, ...item.warnings];
+  item.status = item.problems.length ? 'needs_review' : item.warnings.length && !ctx.finalGate ? 'warning' : 'passed';
   const fixes = item.attempts.filter((x) => x.kind !== 'generate').length;
-  ctx.log(`${item.label}: ${{ passed: '완성', warning: `완성 (남은 점 ${item.warnings.length}개)`, needs_review: '정답을 확정하지 못함' }[item.status]}${fixes ? ` — 자동 수정 ${fixes}번${item.redesigned ? `, 새 설계 ${item.redesigned}번` : ''}` : ''}`);
+  ctx.log(`${item.label}: ${{ passed: '완성', warning: `완성 (남은 점 ${item.warnings.length}개)`, needs_review: ctx.finalGate ? '최종 검수를 통과하지 못해 미완료' : '정답을 확정하지 못함' }[item.status]}${fixes ? ` — 자동 수정 ${fixes}번${item.redesigned ? `, 새 설계 ${item.redesigned}번` : ''}` : ''}`);
   ctx.save();
 }
 

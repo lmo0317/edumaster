@@ -43,6 +43,8 @@ function createJobs({ store, llm, config }) {
       // A cheaper designer's problems are checked by code before the judge solves them (see designOnce): a cheaper
       // Claude model, or another provider designing for Claude (the PC's Qwen under Opus).
       precheck: provider === 'claude-cli' && Boolean(claudeDesignModel(config) || job.options?.designWith),
+      // A problem is made only once it passes the final review a finished set gets (pipeline.finalGate, 2026-10-19).
+      finalGate: job.options?.finalGate !== false,
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       direction: job.options?.direction || '',

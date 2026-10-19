@@ -221,29 +221,15 @@ function answerLine(item) {
   if (!(n >= 1 && n <= 5) || choice == null) return;
   const mark = '①②③④⑤'[n - 1];
   const shown = String(choice).trim().replace(/^\$\s*(-?[\d.]+)\s*\$$/, '$1');
-  for (const step of item.solution?.steps || []) {
+  const steps = item.solution?.steps || [];
+  for (const step of steps) {
     step.work = String(step.work || '').replace(/^(.*?정답은\s*)([①②③④⑤])(.*)$/gm, (all, head, had, rest) => (
       /^\s*(이다|입니다)/.test(rest) ? `${head}${mark}${rest}` : `${head}${mark} ${shown}이다.`));
   }
-}
-
-/**
- * An experiment whose amount put in is hidden (x) does not show which reactant runs out, so the solution says it for
- * that experiment as the teacher says it for the experiment of STEP 1: Opus + Haiku and Opus + Qwen hid Ⅱ's amount
- * and went straight to Ⅱ's reaction table (reaction-density 4차, 2026-10-17, Claude's reviews).
- */
-function checkHiddenLimiting(material, item) {
-  if (!/한계 반응물|모두 반응/.test((material.steps || []).map((s) => s.work).join('\n'))) return [];
-  const lines = String(item.problem?.text || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
-  if (lines.length < 3 || !(item.solution?.steps || []).length) return [];
-  const cells = (l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim());
-  const given = cells(lines[0]).map((h, i) => (i > 0 && /넣어\s*준/.test(h) ? i : -1)).filter((i) => i > 0);
-  const hidden = lines.slice(1).map(cells).filter((c) => /^(Ⅰ|Ⅱ|Ⅲ|Ⅳ)$/.test(c[0]) && given.some((i) => /^[a-z]$/.test(c[i] || ''))).map((c) => c[0]);
-  const work = (item.solution.steps || []).flatMap((s) => String(s.work || '').split('\n')).map(plain);
-  const said = (r) => work.some((l) => l.includes(r) && /한계 반응물|모두 반응/.test(l));
-  const missing = hidden.filter((r) => !said(r));
-  return [result('source-hidden-limiting', '넣어 준 양을 숨긴 실험의 한계 반응물을 해설이 판정함', !missing.length,
-    missing.length ? `실험 ${missing.join(', ')}은 넣어 준 양을 숨겨 무엇이 모두 반응하는지 문제에 바로 보이지 않는데, 해설이 그 실험의 한계 반응물을 판정하지 않고 반응 표로 갑니다. 그 실험의 표 앞에 선생님 STEP 1의 판정 문장(가정→모순 또는 근거 한 줄)으로 판정을 쓴다.` : '')];
+  // A solution that ends without it gets it at the end of its last STEP: Opus's STEP 1~2 practice ended on its reaction
+  // table (reaction-density 3차, 2026-10-18, Claude's review), its teacher's answer line being in STEP 3.
+  const last = steps[steps.length - 1];
+  if (last && !steps.some((s) => /정답은\s*[①②③④⑤]/.test(s.work || ''))) last.work = `${String(last.work || '').trimEnd()}\n정답은 ${mark} ${shown}이다.`;
 }
 
 /** Original STEPs a stage uses (1-based). */
@@ -1206,7 +1192,6 @@ function inspectItem(material, item, mode) {
     ...checkAssumption(material, item),
     ...checkStepTitles(material, item),
     ...checkSolutionTables(material, item),
-    ...checkHiddenLimiting(material, item),
     ...checkEquation(material, item),
     ...checkUnusedCoefficient(item),
     ...checkObviousLeftover(material, item),

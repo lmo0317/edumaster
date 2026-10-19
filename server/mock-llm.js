@@ -146,6 +146,10 @@ function mock(messages) {
     const same = a.slice(0, 5) === b.slice(0, 5);
     data = { same, text: same ? `${a} (모의 합침)` : '', why: '모의 판정' };
   }
+  // The final review (server/final-review.js): a mock problem is fit to use.
+  else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system)) {
+    data = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '', myAnswer: '', answerOk: true, verdict: 'use', issues: [] }], summary: '모의 검수' };
+  }
   else data = generated(text);
   const content = JSON.stringify(data);
   return new Promise((resolve) => setTimeout(() => resolve({

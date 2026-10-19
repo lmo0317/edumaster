@@ -231,3 +231,46 @@ test('PC call cap, commented program lines, and STEP titles as the teacher wrote
   const cap = (provider) => jobs.generate({ material: { id: 'c'.repeat(24), title: 'm' }, items: [{}, {}, {}], rules: [], options: { provider } }).budget.maxCalls;
   assert.deepEqual([cap('gemma'), cap('claude-cli')], [120, 60]);
 });
+
+// 2026-10-19: a problem counts as made only once it passes the final review a finished set gets (review-criteria.md):
+// sets the generation called finished kept failing that review afterwards.
+function gated(reviews) {
+  const solves = [];
+  const purposes = [];
+  let made = 0;
+  const llm = { json: async ({ system, purpose }) => {
+    purposes.push(purpose);
+    if (purpose === 'final-review') return { data: reviews.shift() };
+    if (system === prompts.SOLVE_SYSTEM) return { data: solves.shift() || { answer: 3, stepsUsed: [1] } };
+    if (system === prompts.SOLUTION_REVIEW_SYSTEM) return { data: { steps: [], rules: [] } };
+    return { data: generated(++made) };
+  } };
+  const ctx = { llm, job: { id: 'j', rules: [] }, budget: new Budget({ maxCalls: 60, maxTokens: 1e7 }), effort: { generate: 'low', solve: 'low' }, maxRepairs: 2, maxDesigns: 2, finalGate: true, save() {}, log() {} };
+  const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
+  return produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' }).then(() => ({ item, purposes }));
+}
+const verdict = (v, issues = []) => ({ analysis: { verdict: 'ok', issues: [] }, items: [{ label: 'STEP 1 연습', answerOk: true, verdict: v, issues }] });
+
+test('what the final review finds is repaired before the problem counts as made', async () => {
+  const { item, purposes } = await gated([verdict('fix', [{ severity: 'mid', rule: '조건', detail: '실험이 하나인데 "달리하여"가 남음' }]), verdict('use')]);
+  assert.equal(purposes.filter((p) => p === 'final-review').length, 2);
+  const repair = item.attempts.find((a) => a.kind === 'repair');
+  assert.match(repair.failures.join(), /최종 검수: \[조건 · mid\] 실험이 하나인데/);
+  assert.equal(item.status, 'passed');
+  assert.equal(item.finalReview.passed, true);
+});
+
+test('a problem that never passes the final review is not made: it waits for the teacher with what is left', async () => {
+  const bad = () => verdict('fix', [{ severity: 'mid', rule: 'STEP 범위', detail: '지름길로 풀림' }]);
+  const { item } = await gated(Array.from({ length: 10 }, bad));
+  assert.equal(item.status, 'needs_review');
+  assert.equal(item.finalReview.passed, false);
+  assert.match(item.problems.join(), /최종 검수: \[STEP 범위 · mid\] 지름길로 풀림/);
+});
+
+test('a wrong answer found by the final reviewer is a fault even when its verdict says use', async () => {
+  const wrong = { analysis: { verdict: 'ok', issues: [] }, items: [{ answerOk: false, myAnswer: '④ 6', markedAnswer: 3, verdict: 'use', issues: [] }] };
+  const { item } = await gated([wrong, verdict('use')]);
+  assert.match(item.attempts.find((a) => a.kind === 'repair').failures.join(), /직접 푼 정답은 ④ 6/);
+  assert.equal(item.status, 'passed');
+});
