@@ -1682,4 +1682,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

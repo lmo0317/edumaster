@@ -620,6 +620,8 @@ a.set-pill { text-decoration: none; }
 .ck-model h3 { font-size: 14px; margin: 8px 0 4px; }
 .ck-issues { margin: 6px 0; padding-left: 18px; font-size: 14px; }
 .ck-issues li { margin: 4px 0; }
+.ck-scores { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 12px; }
+.ck-score { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; min-width: 120px; }
 .set-later { margin: 0; padding: 8px 18px; font-size: 13px; color: var(--warn); background: var(--warn-soft); }
 .set-items { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .set-items li + li { border-top: 1px solid var(--line); }

@@ -12,6 +12,7 @@ const { createLlm, Budget, claudeCliReady } = require('../server/llm');
 const cli = require('../server/cli-models');
 const { mock } = require('../server/mock-llm');
 const { reviewSystem, setText } = require('../server/final-review');
+const setCheck = require('../server/set-check');
 
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args.splice(i, 2)[1] : ''; };
@@ -52,7 +53,7 @@ const images = [...imgs('원본 문제', m.images.problem, m.images.views?.probl
 const ready = { 'claude-cli': () => claudeCliReady(cfg), 'agy-cli': () => cli.cliReady(cfg, 'agy-cli'), 'codex-cli': () => cli.cliReady(cfg, 'codex-cli') };
 const result = {
   material: { id: m.id, title: m.title, subject: m.subject, topic: m.topic, problem: m.problem.text, choices: m.problem.choices || [], answer: m.problem.answer, steps: m.steps.map((x) => ({ title: x.title, work: x.work })) },
-  set: set ? { id: set.id, createdAt: set.createdAt, provider: set.options?.provider, items: items.map((it) => ({ label: it.label, status: it.status, stage: range(it.stage), problem: it.problem.text, choices: it.problem.choices || [], answer: it.problem.answer, solution: (it.solution?.steps || []).map((x) => ({ step: x.step, title: x.title, work: x.work })) })) } : null,
+  set: set ? { id: set.id, createdAt: set.createdAt, provider: set.options?.provider, items: items.map((it) => ({ index: it.index, label: it.label, status: it.status, kind: it.stage?.kind || '', stage: range(it.stage), problem: it.problem.text, choices: it.problem.choices || [], answer: it.problem.answer, solution: (it.solution?.steps || []).map((x) => ({ step: x.step, title: x.title, work: x.work })) })) } : null,
   at: new Date().toISOString(), reviews: {}, done: false,
 };
 // The set's page shows the review (#/j/<set id>/check), from data/reviews/<set id>.json.
@@ -74,5 +75,6 @@ save();
     save();
   }));
   result.done = true;
+  result.checklist = setCheck.checklist(result);
   save();
 })();

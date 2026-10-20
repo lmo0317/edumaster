@@ -630,3 +630,30 @@ test('a set\'s Claude·Gemini review (data/reviews/<set id>.json) is shown on it
     assert.ok(!fs.existsSync(path.join(s.dataDir, 'reviews', `${job.id}.json`)), 'deleted with its set');
   } finally { await s.close(); }
 });
+
+test('검수하고 고치기: what Claude·Gemini find is remade with their faults as the note, and the set is reviewed again', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
+    const created = await s.call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
+    await s.waitJob(created.data.jobId);
+    const set = await s.waitJob((await s.call('POST', '/api/generations', { materialId: created.data.material.id, mode: 'integrated', provider: 'claude-cli' })).data.jobId);
+    const rulesBefore = (await s.call('GET', '/api/rules')).data.length;
+    const started = await s.call('POST', `/api/jobs/${set.id}/check`, { fix: true });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    assert.equal((await s.call('POST', `/api/jobs/${set.id}/check`, { fix: true })).status, 409, 'one review of a set at a time');
+    assert.equal((await s.call('POST', `/api/jobs/${set.id}/items/0/regenerate`, {})).status, 409, 'no remake while it is reviewed');
+    const job = await s.waitJob(started.data.jobId);
+    assert.equal(job.status, 'done', job.error);
+    const { check } = (await s.call('GET', `/api/jobs/${set.id}/check`)).data;
+    assert.equal(check.running, false);
+    assert.deepEqual(check.rounds.map((r) => r.failing), [['최종 문제'], []], 'the final problem failed, was remade, and passed the second review');
+    assert.deepEqual(check.rounds[0].remade, ['최종 문제']);
+    assert.ok(Object.keys(check.reviews).length === 2 && Object.values(check.checklist.models).every((m) => m.score === 100));
+    const after = (await s.call('GET', `/api/jobs/${set.id}`)).data;
+    assert.match(after.items[2].history[0].feedback, /검수에서 이 문제에 걸린 점[\s\S]*\[Claude\] \[구조 · mid\] 모의 검수: 원본과 구조가 같다/);
+    assert.ok(!after.items[0].history?.length, 'a problem that passed is kept');
+    assert.equal(after.check.scores['claude-cli'], 100);
+    assert.equal((await s.call('GET', '/api/rules')).data.length, rulesBefore, 'the review changes the set, not the learning');
+  } finally { await s.close(); }
+});

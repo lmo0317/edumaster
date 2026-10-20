@@ -149,6 +149,16 @@ function mock(messages) {
     data = { same, text: same ? `${a} (모의 합침)` : '', why: '모의 판정' };
   }
   // The final review (server/final-review.js): a mock problem is fit to use.
+  // A whole set reviewed (server/set-check.js): the first two looks at a set (Claude and Gemini) find a fault in its
+  // final problem, so 검수하고 고치기 has something to remake; later looks pass it.
+  else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system) && text.includes('[AI가 만든 변형 세트]')) {
+    const labels = [...text.matchAll(/^### (.+?) — 목표/gm)].map((x) => x[1]);
+    const seen = (setLooks.get(labels.join('|')) || 0) + 1;
+    setLooks.set(labels.join('|'), seen);
+    data = { analysis: { verdict: 'ok', issues: [] }, summary: '모의 검수', items: labels.map((label, i) => (seen <= 2 && i === labels.length - 1
+      ? { label, myAnswer: '', answerOk: true, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '모의 검수: 원본과 구조가 같다' }] }
+      : { label, myAnswer: '', answerOk: true, verdict: 'use', issues: [] })) };
+  }
   else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system)) {
     data = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '', myAnswer: '', answerOk: true, verdict: 'use', issues: [] }], summary: '모의 검수' };
   }
@@ -159,5 +169,7 @@ function mock(messages) {
     usage: { prompt_tokens: Math.round(text.length / 2), completion_tokens: Math.round(content.length / 3), total_tokens: Math.round(text.length / 2 + content.length / 3) },
   }), Number(process.env.EDUMASTER_MOCK_DELAY_MS ?? 300)));
 }
+
+const setLooks = new Map();
 
 module.exports = { mock, SAMPLE };

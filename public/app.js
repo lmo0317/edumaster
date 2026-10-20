@@ -1004,41 +1004,76 @@
   function checkPill(j) {
     const c = j.check;
     if (!c) return '';
+    if (c.running || !c.done) return `<a class="set-pill run" href="#/j/${j.id}/check"><i class="spin"></i>${c.fix ? '검수·고치는 중' : '검수 중'}</a>`;
     const models = Object.entries(c.models || {});
     const all = models.length && models.every(([, v]) => !v.error && v.total && v.use === v.total && v.answersOk === v.total && v.analysis === 'ok');
-    const text = models.map(([p, v]) => `${CHECK_MODEL[p] || p} ${v.error ? '실패' : `사용 ${v.use}/${v.total}`}`).join(' · ');
-    return `<a class="set-pill ${!c.done ? 'run' : all ? 'ok' : 'warn'}" href="#/j/${j.id}/check" title="Claude·Gemini 검수 결과">${!c.done ? '<i class="spin"></i>검수 중' : `검수 ${esc(text)}`}</a>`;
+    const text = models.map(([p, v]) => `${CHECK_MODEL[p] || p} ${v.error ? '실패' : c.scores?.[p] != null ? `${c.scores[p]}%` : `사용 ${v.use}/${v.total}`}`).join(' · ');
+    return `<a class="set-pill ${all ? 'ok' : 'warn'}" href="#/j/${j.id}/check" title="Claude·Gemini 검수 결과 (요구사항 충실도)">검수 ${esc(text)}</a>`;
   }
   async function checkView(id) {
+    const token = routeToken;
     const r = await api('GET', `/api/jobs/${id}/check`);
     const c = r.check;
     const models = Object.keys(c?.reviews || {});
+    const busy = Boolean(c?.running);
+    const acts = busy ? '' : `<button class="small" data-check="review">${c ? '다시 검수' : '검수하기'}</button><button class="small primary" data-check="fix">검수하고 고치기</button>`;
     const head = `<div class="lt jt-head"><a class="lt-back" href="#/m/${r.materialId}">‹ ${esc(r.materialTitle)}</a>
-      <div class="lt-head"><h1>검수 결과</h1><div class="name-btns"><a class="btn small" href="#/j/${id}">세트 열기</a></div></div>
-      <p class="lt-meta">Claude와 Gemini가 원본 이미지와 대조해 분석과 변형 문제를 검토하고, 문제마다 직접 풀어 정답을 확인했습니다. 기준은 검수 기준(review-criteria.md) 하나입니다.${c ? ` · ${fmtTime(c.at)}` : ''}</p></div>`;
-    if (!c) { view.innerHTML = head + '<div class="panel muted">이 세트는 아직 검수하지 않았습니다.</div>'; return; }
+      <div class="lt-head"><h1>검수 결과</h1><div class="name-btns"><a class="btn small" href="#/j/${id}">세트 열기</a>${acts}</div></div>
+      <p class="lt-meta">Claude와 Gemini가 원본 이미지와 대조해 분석과 변형 문제를 검토하고, 문제마다 직접 풀어 정답을 확인합니다. 모델 비교와 같은 요구사항 체크리스트로 채점합니다.${c ? ` · ${fmtTime(c.at)}` : ''}</p>
+      <p class="muted small"><b>검수하고 고치기</b>: 검수에서 걸린 문제를 지적 내용대로 다시 만들고(원본 분석 지적은 원본과 대조해 고침) 다시 검수합니다. 최대 2번 고치며, 학습은 바꾸지 않습니다.</p></div>`;
+    const bind = () => {
+      $$('[data-check]').forEach((b) => b.addEventListener('click', guard(async () => {
+        await api('POST', `/api/jobs/${id}/check`, { fix: b.dataset.check === 'fix' });
+        toast(b.dataset.check === 'fix' ? '검수하고 고치기를 시작했습니다.' : '검수를 시작했습니다.');
+        route();
+      })));
+      // While the review (and the remakes) run, the page follows them.
+      if (busy) setTimeout(() => { if (token === routeToken && location.hash.startsWith(`#/j/${id}/check`)) route(); }, 15000);
+    };
+    if (!c) { view.innerHTML = head + '<div class="panel muted">이 세트는 아직 검수하지 않았습니다.</div>'; bind(); return; }
     const rv = (p) => c.reviews[p]?.review;
+    const name = (p) => esc(CHECK_MODEL[p] || p);
+    const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
     const issues = (list) => (list || []).length
       ? `<ul class="ck-issues">${list.map((x) => `<li>${chip(CHECK_SEV, x.severity)} <b>${esc(x.rule || '')}</b>${x.where ? ` <span class="muted">${esc(x.where)}</span>` : ''} ${inlineRich(x.detail || '')}</li>`).join('')}</ul>`
       : '<span class="muted">지적 없음</span>';
     const verdict = (it) => (it ? `${chip(CHECK_VERDICT, it.verdict)} ${it.answerOk === false ? '<span class="chip bad">정답 다름</span>' : '<span class="chip ok">정답 맞음</span>'}` : '<span class="muted">—</span>');
     const items = c.set?.items || [];
     const failed = models.filter((p) => c.reviews[p].error);
-    const table = `<table class="rules ck-table"><thead><tr><th>문제</th><th>표시된 정답</th>${models.map((p) => `<th>${esc(CHECK_MODEL[p] || p)}</th>`).join('')}</tr></thead><tbody>
+    const ck = c.checklist;
+    const scored = models.filter((p) => ck?.models?.[p]);
+    // The 모델 비교 checklist: a column per reviewer, its score on top (✓ 1, △ half), a row as good as its worst problem.
+    const checklist = ck && scored.length ? `<section class="panel cv2-check"><h2>요구사항 체크리스트</h2>
+      <div class="ck-scores">${scored.map((p) => { const m = ck.models[p]; return `<div class="ck-score"><span class="muted small">${name(p)}</span><span class="cv2-score ${tone(m.score)}">${m.score}%</span><span class="muted tiny">✓ ${m.ok} · △ ${m.partial} · ✕ ${m.no}</span></div>`; }).join('')}</div>
+      <div class="table-wrap"><table class="cv2-table" style="min-width:${170 + scored.length * 170}px">
+        <tr><th>항목</th>${scored.map((p) => `<th>${name(p)}</th>`).join('')}</tr>
+        ${ck.groups.map((g) => `<tr class="grp"><td colspan="${scored.length + 1}"><span class="grp-label">${esc(g.title)}</span></td></tr>${g.items.map((row) => `<tr><th>${esc(row.text)}</th>${scored.map((p) => {
+          const [grade, note] = ck.models[p].marks[row.id] || ['na', ''];
+          const [t, mark] = REVIEW_MARK[grade] || ['', '?'];
+          return `<td><div class="cv2-mark ${t}">${mark}</div>${note ? `<div class="cv2-note">${inlineRich(note)}</div>` : ''}</td>`;
+        }).join('')}</tr>`).join('')}`).join('')}
+      </table></div>
+      <p class="muted small">✓ 충족 · △ 사소한 점 · ✕ 결함 · – 해당 없음. 충실도는 ✓를 1, △를 0.5로 셉니다. 한 항목은 세 문제 중 가장 나쁜 판정을 따르고, 어느 문제에서 걸렸는지 아래에 적습니다.</p></section>` : '';
+    const rounds = (c.rounds || []).length > 1 || (c.rounds || []).some((x) => x.remade?.length || x.analysisFixed?.length)
+      ? `<section class="panel"><h2>검수하고 고친 과정</h2><ol class="jt-steps">${c.rounds.map((x, k) => `<li>${k + 1}번째 검수 (${fmtTime(x.at)}): ${Object.entries(x.scores || {}).map(([p, v]) => `${name(p)} ${v}%`).join(' · ')}${x.failing.length ? ` — 걸린 문제 ${x.failing.map(esc).join(', ')}` : ' — 모든 문제 통과'}${x.analysisIssues ? ` · 원본 분석 지적 ${x.analysisIssues}건` : ''}${x.analysisFixed?.length ? `<br>→ 원본 분석 ${x.analysisFixed.length}곳을 원본과 대조해 고침` : ''}${x.remade?.length ? `<br>→ ${x.remade.map(esc).join(', ')}을(를) 지적 내용대로 다시 만듦` : ''}</li>`).join('')}</ol>
+        ${busy ? '' : c.rounds.at(-1)?.failing.length ? '<p class="muted small">고칠 수 있는 횟수를 다 써서 남은 지적이 있습니다. 문제를 열어 고칠 점을 남기거나 다시 만들기를 해 주세요.</p>' : ''}</section>` : '';
+    const table = `<table class="rules ck-table"><thead><tr><th>문제</th><th>표시된 정답</th>${models.map((p) => `<th>${name(p)}</th>`).join('')}</tr></thead><tbody>
       <tr><td>원본 분석</td><td></td>${models.map((p) => `<td>${rv(p) ? chip({ ok: ['이상 없음', 'ok'], issues: ['지적 있음', 'warn'] }, rv(p).analysis?.verdict) : '<span class="chip bad">실패</span>'}</td>`).join('')}</tr>
       ${items.map((it, i) => `<tr><td>${esc(it.label)}</td><td>${'①②③④⑤'[it.answer - 1] || esc(it.answer)}</td>${models.map((p) => `<td>${verdict(rv(p)?.items?.[i])}</td>`).join('')}</tr>`).join('')}
     </tbody></table>`;
     const part = (title, body) => `<section class="panel"><h2>${title}</h2>${body}</section>`;
-    const perModel = (pick) => models.filter((p) => rv(p)).map((p) => `<div class="ck-model"><h3>${esc(CHECK_MODEL[p] || p)}</h3>${pick(rv(p), p)}</div>`).join('');
+    const perModel = (pick) => models.filter((p) => rv(p)).map((p) => `<div class="ck-model"><h3>${name(p)}</h3>${pick(rv(p), p)}</div>`).join('');
     view.innerHTML = head
-      + (!c.done ? '<div class="note info"><i class="spin"></i> 검수가 아직 끝나지 않았습니다. 끝난 모델의 결과만 보입니다.</div>' : '')
-      + (failed.length ? `<div class="note bad">${failed.map((p) => `${esc(CHECK_MODEL[p] || p)} 검수 실패: ${esc(c.reviews[p].error)}`).join('<br>')}</div>` : '')
-      + part('한눈에 보기', table)
+      + (busy ? `<div class="note info"><i class="spin"></i> ${c.fix ? '검수하고 고치는 중입니다. 걸린 문제를 다시 만든 뒤 다시 검수합니다.' : '검수 중입니다.'} 이 화면은 저절로 바뀝니다.</div>` : '')
+      + (failed.length ? `<div class="note bad">${failed.map((p) => `${name(p)} 검수 실패: ${esc(c.reviews[p].error)}`).join('<br>')}</div>` : '')
+      + checklist + rounds
+      + part('문제별 판정', table)
       + part('총평', perModel((x) => `<p>${inlineRich(x.summary || '')}</p>`))
       + part('원본 분석', perModel((x) => issues(x.analysis?.issues)))
       + items.map((it, i) => part(esc(it.label), `<p class="muted small">${esc(it.stage || '')} · 표시된 정답 ${'①②③④⑤'[it.answer - 1] || esc(it.answer)}</p>`
         + perModel((x) => { const v = x.items?.[i]; return v ? `<p>${verdict(v)} <span class="muted">검수자 풀이:</span> ${inlineRich(v.myAnswer || '')}</p>${issues(v.issues)}` : '<span class="muted">결과 없음</span>'; }))).join('')
-      + `<p class="muted small">${models.map((p) => { const x = c.reviews[p]; return `${esc(CHECK_MODEL[p] || p)} ${x.seconds || 0}초${x.usage?.total ? ` · ${Number(x.usage.total).toLocaleString()}토큰` : ''}`; }).join(' · ')}</p>`;
+      + `<p class="muted small">${models.map((p) => { const x = c.reviews[p]; return `${name(p)} ${x.seconds || 0}초${x.usage?.total ? ` · ${Number(x.usage.total).toLocaleString()}토큰` : ''}`; }).join(' · ')}</p>`;
+    bind();
   }
 
   async function jobView(id, alive) {
@@ -1111,7 +1146,7 @@
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
-        <div class="name-btns">${job.check ? `<a class="btn small" href="#/j/${job.id}/check">검수 결과</a>` : ''}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
+        <div class="name-btns">${busy ? '' : `<a class="btn small" href="#/j/${job.id}/check">${job.check ? '검수 결과' : '검수하기'}</a>`}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>

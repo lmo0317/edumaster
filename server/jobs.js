@@ -6,6 +6,7 @@ const { Budget, pcModelLabel, claudeCliChoice, claudeDesignModel, CLAUDE_MODELS,
 const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
+const setCheck = require('./set-check');
 
 const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
 
@@ -102,30 +103,80 @@ function createJobs({ store, llm, config }) {
       }
     },
     async regenerate(ctx) {
-      const parent = store.jobs.get(ctx.job.parentJobId);
-      const item = parent?.items?.[ctx.job.itemIndex];
-      if (!item) throw new Error('다시 만들 문제를 찾지 못했습니다.');
-      const previous = { problem: item.problem, solution: item.solution, verification: item.verification, status: item.status, designNote: item.designNote, replacedAt: new Date().toISOString(), feedback: ctx.job.feedback,
-      // What the checks could not fix last time: the remake must fix it, with or without a note from the teacher.
-      problems: [...new Set(item.problems || [])], warnings: [...new Set(item.warnings || [])] };
-      item.history = [previous, ...(item.history || [])].slice(0, 3);
-      item.adopted = false; // a new version is reviewed afresh
-      const saveParent = () => store.jobs.put(parent);
-      const sub = { ...ctx, save() { ctx.save(); saveParent(); }, log(m) { ctx.log(m); } };
-      const prior = parent.items.filter((x) => x.index < item.index && x.problem);
-      // The feedback as it is now (not as it was when the set was made — the teacher has usually just added some),
-      // and the variants adopted so far, except this one.
-      const rules = pipeline.pickRules(store, parent.material);
-      const examples = pipeline.adoptedExamples(store, parent.materialId, { jobId: parent.id, index: item.index });
+      await remake(ctx, ctx.job.itemIndex, ctx.job.feedback);
+    },
+    // 검수하고 고치기 (server/set-check.js): Claude and Gemini review the set; what they find is fixed — the analysis
+    // against the images, each problem they would not hand out made again with their faults as the note — and the set
+    // is reviewed again, up to `rounds` times. Without `fix` it is the review alone.
+    async check(ctx) {
+      const parentId = ctx.job.parentJobId;
+      const material = store.materials.get(ctx.job.materialId);
+      if (!store.jobs.get(parentId) || !material) throw new Error('검수할 세트를 찾지 못했습니다.');
+      const images = pipeline.originalImages(store, material);
+      // Each reviewer on its own subscription, outside the set's budget (as scripts/review-problem.js).
+      const call = (provider, args) => llm.json({ ...args, provider, jobId: ctx.job.id, signal: ctx.signal, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }) });
+      const maxFix = ctx.job.options?.fix ? (ctx.job.options.rounds ?? 2) : 0;
+      const rounds = [];
+      let record = null;
+      const save = (rec) => setCheck.writeCheck(config.dataDir, parentId, { ...rec, rounds, jobId: ctx.job.id, fix: maxFix > 0, running: true });
       try {
-        await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: ctx.job.feedback, previous, examples });
-      } catch (e) {
-        item.status = 'failed'; item.error = e.message; saveParent(); throw e;
+        for (let round = 0; ; round++) {
+          ctx.log(round ? `고친 세트를 다시 검수하는 중 (${round + 1}번째 검수)` : 'Claude·Gemini가 세트를 검수하는 중');
+          record = await setCheck.reviewSet({ store, set: store.jobs.get(parentId), call, images, save });
+          const errors = Object.entries(record.reviews).filter(([, v]) => v.error);
+          if (errors.length === Object.keys(record.reviews).length) throw new Error(`검수하지 못했습니다: ${errors.map(([p, v]) => `${setCheck.NAME[p] || p} ${v.error}`).join(' / ')}`);
+          const fails = setCheck.failing(record);
+          const issues = setCheck.analysisIssues(record);
+          const step = { at: record.at, scores: Object.fromEntries(Object.entries(record.checklist.models).map(([p, m]) => [p, m.score])), failing: fails.map((f) => f.label), analysisIssues: issues.length };
+          rounds.push(step);
+          ctx.log(`${round + 1}번째 검수: ${fails.length ? `걸린 문제 ${fails.map((f) => f.label).join(', ')}` : '모든 문제 통과'}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);
+          if (round >= maxFix || (!fails.length && !issues.length)) break;
+          if (issues.length) {
+            const parent = store.jobs.get(parentId);
+            const fixed = await pipeline.fixAnalysis(ctx, parent.material, issues);
+            if (fixed.length) { store.jobs.put(parent); step.analysisFixed = fixed; }
+          }
+          step.remade = [];
+          for (const f of fails) {
+            ctx.log(`${f.label}: 검수에서 걸린 ${f.faults.length}건을 고쳐 다시 만드는 중`);
+            await remake(ctx, f.index, setCheck.remakeNote(f));
+            step.remade.push(f.label);
+          }
+          save(record);
+          if (!step.remade.length && !step.analysisFixed) break;
+        }
+      } finally {
+        const last = setCheck.readCheck(config.dataDir, parentId);
+        if (last?.jobId === ctx.job.id) setCheck.writeCheck(config.dataDir, parentId, { ...last, rounds, running: false });
       }
-      item.regeneratedFrom = ctx.job.id;
-      saveParent();
     },
   };
+
+  // 🔄 다시 만들기 of one problem of a set (a teacher's note, or what the review found), through the final review while made.
+  async function remake(ctx, itemIndex, feedback) {
+    const parent = store.jobs.get(ctx.job.parentJobId);
+    const item = parent?.items?.[itemIndex];
+    if (!item) throw new Error('다시 만들 문제를 찾지 못했습니다.');
+    const previous = { problem: item.problem, solution: item.solution, verification: item.verification, status: item.status, designNote: item.designNote, replacedAt: new Date().toISOString(), feedback,
+    // What the checks could not fix last time: the remake must fix it, with or without a note from the teacher.
+    problems: [...new Set(item.problems || [])], warnings: [...new Set(item.warnings || [])] };
+    item.history = [previous, ...(item.history || [])].slice(0, 3);
+    item.adopted = false; // a new version is reviewed afresh
+    const saveParent = () => store.jobs.put(parent);
+    const sub = { ...ctx, save() { ctx.save(); saveParent(); }, log(m) { ctx.log(m); } };
+    const prior = parent.items.filter((x) => x.index < item.index && x.problem);
+    // The feedback as it is now (not as it was when the set was made — the teacher has usually just added some),
+    // and the variants adopted so far, except this one.
+    const rules = pipeline.pickRules(store, parent.material);
+    const examples = pipeline.adoptedExamples(store, parent.materialId, { jobId: parent.id, index: item.index });
+    try {
+      await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: feedback, previous, examples });
+    } catch (e) {
+      item.status = 'failed'; item.error = e.message; saveParent(); throw e;
+    }
+    item.regeneratedFrom = ctx.job.id;
+    saveParent();
+  }
 
   function pump() {
     while (running.size < concurrency && queue.length) {
@@ -184,6 +235,11 @@ function createJobs({ store, llm, config }) {
     });
   }
 
+  function busyGuard(parent) {
+    const busy = [...running.keys(), ...queue].map((id) => store.jobs.get(id)).find((j) => ['regenerate', 'check'].includes(j?.type) && j.parentJobId === parent.id);
+    if (busy) throw Object.assign(new Error(busy.type === 'check' ? '이 세트를 검수하는 중입니다.' : '이 세트의 다른 문제를 다시 만드는 중입니다.'), { status: 409 });
+  }
+
   return {
     analyze(material, provider = 'deepseek') { return create('analyze', { materialId: material.id, title: material.title, options: { provider } }, 'analyze'); },
     generate({ material, items, rules, options }) {
@@ -191,10 +247,14 @@ function createJobs({ store, llm, config }) {
     },
     regenerate(parent, itemIndex, feedback) {
       if (!FINISHED.has(parent.status)) throw Object.assign(new Error('세트 생성이 끝난 뒤에 다시 만들 수 있습니다.'), { status: 409 });
-      if ([...running.keys()].some((id) => { const j = store.jobs.get(id); return j?.type === 'regenerate' && j.parentJobId === parent.id; })) {
-        throw Object.assign(new Error('이 세트의 다른 문제를 다시 만드는 중입니다.'), { status: 409 });
-      }
+      busyGuard(parent);
       return create('regenerate', { parentJobId: parent.id, itemIndex, feedback, materialId: parent.materialId, title: parent.title, options: { provider: parent.options?.provider || 'deepseek', effort: parent.options?.effort, direction: parent.options?.direction } }, 'regenerate');
+    },
+    // One review at a time per set (each reviewer is a subscription), and no remake while it runs.
+    check(parent, { fix = false, rounds = 2 } = {}) {
+      if (parent.type !== 'generate' || !FINISHED.has(parent.status)) throw Object.assign(new Error('세트 생성이 끝난 뒤에 검수할 수 있습니다.'), { status: 409 });
+      busyGuard(parent);
+      return create('check', { parentJobId: parent.id, materialId: parent.materialId, title: parent.title, options: { provider: parent.options?.provider || 'deepseek', effort: parent.options?.effort, direction: parent.options?.direction, fix, rounds } }, 'generate');
     },
     resume(job) {
       if (!['interrupted', 'failed', 'cancelled'].includes(job.status) || job.type !== 'generate') throw Object.assign(new Error('이어서 진행할 수 없는 작업입니다.'), { status: 409 });

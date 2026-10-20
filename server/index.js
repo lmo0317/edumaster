@@ -15,6 +15,7 @@ const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLear
 const { normalizeStages, buildItems } = require('./plan');
 const learningMap = require('./learning-map');
 const pipeline = require('./pipeline');
+const setCheck = require('./set-check');
 const prompts = require('./prompts');
 const harness = require('./harness');
 const reviewCriteria = () => { try { return fs.readFileSync(require('./final-review').CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## A\.)/, ''); } catch { return ''; } };
@@ -92,10 +93,21 @@ function createApp(options = {}) {
   const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, analysisFeedbackCount: rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id && stageOf(r) === 'analysis').length, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
     feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
   // 문제 검수 (scripts/review-problem.js): Claude and Gemini's independent review of a set, kept in data/reviews/<set id>.json.
-  const checkFile = (id) => path.join(cfg.dataDir, 'reviews', `${id}.json`);
-  const readCheck = (id) => { try { return JSON.parse(fs.readFileSync(checkFile(id), 'utf8')); } catch { return null; } };
+  const checkFile = (id) => setCheck.checkPath(cfg.dataDir, id);
+  const readCheck = (id) => {
+    const r = setCheck.readCheck(cfg.dataDir, id);
+    // A review from before the checklist was kept with it (scripts/review-problem.js, 2026-10-20) gets it worked out,
+    // each problem's kind (the final one is held to a new structure) from the set.
+    if (r?.done && !r.checklist) {
+      const job = store.jobs.get(id);
+      for (const it of r.set?.items || []) it.kind = it.kind || job?.items?.find((x) => x.label === it.label)?.stage?.kind || '';
+      r.checklist = setCheck.checklist(r);
+    }
+    return r;
+  };
   const checkSummary = (r) => r && {
-    at: r.at, done: Boolean(r.done),
+    at: r.at, done: Boolean(r.done), running: Boolean(r.running), fix: Boolean(r.fix), rounds: (r.rounds || []).length,
+    scores: Object.fromEntries(Object.entries(r.checklist?.models || {}).map(([p, m]) => [p, m.score])),
     models: Object.fromEntries(Object.entries(r.reviews || {}).map(([p, v]) => {
       const items = v.review?.items || [];
       return [p, v.error ? { error: true } : { analysis: v.review?.analysis?.verdict || '', use: items.filter((x) => x.verdict === 'use').length,
@@ -533,6 +545,10 @@ function createApp(options = {}) {
   route('GET', /^\/api\/jobs\/([a-f0-9]+)\/check$/, (req, res, [id]) => {
     const job = getJob(id);
     return { jobId: id, materialId: job.materialId, materialTitle: store.materials.get(job.materialId)?.title || job.title, check: readCheck(id) };
+  });
+  route('POST', /^\/api\/jobs\/([a-f0-9]+)\/check$/, async (req, res, [id]) => {
+    const body = await readBody(req, 1024);
+    return { jobId: jobs.check(getJob(id), { fix: body.fix === true }).id };
   });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/cancel$/, (req, res, [id]) => { getJob(id); return { cancelled: jobs.cancel(id) }; });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/resume$/, (req, res, [id]) => ({ jobId: jobs.resume(getJob(id)).id }));
