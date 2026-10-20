@@ -55,7 +55,10 @@ const result = {
   set: set ? { id: set.id, createdAt: set.createdAt, provider: set.options?.provider, items: items.map((it) => ({ label: it.label, status: it.status, stage: range(it.stage), problem: it.problem.text, choices: it.problem.choices || [], answer: it.problem.answer, solution: (it.solution?.steps || []).map((x) => ({ step: x.step, title: x.title, work: x.work })) })) } : null,
   at: new Date().toISOString(), reviews: {}, done: false,
 };
-const save = () => fs.writeFileSync(out, JSON.stringify(result, null, 1));
+// The set's page shows the review (#/j/<set id>/check), from data/reviews/<set id>.json.
+const kept = set ? path.join(cfg.dataDir, 'reviews', `${set.id}.json`) : '';
+if (kept) fs.mkdirSync(path.dirname(kept), { recursive: true });
+const save = () => { const s = JSON.stringify(result, null, 1); fs.writeFileSync(out, s); if (kept) fs.writeFileSync(kept, s); };
 save();
 (async () => {
   await Promise.all(providers.map(async (p) => {

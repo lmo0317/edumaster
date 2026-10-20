@@ -211,6 +211,7 @@
     try {
       // Each original problem is a workspace (reading, its own feedback, variant sets); the home page lists them.
       if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await materialView(m[1], alive); }
+      else if ((m = /^#\/j\/([a-f0-9]+)\/check/.exec(hash))) { setNav('home'); await checkView(m[1]); }
       else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await jobView(m[1], alive); }
       else if (hash.startsWith('#/new')) { setNav('home'); await homeView(); }
       else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
@@ -759,7 +760,8 @@
         : [`<span class="set-pill${adopted ? ' ok' : ''}">채택 ${adopted}/${items.length}</span>`,
           review && `<span class="set-pill bad">정답 확인 필요 ${review}</span>`,
           legacy && `<span class="set-pill bad">검토 필요 ${legacy}</span>`,
-          failed && `<span class="set-pill bad">못 만듦 ${failed}</span>`].filter(Boolean).join('');
+          failed && `<span class="set-pill bad">못 만듦 ${failed}</span>`,
+          checkPill(j)].filter(Boolean).join('');
       const meta = [fmtTime(j.createdAt), esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'),
         `학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''} 반영`,
         s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : ''].filter(Boolean).join(' · ');
@@ -994,6 +996,51 @@
   }
 
   // ------------------------------------------------------------------ job
+  // 문제 검수 (scripts/review-problem.js): Claude and Gemini, given the original's images, solve each variant themselves
+  // and judge it against scripts/review-criteria.md. The set card shows their verdicts; #/j/<id>/check shows the review.
+  const CHECK_MODEL = { 'claude-cli': 'Claude', 'agy-cli': 'Gemini', 'codex-cli': 'GPT' };
+  const CHECK_VERDICT = { use: ['사용', 'ok'], fix: ['수정', 'warn'], reject: ['폐기', 'bad'] };
+  const CHECK_SEV = { high: ['high', 'bad'], mid: ['mid', 'warn'], low: ['low', ''] };
+  function checkPill(j) {
+    const c = j.check;
+    if (!c) return '';
+    const models = Object.entries(c.models || {});
+    const all = models.length && models.every(([, v]) => !v.error && v.total && v.use === v.total && v.answersOk === v.total && v.analysis === 'ok');
+    const text = models.map(([p, v]) => `${CHECK_MODEL[p] || p} ${v.error ? '실패' : `사용 ${v.use}/${v.total}`}`).join(' · ');
+    return `<a class="set-pill ${!c.done ? 'run' : all ? 'ok' : 'warn'}" href="#/j/${j.id}/check" title="Claude·Gemini 검수 결과">${!c.done ? '<i class="spin"></i>검수 중' : `검수 ${esc(text)}`}</a>`;
+  }
+  async function checkView(id) {
+    const r = await api('GET', `/api/jobs/${id}/check`);
+    const c = r.check;
+    const models = Object.keys(c?.reviews || {});
+    const head = `<div class="lt jt-head"><a class="lt-back" href="#/m/${r.materialId}">‹ ${esc(r.materialTitle)}</a>
+      <div class="lt-head"><h1>검수 결과</h1><div class="name-btns"><a class="btn small" href="#/j/${id}">세트 열기</a></div></div>
+      <p class="lt-meta">Claude와 Gemini가 원본 이미지와 대조해 분석과 변형 문제를 검토하고, 문제마다 직접 풀어 정답을 확인했습니다. 기준은 검수 기준(review-criteria.md) 하나입니다.${c ? ` · ${fmtTime(c.at)}` : ''}</p></div>`;
+    if (!c) { view.innerHTML = head + '<div class="panel muted">이 세트는 아직 검수하지 않았습니다.</div>'; return; }
+    const rv = (p) => c.reviews[p]?.review;
+    const issues = (list) => (list || []).length
+      ? `<ul class="ck-issues">${list.map((x) => `<li>${chip(CHECK_SEV, x.severity)} <b>${esc(x.rule || '')}</b>${x.where ? ` <span class="muted">${esc(x.where)}</span>` : ''} ${inlineRich(x.detail || '')}</li>`).join('')}</ul>`
+      : '<span class="muted">지적 없음</span>';
+    const verdict = (it) => (it ? `${chip(CHECK_VERDICT, it.verdict)} ${it.answerOk === false ? '<span class="chip bad">정답 다름</span>' : '<span class="chip ok">정답 맞음</span>'}` : '<span class="muted">—</span>');
+    const items = c.set?.items || [];
+    const failed = models.filter((p) => c.reviews[p].error);
+    const table = `<table class="rules ck-table"><thead><tr><th>문제</th><th>표시된 정답</th>${models.map((p) => `<th>${esc(CHECK_MODEL[p] || p)}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>원본 분석</td><td></td>${models.map((p) => `<td>${rv(p) ? chip({ ok: ['이상 없음', 'ok'], issues: ['지적 있음', 'warn'] }, rv(p).analysis?.verdict) : '<span class="chip bad">실패</span>'}</td>`).join('')}</tr>
+      ${items.map((it, i) => `<tr><td>${esc(it.label)}</td><td>${'①②③④⑤'[it.answer - 1] || esc(it.answer)}</td>${models.map((p) => `<td>${verdict(rv(p)?.items?.[i])}</td>`).join('')}</tr>`).join('')}
+    </tbody></table>`;
+    const part = (title, body) => `<section class="panel"><h2>${title}</h2>${body}</section>`;
+    const perModel = (pick) => models.filter((p) => rv(p)).map((p) => `<div class="ck-model"><h3>${esc(CHECK_MODEL[p] || p)}</h3>${pick(rv(p), p)}</div>`).join('');
+    view.innerHTML = head
+      + (!c.done ? '<div class="note info"><i class="spin"></i> 검수가 아직 끝나지 않았습니다. 끝난 모델의 결과만 보입니다.</div>' : '')
+      + (failed.length ? `<div class="note bad">${failed.map((p) => `${esc(CHECK_MODEL[p] || p)} 검수 실패: ${esc(c.reviews[p].error)}`).join('<br>')}</div>` : '')
+      + part('한눈에 보기', table)
+      + part('총평', perModel((x) => `<p>${inlineRich(x.summary || '')}</p>`))
+      + part('원본 분석', perModel((x) => issues(x.analysis?.issues)))
+      + items.map((it, i) => part(esc(it.label), `<p class="muted small">${esc(it.stage || '')} · 표시된 정답 ${'①②③④⑤'[it.answer - 1] || esc(it.answer)}</p>`
+        + perModel((x) => { const v = x.items?.[i]; return v ? `<p>${verdict(v)} <span class="muted">검수자 풀이:</span> ${inlineRich(v.myAnswer || '')}</p>${issues(v.issues)}` : '<span class="muted">결과 없음</span>'; }))).join('')
+      + `<p class="muted small">${models.map((p) => { const x = c.reviews[p]; return `${esc(CHECK_MODEL[p] || p)} ${x.seconds || 0}초${x.usage?.total ? ` · ${Number(x.usage.total).toLocaleString()}토큰` : ''}`; }).join(' · ')}</p>`;
+  }
+
   async function jobView(id, alive) {
     let job = await api('GET', '/api/jobs/' + id);
     if (job.type === 'regenerate') { location.hash = '#/j/' + job.parentJobId; return; }
@@ -1064,7 +1111,7 @@
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
-        <div class="name-btns"><a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
+        <div class="name-btns">${job.check ? `<a class="btn small" href="#/j/${job.id}/check">검수 결과</a>` : ''}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>

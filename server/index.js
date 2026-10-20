@@ -91,9 +91,20 @@ function createApp(options = {}) {
   const questionLine = (text) => String(text || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('|')).pop()?.slice(0, 160) || '';
   const materialSummary = (m, rules = store.rules.all()) => ({ id: m.id, title: m.title, analysisFeedbackCount: rules.filter((r) => r.scope === 'material' && r.source?.materialId === m.id && stageOf(r) === 'analysis').length, subject: m.subject, topic: m.topic, status: m.status, createdAt: m.createdAt, stepCount: m.steps?.length || 0, solutionSource: m.solutionSource, images: m.images, error: m.error,
     feedbackCount: rules.filter((r) => r.scope === 'material' && r.status === 'approved' && r.source?.materialId === m.id).length });
+  // 문제 검수 (scripts/review-problem.js): Claude and Gemini's independent review of a set, kept in data/reviews/<set id>.json.
+  const checkFile = (id) => path.join(cfg.dataDir, 'reviews', `${id}.json`);
+  const readCheck = (id) => { try { return JSON.parse(fs.readFileSync(checkFile(id), 'utf8')); } catch { return null; } };
+  const checkSummary = (r) => r && {
+    at: r.at, done: Boolean(r.done),
+    models: Object.fromEntries(Object.entries(r.reviews || {}).map(([p, v]) => {
+      const items = v.review?.items || [];
+      return [p, v.error ? { error: true } : { analysis: v.review?.analysis?.verdict || '', use: items.filter((x) => x.verdict === 'use').length,
+        answersOk: items.filter((x) => x.answerOk !== false).length, total: items.length }];
+    })),
+  };
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
-    parentJobId: j.parentJobId, itemIndex: j.itemIndex, modelLabel: j.modelLabel,
+    parentJobId: j.parentJobId, itemIndex: j.itemIndex, modelLabel: j.modelLabel, check: j.type === 'generate' ? checkSummary(readCheck(j.id)) : null,
     items: (j.items || []).map((i) => ({ index: i.index, label: i.label, status: i.status, adopted: Boolean(i.adopted), preview: questionLine(i.problem?.text),
       // 남은 점 in the problem itself (not only the solution's wording), for the list's state.
       problemLeft: (i.warnings || []).some((w) => !/^해설: /.test(w)), designed: Boolean(i.design) })),
@@ -517,7 +528,11 @@ function createApp(options = {}) {
     // A set made before its review was kept as a checklist (2026-10-19) has it worked out from the kept review.
     const items = (job.items || []).map((it) => (it.finalReview && !it.finalReview.checklist
       ? { ...it, finalReview: { ...it.finalReview, checklist: finalReviewRows(it.finalReview.review, { final: it.stage?.kind === 'twin' }) } } : it));
-    return { ...job, items, materialTitle: store.materials.get(job.materialId)?.title || job.title, reviewChecklist: REVIEW_CHECKLIST, reviewCriteria: reviewCriteria() };
+    return { ...job, items, check: checkSummary(readCheck(id)), materialTitle: store.materials.get(job.materialId)?.title || job.title, reviewChecklist: REVIEW_CHECKLIST, reviewCriteria: reviewCriteria() };
+  });
+  route('GET', /^\/api\/jobs\/([a-f0-9]+)\/check$/, (req, res, [id]) => {
+    const job = getJob(id);
+    return { jobId: id, materialId: job.materialId, materialTitle: store.materials.get(job.materialId)?.title || job.title, check: readCheck(id) };
   });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/cancel$/, (req, res, [id]) => { getJob(id); return { cancelled: jobs.cancel(id) }; });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/resume$/, (req, res, [id]) => ({ jobId: jobs.resume(getJob(id)).id }));
@@ -525,6 +540,7 @@ function createApp(options = {}) {
     const job = getJob(id);
     if (!FINISHED.has(job.status)) throw fail(409, '진행 중인 작업은 먼저 취소해 주세요.');
     store.jobs.remove(id);
+    fs.rmSync(checkFile(id), { force: true });
     return { ok: true };
   });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/items\/(\d+)\/regenerate$/, async (req, res, [id, index]) => {

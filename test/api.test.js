@@ -603,3 +603,30 @@ test('학습 현황: per set (made, passed, adopted, feedback then, kept/broken)
     assert.equal(row.kept + row.broken <= row.used, true);
   } finally { await s.close(); }
 });
+
+test('a set\'s Claude·Gemini review (data/reviews/<set id>.json) is shown on its set card and its own page', async () => {
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
+    const created = await s.call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
+    await s.waitJob(created.data.jobId);
+    const id = created.data.material.id;
+    const job = await s.waitJob((await s.call('POST', '/api/generations', { materialId: id, mode: 'integrated' })).data.jobId);
+    assert.equal((await s.call('GET', `/api/jobs/${job.id}/check`)).data.check, null);
+    assert.equal((await s.call('GET', `/api/materials/${id}`)).data.jobs.find((j) => j.id === job.id).check, null);
+    const item = (verdict, answerOk = true) => ({ label: 'x', verdict, answerOk, issues: [] });
+    fs.mkdirSync(path.join(s.dataDir, 'reviews'));
+    fs.writeFileSync(path.join(s.dataDir, 'reviews', `${job.id}.json`), JSON.stringify({ at: '2026-10-20T00:00:00Z', done: true, set: { items: [] }, reviews: {
+      'claude-cli': { seconds: 60, review: { analysis: { verdict: 'ok', issues: [] }, items: [item('use'), item('use'), item('fix', false)], summary: '' } },
+      'agy-cli': { error: '한도', seconds: 3 },
+    } }));
+    const card = (await s.call('GET', `/api/materials/${id}`)).data.jobs.find((j) => j.id === job.id).check;
+    assert.deepEqual(card.models, { 'claude-cli': { analysis: 'ok', use: 2, answersOk: 2, total: 3 }, 'agy-cli': { error: true } });
+    assert.equal((await s.call('GET', `/api/jobs/${job.id}`)).data.check.done, true);
+    const page = (await s.call('GET', `/api/jobs/${job.id}/check`)).data;
+    assert.equal(page.materialId, id);
+    assert.equal(page.check.reviews['claude-cli'].review.items.length, 3);
+    assert.equal((await s.call('DELETE', `/api/jobs/${job.id}`)).status, 200);
+    assert.ok(!fs.existsSync(path.join(s.dataDir, 'reviews', `${job.id}.json`)), 'deleted with its set');
+  } finally { await s.close(); }
+});
