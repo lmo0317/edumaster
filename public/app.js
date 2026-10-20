@@ -210,7 +210,8 @@
     let m;
     try {
       // Each original problem is a workspace (reading, its own feedback, variant sets); the home page lists them.
-      if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await materialView(m[1], alive); }
+      if ((m = /^#\/m\/([a-f0-9]+)\/history/.exec(hash))) { setNav('home'); await historyView(m[1], alive); }
+      else if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await materialView(m[1], alive); }
       else if ((m = /^#\/j\/([a-f0-9]+)\/check/.exec(hash))) { setNav('home'); await checkView(m[1]); }
       else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await jobView(m[1], alive); }
       else if (hash.startsWith('#/new')) { setNav('home'); await homeView(); }
@@ -395,14 +396,23 @@
   // reached yet, and one line on what is happening now (with a spinner while the server works) or what to do next.
   const FLOW = [['upload', '원본'], ['read', '분석'], ['make', '변형 생성'], ['review', '검토·채택']];
   const isBusy = (j) => ['queued', 'running'].includes(j.status);
-  const setsOf = (m) => (m.jobs || []).filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const trainsOf = (m) => (m.jobs || []).filter((j) => j.type === 'train').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // The problem page lists the sets made; a 학습 반복's sets on the way to its target are its record (#/m/<id>/history),
+  // and only the set that reached it is listed with the rest.
+  const listedSets = (jobs) => {
+    const reached = new Set(jobs.filter((j) => j.type === 'train').flatMap((t) => (t.rounds || []).filter((r) => r.pass).map((r) => r.setId)));
+    return jobs.filter((j) => j.type === 'generate' && (!j.trainJobId || reached.has(j.id))).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  };
+  const setsOf = (m) => listedSets(m.jobs || []);
   function flowState(m) {
     const gens = setsOf(m);
     const making = gens.find(isBusy);
+    const training = trainsOf(m).find(isBusy);
     const regen = (m.jobs || []).find((j) => j.type === 'regenerate' && isBusy(j));
     const st = { upload: { state: 'done', note: '' } };
     st.read = m.status === 'analyzing' ? { state: 'run', note: '분석 중' } : m.status === 'failed' || !m.steps ? { state: 'bad', note: '분석 실패' } : { state: 'done', note: `STEP ${m.steps.length}개` };
-    if (making) {
+    if (training && !making) st.make = { state: 'run', note: '학습 반복 중', done: '' };
+    else if (making) {
       const items = making.items || [];
       const made = items.filter((i) => ['passed', 'warning', 'needs_review', 'failed'].includes(i.status)).length;
       st.make = { state: 'run', note: making.status === 'queued' ? '순서 기다리는 중' : `만드는 중 ${made}/${items.length}`, done: `${made}/${items.length} 완성` };
@@ -590,7 +600,7 @@
     if (!['read', 'make', 'list'].includes(stage)) stage = gens.length ? 'list' : 'read';
     view.innerHTML = `<div class="lt">
       <div class="lt-title" id="m-name">
-        <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><div class="name-btns"><button class="small" id="name-edit">✏️ 제목 수정</button><button class="small danger" id="del">원본 문제 삭제</button></div></div>
+        <div class="name-show"><div class="name-text"><h1>${esc(m.title)}</h1><p class="lt-meta">${esc([m.subject, m.topic].filter(Boolean).join(' · ')) || '과목·유형 없음'}</p></div><div class="name-btns">${trainsOf(m).length ? `<a class="btn small" href="#/m/${m.id}/history">기록</a>` : ''}<button class="small" id="name-edit">✏️ 제목 수정</button><button class="small danger" id="del">원본 문제 삭제</button></div></div>
         <form class="name-form panel" hidden>
           <div><label for="name-title">제목</label><input type="text" id="name-title" maxlength="120" value="${esc(m.title)}" required></div>
           <div class="name-row"><div><label for="name-subject">과목</label><input type="text" id="name-subject" maxlength="40" value="${esc(m.subject || '')}" placeholder="예: 화학"></div>
@@ -737,7 +747,7 @@
   }
   // 학습 반복 (jobs.js 'train'): each set it made, both reviewers' scores, and what it changed in the learning.
   function trainPanel(m) {
-    const trains = (m.jobs || []).filter((j) => j.type === 'train').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
+    const trains = trainsOf(m);
     const KIND = { revise: '고침', remove: '뺌', add: '더함' };
     return trains.map((t) => {
       const busy = isBusy(t);
@@ -746,24 +756,39 @@
       const rows = (t.rounds || []).map((r, k) => `<tr><td><a href="#/j/${r.setId}">${k + 1}번째 세트</a></td>
         <td>${Object.entries(r.scores || {}).map(([p, s]) => `${CHECK_MODEL[p] || p} <b>${s ?? '실패'}%</b>`).join(' · ')} <a class="muted small" href="#/j/${r.setId}/check">검수 결과</a></td>
         <td>${r.pass ? '<span class="chip ok">통과</span>' : r.failing?.length ? `걸림: ${r.failing.map(esc).join(', ')}` : '점수 미달'}${r.analysisIssues ? ` · 분석 지적 ${r.analysisIssues}` : ''}</td>
-        <td class="small">${(r.learned || []).map((c) => `<div>${KIND[c.kind]}: ${esc(c.text || c.before || '')}</div>`).join('') || (r.pass ? '' : '<span class="muted">—</span>')}</td></tr>`).join('');
+        <td class="small">${(r.learned || []).map((c) => `<div>${KIND[c.kind]}: ${inlineRich(c.text || c.before || '')}</div>`).join('') || (r.pass ? '' : '<span class="muted">—</span>')}</td></tr>`).join('');
       return `<article class="panel train-card"><header class="set-head"><div class="set-title"><b>학습 반복</b><span class="set-meta">목표 ${t.target}점 · 최대 ${t.maxRounds}세트 · ${fmtTime(t.createdAt)}</span></div>
         <div class="set-tally">${state}</div>${busy ? `<div class="set-acts"><button class="small danger" data-cancel-train="${t.id}">멈추기</button></div>` : ''}</header>
         ${rows ? `<div class="table-wrap"><table class="rules ck-table train-table"><thead><tr><th>세트</th><th>검수 점수</th><th>판정</th><th>고친 학습</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted small">첫 세트를 만드는 중입니다.</p>'}</article>`;
     }).join('');
   }
+  // 기록: a problem's 학습 반복 — every set it made, both reviewers' scores, what it changed in the learning.
+  async function historyView(id, alive) {
+    const paint = (m) => {
+      view.innerHTML = `<div class="lt"><div class="lt-head"><h1>기록 · ${esc(m.title)}</h1><div class="name-btns"><a class="btn small" href="#/m/${m.id}">문제로 돌아가기</a></div></div>
+        <p class="muted small">학습 반복이 만든 세트와 검수 점수, 세트 사이에 고친 학습입니다. 목표에 닿은 세트만 문제 리스트에 올라갑니다.</p>
+        ${trainPanel(m) || '<div class="panel"><p class="muted">학습 반복 기록이 없습니다.</p></div>'}</div>`;
+      $$('[data-cancel-train]').forEach((b) => b.addEventListener('click', guard(async () => {
+        await api('POST', `/api/jobs/${b.dataset.cancelTrain}/cancel`);
+        toast('학습 반복을 멈췄습니다.');
+      })));
+    };
+    let m = await api('GET', '/api/materials/' + id);
+    paint(m);
+    await poll(alive, () => (trainsOf(m).some(isBusy) ? 5000 : 30000), async () => {
+      m = await api('GET', '/api/materials/' + id);
+      if (alive()) paint(m);
+      return !trainsOf(m).some(isBusy);
+    });
+  }
   function variantsPanel(m, gens, on, learning) {
     const el = $('#variants');
     if (!el) return;
-    const trains = trainPanel(m);
-    const bindTrain = () => $$('[data-cancel-train]', el).forEach((b) => b.addEventListener('click', guard(async () => {
-      await api('POST', `/api/jobs/${b.dataset.cancelTrain}/cancel`);
-      toast('학습 반복을 멈췄습니다.');
-    })));
+    const running = trainsOf(m).find(isBusy);
+    const trains = running ? `<p class="set-history"><i class="spin"></i>학습 반복 중 — 목표에 닿은 세트만 여기에 올라옵니다. <a href="#/m/${m.id}/history">기록 보기</a></p>` : '';
     if (!gens.length) {
       el.innerHTML = trains + '<div class="panel set-empty"><p>아직 만든 세트가 없습니다.</p><button class="small primary" data-go-make>문제 생성으로 가기</button></div>';
       $('[data-go-make]', el).addEventListener('click', () => $('[data-stage-tab="make"]')?.click());
-      bindTrain();
       return;
     }
     const stats = new Map(learning.sets.map((s) => [s.id, s]));
@@ -787,7 +812,7 @@
           checkPill(j)].filter(Boolean).join('');
       const meta = [fmtTime(j.createdAt), esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'),
         `학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''} 반영`,
-        s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : '', j.trainRound ? `학습 반복 ${j.trainRound}번째` : ''].filter(Boolean).join(' · ');
+        s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : ''].filter(Boolean).join(' · ');
       return `<article class="panel set-card${busy ? ' busy' : ''}">
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
@@ -811,7 +836,6 @@
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
     // 검수하기 / 검수하고 고치기 (server/set-check.js): started here, followed on the set's review page.
     bindCheckButtons(el);
-    bindTrain();
     $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
       const j = gens.find((x) => x.id === b.dataset.delSet);
       if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
@@ -1018,7 +1042,7 @@
       const train = value('train') ? { target: Number(value('train')), maxRounds: 4 } : undefined;
       const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider'), train });
       try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
-      if (r.trainJobId) { toast('학습 반복을 시작했습니다. 문제 리스트에서 진행을 볼 수 있습니다.'); $('[data-stage-tab="list"]')?.click(); await liveMaterial?.side?.(); return; }
+      if (r.trainJobId) { toast('학습 반복을 시작했습니다. 목표에 닿은 세트가 문제 리스트에 올라옵니다.'); location.hash = `#/m/${m.id}/history`; return; }
       location.hash = '#/j/' + r.jobId;
     }));
   }
@@ -1147,7 +1171,7 @@
       job = await api('GET', '/api/jobs/' + id);
       const all = await api('GET', '/api/jobs?materialId=' + job.materialId);
       regenerating = all.filter((j) => j.type === 'regenerate' && j.parentJobId === id && ['queued', 'running'].includes(j.status));
-      setNo = all.filter((j) => j.type === 'generate').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).findIndex((j) => j.id === id) + 1;
+      setNo = listedSets(all).reverse().findIndex((j) => j.id === id) + 1;
     };
     await refresh();
     draw();
@@ -1181,7 +1205,7 @@
       : `${items.length}문제 · 채택 ${adopted}${review ? ` · <span class="bad">확인 필요 ${review}</span>` : ''} · ${model}`;
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
-      <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
+      <div class="lt-head"><h1>${no ? `세트 ${no}` : job.trainRound ? `학습 반복 ${job.trainRound}번째 세트` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
         <div class="name-btns">${job.check ? `<a class="btn small" href="#/j/${job.id}/check">${job.check.running ? '검수 중' : '검수 결과'}</a>` : ''}${busy || job.check?.running ? '' : checkButtons(job.id)}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}

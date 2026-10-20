@@ -403,7 +403,10 @@ function createApp(options = {}) {
     const m = getMaterial(id);
     const all = store.rules.all();
     const kept = keptByRule();
-    const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.materialId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    // The sets the problem page lists (app.js listedSets): a 학습 반복's sets only once one reached its target.
+    const mine = store.jobs.all().filter((j) => j.materialId === id);
+    const reached = new Set(mine.filter((j) => j.type === 'train').flatMap((t) => (t.rounds || []).filter((r) => r.pass).map((r) => r.setId)));
+    const sets = mine.filter((j) => j.type === 'generate' && (!j.trainJobId || reached.has(j.id))).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const own = all.filter((r) => r.scope === 'material' && r.source?.materialId === id);
     const ownGen = own.filter((r) => stageOf(r) === 'generation');
     const judged = (list) => ({ kept: list.filter((r) => r.judged?.ok).length, broken: list.filter((r) => r.judged && !r.judged.ok).length });

@@ -989,3 +989,4 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .train-card { margin-bottom: 12px; }
 .train-table td { white-space: normal; vertical-align: top; }
 .train-table td:first-child { white-space: nowrap; }
+.set-history { margin: 0 0 12px; font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
