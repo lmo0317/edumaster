@@ -203,11 +203,10 @@ function normalizeSolution(solution) {
   };
 }
 
-// serverAnswer: the server computed the choices and answer (a molar-mass table) and puts them in itself.
-function normalizeGenerated(data, { serverAnswer = false } = {}) {
+function normalizeGenerated(data) {
   const problem = normalizeProblem(data?.problem);
   if (problem.text.length < 5) throw Object.assign(new Error('모델이 문제 본문을 만들지 않았습니다.'), { status: 422 });
-  if (problem.choices.length && !problem.answer && !serverAnswer) throw Object.assign(new Error('모델이 정답 번호를 주지 않았습니다.'), { status: 422 });
+  if (problem.choices.length && !problem.answer) throw Object.assign(new Error('모델이 정답 번호를 주지 않았습니다.'), { status: 422 });
   return {
     problem,
     solution: normalizeSolution(data?.solution),
@@ -526,14 +525,6 @@ async function sourceChecks(material) {
     }
   } else {
     checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: 'unknown', evidence: '분석 결과에 검산 프로그램이 없습니다.' });
-  }
-  // A molar-mass original is worked by the server's own code; it decides over the model's check program, whose
-  // arithmetic slipped twice on a right transcription (2026-10-13).
-  const molarCheck = harness.molarSourceCheck(material);
-  if (molarCheck) {
-    const c = checks.find((x) => x.id === 'source-calculation');
-    const model = c.state === 'pass' ? '' : ` (모델 검산 프로그램: ${c.evidence})`;
-    Object.assign(c, { state: molarCheck.ok ? 'pass' : 'fail', runError: false, evidence: molarCheck.evidence + (molarCheck.ok ? model : '') });
   }
   // A ㄱㄴㄷ problem whose solution judges each statement (|보기 분석|): the transcription must keep those judgments in
   // the last STEP, or every variant solution is compared with a teacher solution that has none (2026-10-05: Qwen's
@@ -874,37 +865,25 @@ const solutionOnly = (c) => SOLUTION_CHECKS.has(c.id) || (c.id === 'format' && c
 
 const flat = (s) => harness.plain(s).replace(/\\left|\\right|\s/g, '');
 /** Values the outline derives (the last side of each "$…=…$") that the written solution must still show. */
-// trusted: on one of the server's molar-mass tables, the values the server computed (hidden values, b, the answer) are
-// required instead — the outline's own arithmetic was wrong in two of two runs (Qwen 3.6's 1/2 and 20 for 2/3 and 30,
-// and "B 10m mol" on a row where B was all used, 2026-10-13 runs 8 and 9) while the writer had it right.
-function missingValues(outline, solution, trusted = null) {
+function missingValues(outline, solution) {
   const text = flat(solution.steps.map((s) => s.work).join('\n') + '\n' + solution.summary);
-  const values = new Set(trusted ? trusted.map(flat) : []);
-  if (!trusted) {
-    for (const s of outline.steps) {
-      for (const m of String(s.work).matchAll(/\$([^$]+)\$/g)) {
-        const v = flat(m[1].split('=').pop());
-        if (/\d/.test(v) && v.length <= 24) values.add(v);
-      }
+  const values = new Set();
+  for (const s of outline.steps) {
+    for (const m of String(s.work).matchAll(/\$([^$]+)\$/g)) {
+      const v = flat(m[1].split('=').pop());
+      if (/\d/.test(v) && v.length <= 24) values.add(v);
     }
   }
   return [...values].filter((v) => v && !text.includes(v));
 }
 
 /** The job's own model writes the outline out as a full solution; returns warnings for the teacher. */
-async function writeSolution(ctx, item, material, rules, fixes = [], trusted = null, purpose = 'write-solution') {
-  // The server's values go to the writer as they went to the designer (Qwen 3.8 rewrote a final's STEP 1 without them
-  // and got B 14w for 8w, 2026-10-13 round 6). Not kept on the problem.
-  item.serverFacts = ctx.serverFacts?.(item) || null;
-  try { return await writeOnce(ctx, item, material, rules, fixes, trusted, purpose); } finally { delete item.serverFacts; }
-}
-
-async function writeOnce(ctx, item, material, rules, fixes, trusted, purpose) {
+async function writeSolution(ctx, item, material, rules, fixes = [], purpose = 'write-solution') {
   ctx.log(`${item.label}: 해설 ${purpose === 'polish-solution' ? '다듬는' : '풀어 쓰는'} 중${fixes.length ? ` (고칠 점 ${fixes.length}건)` : ''}${ctx.routes?.[purpose] ? ` (${ctx.routes[purpose]})` : ''}`);
   let written = null;
   let missing = [];
   for (let attempt = 0; attempt < 2 && (!written || missing.length); attempt++) {
-    const notes = [...fixes, ...missing.map((v) => (trusted ? `서버가 계산한 값 ${v}가 해설에 없습니다. 이 값이 나오게 쓴다.` : `출제자 요지의 값 ${v}가 해설에 없습니다. 요지의 판정과 값을 그대로 쓴다.`))];
+    const notes = [...fixes, ...missing.map((v) => `출제자 요지의 값 ${v}가 해설에 없습니다. 요지의 판정과 값을 그대로 쓴다.`)];
     let data;
     try {
       ({ data } = await ctx.llm.json({
@@ -919,11 +898,11 @@ async function writeOnce(ctx, item, material, rules, fixes, trusted, purpose) {
     const solution = normalizeSolution(data?.solution);
     if (!solution.steps.length) continue;
     written = solution;
-    missing = missingValues(item.outline, solution, trusted);
+    missing = missingValues(item.outline, solution);
   }
   if (!written) { item.solution = item.outline; return ['해설 풀어쓰기에 실패해 출제자의 요지를 해설로 둡니다.']; }
   item.solution = stripSummaries(written, material);
-  return missing.length ? [`풀어 쓴 해설에 ${trusted ? '서버가 계산한 값' : '출제자 요지의 값'}(${missing.join(', ')})이 보이지 않습니다.`] : [];
+  return missing.length ? [`풀어 쓴 해설에 출제자 요지의 값(${missing.join(', ')})이 보이지 않습니다.`] : [];
 }
 
 /** The designer checks a disagreeing solver's work: is the problem at fault, or the solver? */
@@ -982,10 +961,6 @@ async function addSolutionReview(ctx, item, material, rules, check) {
 async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = null) {
   if (fitSolutionToStage(item)) ctx.log(`${item.label}: 범위 밖 STEP으로 쓴 정답 계산을 마지막 STEP에 합침`);
   harness.renderFrames(material, item);
-  // A problem on one of the server's molar-mass tables is checked against the server's own calculation, not the
-  // designer's program (Qwen 3.6's programs failed on syntax the math engine does not take, 2026-10-12).
-  if (harness.molarServe(material, item, mode, prior)) ctx?.log?.(`${item.label}: 서버가 계산한 표·발문·선택지${item.serverWritten ? '·해설' : ''}로 맞춤`);
-  item.verificationSpec = harness.molarSpec(material, item, mode, prior) || item.verificationSpec;
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
@@ -1030,13 +1005,9 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // The table-shape check is a rough stand-in for the solver's reading of the five structure criteria: a final that keeps
   // the original's table but changes the reasoning (another reference experiment, a new quantity asked) is the
   // solver's call, or the two would send it back and forth.
-  // A molar-mass final's structure is counted by code (harness.checkMolar): the solver's own count of the same five
-  // items went both ways on alike finals (R10~R14, 2026-10-10~12: 14 of 15 agree with the code, the 15th's note
-  // contradicted itself) and sent finals round the repair loop.
-  const molarChanges = integratedFinal ? harness.molarChanges(material, item) : null;
   const codeChecks = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)]
-    .filter((c) => !(c.id === 'variant-shape' && (blind.variation === 'structural' || molarChanges)));
-  const numbersOnly = molarChanges ? false : blind.variation === 'numbers-only';
+    .filter((c) => !(c.id === 'variant-shape' && blind.variation === 'structural'));
+  const numbersOnly = blind.variation === 'numbers-only';
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
     if (solutionOnly(c) && c.severity !== 'hard') rewriteNotes.push(`${c.label}: ${c.evidence}`);
@@ -1044,11 +1015,6 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     else soft.push(`${c.label}: ${c.evidence}`);
   }
   // Teacher feedback: problems carried conditions nothing used, and the "integrated" final only changed numbers.
-  // On one of the server's tables a hidden cell (x, z) is an unknown the solution works out, not a given condition, and
-  // the server has checked that every given value is used: Opus's solve called a hidden z whose row the question
-  // totals "unused", and the repair that followed printed z's value and left the server's tables (2026-10-13, run 14).
-  const onServerTable = Boolean(item.verificationSpec && harness.molarSpec(material, item, mode, prior));
-  const hiddenCell = (t) => onServerTable && /(^|[^A-Za-z\\])[xz]($|[^A-Za-z])/.test(String(t).replace(/\$/g, ' '));
   // A problem rule the independent solver finds broken goes back for repair like any other design fault (in a lean
   // run it is only recorded).
   const ruleNotes = lean ? [] : rules.map((r) => [r, blind.rules.find((b) => b.id === r.id)]).filter(([, j]) => j && !j.ok).map(([r, j]) => `교사 지침 미준수: ${r.text.slice(0, 80)} — ${j.note}`);
@@ -1059,7 +1025,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // (chem-c38-gas-density, 2026-10-19: the final problem of Opus alone and two practice problems of Opus + Haiku never
   // reached the final review). What code settles (the answer, the check program, numbers reused) is repaired as before.
   const judgement = [
-    ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text) && !hiddenCell(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
+    ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
     ...(!lean && integratedFinal && numbersOnly ? [[`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim(), harness.shapeOptions(material.problem.text, material.problem.figure)].filter(Boolean).join('\n')] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...ruleNotes,
@@ -1106,19 +1072,14 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
 
 /** The design faults the server finds by itself, without the independent solve (the same ones verifyItem reports). */
 async function codeFaults(item, material, mode, prior, ctx) {
-  // A problem on one of the server's molar-mass tables is checked against the server's own calculation, not the
-  // designer's program (Qwen 3.6's programs failed on syntax the math engine does not take, 2026-10-12).
-  if (harness.molarServe(material, item, mode, prior)) ctx?.log?.(`${item.label}: 서버가 계산한 표·발문·선택지${item.serverWritten ? '·해설' : ''}로 맞춤`);
-  item.verificationSpec = harness.molarSpec(material, item, mode, prior) || item.verificationSpec;
   const code = item.verificationSpec
     ? await codeCheck(item.verificationSpec, { answer: item.problem.answer, choiceCount: item.problem.choices.length })
     : { status: 'fail', reasons: ['검산 프로그램이 없습니다.'] };
   // Solution wording is the writer's. The table-shape check counts here although verifyItem lets the solver's
   // structure verdict overrule it: a final in the original's table came back numbers-only from Opus and Haiku alike
   // (molar-mass, 2026-10-09/10), and the cheap designer changing the table costs less than one Opus solve.
-  const molarFinal = item.stage.kind === 'twin' && mode === 'integrated' && harness.molarChanges(material, item);
   const failed = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)]
-    .filter((c) => c.state === 'fail' && !(solutionOnly(c) && c.severity !== 'hard') && !(c.id === 'variant-shape' && molarFinal));
+    .filter((c) => c.state === 'fail' && !(solutionOnly(c) && c.severity !== 'hard'));
   return [
     ...(code.status === 'fail' ? code.reasons.map((r) => '코드 검산: ' + r) : []),
     ...failed.filter((c) => c.severity === 'hard').map((c) => `${c.label}: ${c.evidence}`),
@@ -1187,18 +1148,11 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   const lean = Boolean(ctx.lean);
   item.status = 'generating'; item.error = ''; ctx.save();
   ctx.log(`${item.label}: 문제 설계 중${design > 1 ? ` (${design}번째 설계)` : ''}`);
-  // A molar-mass original: the server's own tables (numbers, question, choices) to copy — the designer only words them.
-  const shapeHint = harness.molarOptions(material, item.stage, mode, prior)
-    || (item.stage.kind === 'twin' && mode === 'integrated' ? harness.shapeOptions(material.problem.text, material.problem.figure) : harness.practiceOptions(material, item.stage));
-  // A designer that returns no problem ("설계 미완성", Haiku 5.5's nerve finals R10/R11 2026-10-12, with the server's
-  // computed tables in its prompt) gets one more design told that giving up is not an answer.
-  const serverNumbers = /^서버가 계산한/.test(shapeHint || '');
-  const trusted = () => (serverNumbers ? harness.molarTrusted(material, item, mode, prior) : null);
-  ctx.serverFacts = (x) => (serverNumbers && x === item ? harness.molarFacts(material, item, mode, prior) : null);
+  const shapeHint = item.stage.kind === 'twin' && mode === 'integrated' ? harness.shapeOptions(material.problem.text) : '';
   let lostAnswer = false;
-  let noAnswer = false;
   for (let tries = 0; ; tries++) {
-    const feedback = lostAnswer ? extraFeedback : noAnswer ? [extraFeedback, '지난 설계는 선택지만 있고 정답 번호(answer)가 없었습니다. 서버가 계산한 표 하나를 수치·선택지·정답 번호까지 그대로 쓰세요.'].filter(Boolean).join('\n') : tries ? [extraFeedback, `지난 설계는 문제 없이 "만들지 못함"으로 끝났습니다. 설계를 중단하지 말고 반드시 완성된 문제를 내야 합니다.${/서버가 계산한 예/.test(shapeHint) ? ' 설계 안내의 "서버가 계산한 예" 중 첫 번째 표의 자극 지점·위치·시냅스·수치를 그대로 쓰세요 — 해석이 하나뿐이고 준 값이 모두 필요한 것이 서버에서 확인된 표입니다.' : ''}`].filter(Boolean).join('\n') : extraFeedback;
+    // A designer that returns no problem gets one more design told that giving up is not an answer.
+    const feedback = lostAnswer ? extraFeedback : tries ? [extraFeedback, '지난 설계는 문제 없이 "만들지 못함"으로 끝났습니다. 설계를 중단하지 말고 반드시 완성된 문제를 내야 합니다.'].filter(Boolean).join('\n') : extraFeedback;
     const designPrompt = prompts.generateParts({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback: feedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples), direction: ctx.direction, shapeHint });
     let data, generateShape = [];
     try {
@@ -1218,49 +1172,31 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     lostAnswer = false;
     if (generateShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${generateShape.join(', ')})`);
     try {
-      // On the server's own table a missing answer number is the server's to fill (Qwen 3.6's STEP 1~2 practice
-      // failed whole on one, 2026-10-13 run 8); a table the server cannot match still needs the designer's answer.
-      Object.assign(item, normalizeGenerated(data, { serverAnswer: serverNumbers }));
-      if (serverNumbers && harness.molarAdopt(material, item, mode, prior)) ctx.log(`${item.label}: 설계가 서버 표를 쓰지 않아 서버 후보 1번으로 바꿈`);
-      if (serverNumbers) harness.molarServe(material, item, mode, prior);
-      if (item.problem.choices.length && !item.problem.answer) throw Object.assign(new Error('모델이 정답 번호를 주지 않았습니다.'), { status: 422 });
+      Object.assign(item, normalizeGenerated(data));
       break;
     } catch (e) {
-      if (e.status !== 422 || tries >= 2 || (/정답 번호/.test(e.message) && !serverNumbers)) throw e;
-      ctx.log(`${item.label}: ${/정답 번호/.test(e.message) ? '정답 번호 없이 돌아와' : '설계가 문제 없이 돌아와'} 다시 설계합니다`);
-      noAnswer = /정답 번호/.test(e.message);
+      if (e.status !== 422 || tries >= 2 || /정답 번호/.test(e.message)) throw e;
+      ctx.log(`${item.label}: 설계가 문제 없이 돌아와 다시 설계합니다`);
     }
   }
   item.attempts.push({ kind: 'generate', design, at: new Date().toISOString() });
   await fillRuleNotes(ctx, item, rules);
-  // Lean run: what the designer wrote is the outline; the job's own model writes it out as the solution — or, on one
-  // of the server's molar-mass tables, the server writes all of it in the teacher's sentences (runs 9–11: the writer's
-  // text was replaced by the server's anyway, and its rewrites were the set's largest Opus cost).
+  // Lean run: what the designer wrote is the outline; the job's own model writes it out as the solution.
   let writeNotes = [];
-  const writeOut = async (fixes = []) => {
-    const server = serverNumbers ? harness.molarSolution(material, item, mode, prior) : null;
-    item.serverWritten = Boolean(server);
-    if (server) { item.solution = server; ctx.log(`${item.label}: 서버가 선생님 해설 문장으로 해설을 씀`); return []; }
-    return writeSolution(ctx, item, material, rules, fixes, trusted());
-  };
+  const writeOut = async (fixes = []) => writeSolution(ctx, item, material, rules, fixes);
   if (lean) { item.outline = item.solution; writeNotes = await writeOut(); }
   let rewrites = 0;
   // One repair by the designer: the problem, its solution and check program fixed for `failures`.
   const repairWith = async (failures, blind) => {
     const purpose = lean ? 'repair-lean' : 'repair';
     ctx.log(`${item.label}: 검토에서 발견된 ${failures.length}건 수정 중${ctx.routes?.[purpose] ? ` (${ctx.routes[purpose]})` : ''}`);
-    // A molar-mass original: the numbers are the server's, so a repair keeps them and fixes the words — or takes
-    // another of the server's tables whole. Qwen 3.6 dropped the server's table on its final's second repair and made
-    // up numbers again (2026-10-12, run 2).
-    const keepNumbers = shapeHint && /^서버가 계산한/.test(shapeHint)
-      ? `\n\n[수치는 서버가 계산한 값]\n표의 수치·숨긴 칸·묻는 식·선택지·정답 번호는 아래 서버 후보에서 가져온 것이다. 수치를 새로 짐작해 바꾸지 말고 지적된 문장과 해설만 고친다. 지적이 수치 자체에 대한 것이면 아래 후보 중 다른 하나를 통째로 그대로 쓴다.\n${shapeHint}` : '';
     let fixed, repairShape = [];
     try {
       ({ data: fixed, shapeFixes: repairShape = [] } = await ctx.llm.json({
         purpose, jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.generate, maxTokens: 64000,
         system: prompts.REPAIR_SYSTEM,
         // A lean repair sees the designer's own outline (not the long written solution) and returns only what changed.
-        ...(({ context, text }) => ({ context, text: text + (lean ? prompts.LEAN_REPAIR : '') + keepNumbers }))(prompts.repairParts({ material, stage: item.stage, total, mode, rules, item: lean ? { ...item, solution: item.outline } : item, failures, blind, lean })),
+        ...(({ context, text }) => ({ context, text: text + (lean ? prompts.LEAN_REPAIR : '') }))(prompts.repairParts({ material, stage: item.stage, total, mode, rules, item: lean ? { ...item, solution: item.outline } : item, failures, blind, lean })),
       }));
     } catch (e) {
       // A repair the reader cannot use (a missing field, broken JSON) loses this repair, not the problem: the version
@@ -1285,7 +1221,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     } else {
       // Local models often return only the fixed problem; what they leave out (the design note, the STEPs used) stays
       // from the previous version instead of being wiped.
-      const next = normalizeGenerated(fixed, { serverAnswer: serverNumbers });
+      const next = normalizeGenerated(fixed);
       for (const key of ['designNote', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
       next.appliedRules = rulesAfter(next.appliedRules);
       Object.assign(item, next);
@@ -1315,13 +1251,13 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   // what it left out (a frame's value) — never to reword (the user, 2026-10-13: format is not the model's job; Qwen
   // 3.8 spent round 6 rewording lines to fit frames).
   const polish = async () => {
-    if (lean || !material.frames?.length || item.serverWritten) return;
+    if (lean || !material.frames?.length) return;
     let missing = harness.renderFrames(material, item);
     // The designer fills what it left out (the PC model in a mixed run, the job's own model otherwise).
     for (let i = 0; i < 2 && missing.length && !ctx.signal?.aborted; i++) {
       item.attempts.push({ kind: 'fill', design, at: new Date().toISOString(), failures: missing });
       item.outline = item.solution;
-      await writeSolution(ctx, item, material, rules, missing, trusted(), 'polish-solution');
+      await writeSolution(ctx, item, material, rules, missing, 'polish-solution');
       missing = harness.renderFrames(material, item);
     }
   };
@@ -1339,12 +1275,12 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     if (ctx.signal?.aborted) break;
     // A fault only in the solution (wording, the teacher's sentence frame, a solution rule) is rewritten by the writer
     // — no redesign, no new solve. Outside a lean run the current solution is what gets rewritten.
-    if (check.rewriteNotes.length && !repairReasons(check).length && !item.serverWritten && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
+    if (check.rewriteNotes.length && !repairReasons(check).length && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
       rewrites++;
       item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: check.rewriteNotes });
       if (!lean) item.outline = item.solution;
       // The judge's notes are rewritten by the designer in a mixed run (free), then held to the frames again.
-      writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes, trusted(), ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
+      writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes, ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
       await polish();
       const before = check.rewriteNotes;
       check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
@@ -1355,12 +1291,12 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     // repaired in the same loop (and, past the repairs, by a fresh design).
     if (ctx.finalGate && !repairReasons(check).length && !check.gate) check.gate = await finalGate(ctx, item, material, prior, check.hints);
     // What the final review finds only in the solution is rewritten by the writer, the problem and its solve kept.
-    if (check.gate?.solutionOnly && !item.serverWritten && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(3 + (ctx.reserveCalls || 0)))) {
+    if (check.gate?.solutionOnly && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(3 + (ctx.reserveCalls || 0)))) {
       rewrites++;
       const notes = check.gate.faults.map((n) => '최종 검수: ' + n);
       item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: notes });
       if (!lean) item.outline = item.solution;
-      writeNotes = await writeSolution(ctx, item, material, rules, notes, trusted(), ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
+      writeNotes = await writeSolution(ctx, item, material, rules, notes, ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
       await polish();
       check = await verifyItem(ctx, item, material, rules, mode, prior, { blind: check.verification.blind, adjudication: check.verification.adjudication });
       continue;
@@ -1637,7 +1573,6 @@ const SYSTEM_CHECKS = {
     { label: '선생님 문장 틀 (원본마다 1번)', how: '해설의 각 줄을 바뀌는 값만 《이름》 자리로 비운 문장 틀로 뽑는다. 선생님 줄과 글자 그대로 맞는 틀만 남기고, 틀이 없는 줄이나 STEP은 다시 뽑는다. 같은 원본으로 다시 만들 때는 저장된 틀을 쓴다.', onFail: 'fix' },
   ],
   generation: [
-    { label: '서버 계산', how: '계산 코드가 있는 유형(몰질량 표)은 표 수치·숨긴 값·정답·선택지 후보와 해설에 쓸 값(반응량, 남는 물질, 실젯값, 비례식)을 서버가 계산해 준다. AI는 후보를 고르기만 하고, 옮기다 틀린 수치는 서버 값으로 덮어쓴다.', onFail: 'fix', match: /서버가 계산한/ },
     { label: '문장 배치', how: 'AI는 해설 한 줄을 "[틀 STEP-번호] 자리=값"으로 내용만 정하고, 서버가 선생님 문장 틀에 값을 넣어 문장·STEP 제목·선택지 분석 머리말·분수·수식 표기를 만든다. 값이 빠진 자리만 AI에게 다시 묻는다.', onFail: 'fix', match: /\[틀 \d+-\d+\]/ },
     { label: '코드 검산', how: '생성 모델이 함께 쓴 검산 프로그램을 서버가 정확한 분수로 실행해, 정답 값이 선택지 하나와만 맞는지와 설계 조건(가정→모순 등)이 참인지 본다.', onFail: 'answer', match: /^코드 검산/ },
     { label: '독립 풀이', how: '정답을 모르는 별도 호출이 문제만 보고 풀어 정답을 대조하고, 모호·모순·조건 부족·결론 노출을 지적한다.', onFail: 'answer', match: /독립 풀이(의 정답|가 정답| 지적)/ },

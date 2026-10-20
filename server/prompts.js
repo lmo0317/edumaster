@@ -348,7 +348,7 @@ function extractFramesText(material) {
 
 function generateParts({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '', shapeHint = '' }) {
   const parts = [stageInstruction(stage, total, mode), priorBlock(prior), examplesBlock(examples)];
-  if (shapeHint) parts.push('\n[서버가 원본 표에서 계산한 후보]\n' + shapeHint);
+  if (shapeHint) parts.push('\n[원본과 다른 구조로 바꾸는 방법 — 원본 표 기준]\n' + shapeHint);
   if (DIRECTION[direction] && (stage.kind !== 'focus')) parts.push('\n' + DIRECTION[direction]);
   if (usedRows.length) {
     parts.push('\n[이미 쓴 실험 수치 — 표의 어느 행에서도 이 (반응 전 두 값) 조합을 다시 쓰지 않는다]\n' + usedRows.join(' / '));
@@ -568,7 +568,6 @@ function writeSolutionParts({ item, material, rules, outline, fixes = [] }) {
     item.problem.text,
     item.problem.figure ? '[그림 설명]\n' + item.problem.figure : '',
     item.problem.choices?.length ? item.problem.choices.map((c, i) => `${i + 1}) ${c}`).join('\n') + `\n정답: ${item.problem.answer}번` : '',
-    item.serverFacts?.length ? '\n[해설에 쓸 값 — 서버 계산. 해설의 판정·실험·수치는 이것과 같게 쓴다]\n' + item.serverFacts.map((f) => '- ' + f).join('\n') : '',
     '\n[출제자의 풀이 요지 — 이 판정과 값을 그대로 쓴다]',
     outline.steps.map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`).join('\n\n'),
     outline.summary ? `요약: ${outline.summary}` : '',

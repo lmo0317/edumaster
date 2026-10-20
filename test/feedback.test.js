@@ -378,22 +378,20 @@ test('run cost: a Claude cache write is priced above the input price (CLI 1-hour
 });
 
 test('a cheaper designer\'s problem that fails a code check goes back to it before the judge solves it', async () => {
-  const leftover = (rows) => ({ ...generated('표\n| 실험 | A | B | 남은 |\n|---|---|---|---|\n' + rows), solution: { steps: [{ step: 1, title: 'S1', work: '가정하면 모순 3' }], summary: '3' } });
-  const assumeMaterial = { ...material, steps: [{ title: 'S1', technique: '가정→모순', work: '만약 A가 모두 반응했다면 맞지 않다' }, material.steps[1]] };
   const order = [];
   const llm = {
     json: async ({ system }) => {
       order.push(system === prompts.SOLVE_SYSTEM ? 'solve' : system === prompts.REPAIR_SYSTEM ? 'repair' : system === prompts.GENERATE_SYSTEM ? 'generate' : 'other');
       if (system === prompts.SOLVE_SYSTEM) return { data: { answer: 3, stepsUsed: [1, 2], conditions: [] } };
-      if (system === prompts.REPAIR_SYSTEM) return { data: leftover('| Ⅰ | $4w$ | $6w$ | $w$ |') };
-      if (system === prompts.GENERATE_SYSTEM) return { data: leftover('| Ⅰ | $4w$ | $6w$ | $9w$ |') }; // 9w left > 4w put in
+      if (system === prompts.REPAIR_SYSTEM) return { data: generated('질량은 $2$ g이다.') };
+      if (system === prompts.GENERATE_SYSTEM) return { data: generated('질량은 $1.732$ g이다.') }; // no hand-calculation number
       return { data: { steps: [], rules: [] } };
     },
   };
   const item = { index: 0, label: 'STEP 1~2', stage: { kind: 'upto', upto: 2 }, variantNo: 1 };
-  await produceItem({ ...ctxFor(llm), precheck: true }, { material: assumeMaterial, item, prior: [], rules: [], mode: 'integrated' });
+  await produceItem({ ...ctxFor(llm), precheck: true }, { material, item, prior: [], rules: [], mode: 'integrated' });
   assert.deepEqual(order.slice(0, 3), ['generate', 'repair', 'solve'], 'repaired before the first solve');
   const pre = item.attempts.find((a) => a.kind === 'precheck');
-  assert.match(pre.failures.join(), /가정→모순 없이 남은 물질이 정해지는 실험이 없음/);
+  assert.match(pre.failures.join(), /손계산 수치/);
   assert.equal(order.filter((x) => x === 'solve').length, 1);
 });
