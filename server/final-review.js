@@ -23,6 +23,7 @@ function reviewSystem(material, allRules, generationRules = null) {
   const learnedG = generationRules || selectRules(allRules, material);
   return `너는 고등학교 ${material.subject || '과학'} 문항을 검토하는 출제 전문가다. AI가 정리한 분석 결과와 AI가 만든 변형 문제를 원본 이미지와 대조해 독립적으로 검토한다.
 - 변형 문제는 반드시 네가 직접 끝까지 풀어서 정답을 확인한다. 표시된 정답이나 해설을 믿지 않는다.
+- 변형 문제에 [그림]이 있으면 그것이 학생이 받는 그 문제의 그림이다 (지점 위치, 신경의 방향, 그래프). 원본 그림이 아니라 이 그림으로 푼다.
 - 아래 [검수 기준]과 [이 문제에 적용되는 학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
 - 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. 학습을 어겼으면 rule은 "학습"이고 detail 앞에 그 학습 문장을 인용한다.
 - checks에는 기준 항목마다 판정을 적는다: 지켰으면 "ok", 결함이 있으면 "fix", 이 문제에 해당하지 않으면 "na" (예: 연습 문제의 '구조'·'STEP 전부 필요', ㄱ·ㄴ·ㄷ 문제가 아닌데 '보기 분석'). analysis.checks는 A의 항목(${ANALYSIS_NAMES.join(', ')}), items[].checks는 B~D의 항목(${ITEM_NAMES.join(', ')}).
@@ -44,12 +45,16 @@ ${ruleLines(learnedG)}
 
 const range = (material, st) => (st?.kind === 'upto' ? `원본 STEP 1${st.upto > 1 ? '~' + st.upto : ''}만 쓰는 연습 문제` : st?.kind === 'twin' ? `원본 STEP 1~${material.steps.length}을 모두 쓰는 최종 통합 문제 (원본과 다른 구조여야 함)` : '');
 const choices = (p) => (p.choices || []).map((c, i) => `${'①②③④⑤'[i]} ${c}`).join('  ');
+// A variant's figure (the points' positions, the neurons' direction, a graph) is printed with it on the worksheet
+// (report.js), so the reviewer reads it too: without it the reviewer took the original's figure for the variant and
+// failed problems for distances they did give (bio D50, 2026-10-20: the final review's "거리가 없다" every round).
+const figure = (p) => (p.figure ? `[그림 — 학습지에 문제와 함께 실리는 이 문제의 그림]\n${p.figure}` : '');
 const itemText = (material, it) => [
-  `### ${it.label} — 목표: ${range(material, it.stage)}`, it.problem.text, choices(it.problem), `표시된 정답: ${it.problem.answer}번`,
+  `### ${it.label} — 목표: ${range(material, it.stage)}`, it.problem.text, figure(it.problem), choices(it.problem), `표시된 정답: ${it.problem.answer}번`,
   '해설:', ...(it.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`), it.solution?.summary ? `정리: ${it.solution.summary}` : '',
 ].filter(Boolean).join('\n');
 const materialText = (m) => [
-  `[원본 문제를 AI가 옮겨 적은 것]\n${m.problem.text}\n${choices(m.problem)}\n정답: ${m.problem.answer}번`,
+  `[원본 문제를 AI가 옮겨 적은 것]\n${[m.problem.text, figure(m.problem), choices(m.problem)].filter(Boolean).join('\n')}\n정답: ${m.problem.answer}번`,
   `\n[AI가 원본 해설을 STEP으로 정리한 것]\n${m.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n')}`,
 ];
 

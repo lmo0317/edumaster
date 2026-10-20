@@ -414,3 +414,13 @@ test('a fault the review of the fixed analysis finds is fixed in a second round'
   assert.equal(stored.steps[0].work, 'A1이다. B1이다.');
   assert.deepEqual([ctx.job.analysisReview.verdict, ctx.job.analysisReview.fixed.length], ['ok', 2]);
 });
+
+test('the reviewers read a variant\'s figure with it (the worksheet prints it), not the original\'s', () => {
+  const finalReview = require('../server/final-review');
+  const m = { subject: '생명과학', problem: { text: '그림은 지점의 위치이다.', figure: '$d_1=0$, $d_2=2$', choices: [], answer: 1 }, steps: [{ title: 'a', work: 'b' }] };
+  const it = { label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, problem: { text: '그림은 지점의 위치이다.', figure: '$d_1=0$, $d_2=4$', choices: ['x'], answer: 1 }, solution: { steps: [] } };
+  for (const text of [finalReview.setText(m, [it]), finalReview.itemReviewText(m, it)]) {
+    assert.match(text, /\$d_2=4\$/);
+    assert.match(text, /\$d_2=2\$/);
+  }
+});
