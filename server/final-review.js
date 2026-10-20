@@ -51,7 +51,9 @@ const choices = (p) => (p.choices || []).map((c, i) => `${'①②③④⑤'[i]} 
 const figure = (p) => (p.figure ? `[그림 — 학습지에 문제와 함께 실리는 이 문제의 그림]\n${p.figure}` : '');
 const itemText = (material, it) => [
   `### ${it.label} — 목표: ${range(material, it.stage)}`, it.problem.text, figure(it.problem), choices(it.problem), `표시된 정답: ${it.problem.answer}번`,
-  '해설:', ...(it.solution?.steps || []).map((s) => `STEP ${s.step}. ${s.title}\n${s.work}`), it.solution?.summary ? `정리: ${it.solution.summary}` : '',
+  // Each STEP is its own block on the worksheet (app.js .step), so a blank line keeps a STEP ending in a table from
+  // reading as one more row of it: joined by '\n' the reviewers failed E37's final three sets running for "표 뒤 빈 줄 없음".
+  '해설:', ...(it.solution?.steps || []).map((s) => `\nSTEP ${s.step}. ${s.title}\n${s.work}`), it.solution?.summary ? `\n정리: ${it.solution.summary}` : '',
 ].filter(Boolean).join('\n');
 const materialText = (m) => [
   `[원본 문제를 AI가 옮겨 적은 것]\n${[m.problem.text, figure(m.problem), choices(m.problem)].filter(Boolean).join('\n')}\n정답: ${m.problem.answer}번`,

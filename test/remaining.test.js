@@ -416,3 +416,15 @@ test('the reviewers read a variant\'s figure with it (the worksheet prints it), 
     assert.match(text, /\$d_2=2\$/);
   }
 });
+
+test('the reviewers read a STEP that ends in a table as its own block, not one more row of the table', () => {
+  const finalReview = require('../server/final-review');
+  const m = { subject: '생명과학', problem: { text: '원본', choices: [], answer: 1 }, steps: [{ title: 'a', work: 'b' }] };
+  const table = '| ㉠ | X |\n|---|---|\n| $0.8$ | $3.6$ |';
+  const it = { label: '최종 문제', stage: { kind: 'twin' }, problem: { text: '변형', choices: [], answer: 1 },
+    solution: { steps: [{ step: 1, title: 'F₁', work: table }, { step: 2, title: 'F₂', work: table }], summary: '끝' } };
+  for (const text of [finalReview.setText(m, [it]), finalReview.itemReviewText(m, it)]) {
+    assert.match(text, /\$3\.6\$ \|\n\nSTEP 2\. F₂/);
+    assert.match(text, /\$3\.6\$ \|\n\n정리: 끝/);
+  }
+});
