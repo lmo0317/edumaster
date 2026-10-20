@@ -142,6 +142,11 @@ function mock(messages) {
     const first = /\n- \(([^)]*)\) (.+)/.exec(text.split('[이번 세트에서 나온 실수]')[1] || '');
     data = { items: first ? [{ text: `모의 학습: ${first[2].slice(0, 60)} 같은 실수를 처음부터 피한다.`, scope: 'problem', target: 'problem', why: first[2].slice(0, 80) }] : [] };
   }
+  // 학습 반복: one new item about the first fault the review found.
+  else if (system === prompts.LEARN_REVIEW_SYSTEM) {
+    const first = /\n- \(([^)]*)\) (.+)/.exec(text.split('[검수가 찾은 결함]')[1] || '');
+    data = { revise: [], remove: [], add: first ? [{ text: `모의 학습: 검수에서 걸린 ${first[1]}의 결함을 처음부터 피한다.`, scope: 'problem', target: 'problem', why: first[2].slice(0, 80) }] : [] };
+  }
   // Two items are one when they share their first five characters (a real model reads them).
   else if (system === prompts.MERGE_SYSTEM) {
     const [a, b] = ['A', 'B'].map((k) => new RegExp(`\\[학습 ${k}\\]\\n(.*)`).exec(text)?.[1] || '');
@@ -172,4 +177,4 @@ function mock(messages) {
 
 const setLooks = new Map();
 
-module.exports = { mock, SAMPLE };
+module.exports = { mock, SAMPLE, setLooks };

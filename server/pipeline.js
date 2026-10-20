@@ -1,7 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, grams, overlap } = require('./learning');
+const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, updateRule, grams, overlap } = require('./learning');
 const crypto = require('node:crypto');
 const harness = require('./harness');
 const finalReview = require('./final-review');
@@ -1456,6 +1456,53 @@ async function learnFromSet(ctx) {
 }
 
 /**
+ * 학습 반복 (jobs.js 'train'): what Claude·Gemini found in a finished set (set-check.failing) changes the learning the
+ * next set is made with — lessons the system learned itself are rewritten or dropped, new ones added; the teacher's
+ * own items are never touched. Returns what changed.
+ */
+async function learnFromReview(ctx, material, set, faults) {
+  if (!faults.length || !ctx.store) return [];
+  const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review'].includes(r.source?.from);
+  const rules = selectRules(ctx.store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, editable: editable(r) }));
+  ctx.log('검수에서 걸린 점으로 학습을 고치는 중');
+  const { data } = await ctx.llm.json({
+    purpose: 'learn-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 8000,
+    system: prompts.LEARN_REVIEW_SYSTEM, text: prompts.learnReviewText({ material, faults: faults.slice(0, 40), rules }),
+  });
+  const changed = [];
+  const own = (id) => { const r = ctx.store.rules.get(str(id, 40)); return r && editable(r) ? r : null; };
+  for (const x of arr(data?.revise).slice(0, 5)) {
+    const r = own(x?.id);
+    const text = str(x?.text, 600);
+    if (!r || text.length < 8 || text === r.text) continue;
+    ctx.store.rules.put(updateRule(r, { text }));
+    changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 300) });
+  }
+  for (const x of arr(data?.remove).slice(0, 5)) {
+    const r = own(x?.id);
+    if (!r) continue;
+    ctx.store.rules.remove(r.id);
+    changed.push({ kind: 'remove', id: r.id, before: r.text, why: str(x?.why, 300) });
+  }
+  const existing = new Set(rules.map((r) => r.text));
+  for (const x of arr(data?.add).slice(0, 3)) {
+    const text = str(x?.text, 600);
+    if (text.length < 8 || existing.has(text)) continue;
+    const common = x?.scope === 'common';
+    const rule = makeRule({
+      text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
+      scope: common ? 'global' : 'material', layer: 'lesson',
+      subject: common && x?.subjectOnly === true ? material.subject || '' : common ? '' : material.subject || '',
+      source: { materialId: material.id, jobId: set.id, label: material.title, from: 'review' },
+    });
+    ctx.store.rules.put(rule);
+    changed.push({ kind: 'add', id: rule.id, text, scope: common ? 'common' : 'problem', why: str(x?.why, 300) });
+  }
+  ctx.log(changed.length ? `학습 ${changed.length}곳을 고쳤습니다 (고침 ${changed.filter((c) => c.kind === 'revise').length} · 뺌 ${changed.filter((c) => c.kind === 'remove').length} · 더함 ${changed.filter((c) => c.kind === 'add').length})` : '고칠 학습이 없습니다');
+  return changed;
+}
+
+/**
  * The teacher's sentence frames of an original, extracted once by the job's model and kept with the original (see
  * harness.validateFrames): only frames that match the teacher's own lines stay. A failure leaves the set without them.
  */
@@ -1616,4 +1663,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, learnFromReview, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

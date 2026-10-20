@@ -513,6 +513,36 @@ ${FORMAT}
 반환 JSON 형식:
 {"items":[{"text":"...","scope":"problem","target":"problem","subjectOnly":false,"why":"..."}]}`;
 
+// 학습 반복 (jobs.js 'train'): what Claude·Gemini found in a finished set becomes learning, and the lessons the set
+// was made with may be rewritten or dropped — a lesson that led the writer into the fault is fixed, not added to.
+const LEARN_REVIEW_SYSTEM = `너는 변형 문제 출제를 돕는 AI의 학습 내용을 고치는 사람이다. 아래 세트는 [쓰인 학습]을 받아 만들어졌고, Claude·Gemini 검수에서 [검수가 찾은 결함]이 나왔다. 다음 세트가 이 결함 없이 나오도록 학습만 고친다 (코드나 검수 기준은 바꿀 수 없다).
+- revise: [쓰인 학습] 중 이 결함을 낳았거나 검수 기준과 부딪히는 항목을 고쳐 쓴다. id와 새 text.
+- remove: 결함을 낳았고 고쳐 쓸 수 없는 항목의 id.
+- add: 새 항목. 최대 3개. 이미 있는 항목과 같은 뜻이면 만들지 않고 그 항목을 revise한다.
+- revise·remove는 [쓰인 학습]에서 고칠 수 있다고 표시된 항목만 할 수 있다.
+- 검수자의 지적이 원본 문제와 선생님 해설이 하는 것을 금지하는 것이면 학습으로 만들지 않는다.
+- 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common". common이면 subjectOnly(이 과목 내용에 관한 것이면 true).
+- target: 문제 설계면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
+- text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 무엇을 어떻게 하는지 구체적으로 쓰고, 이번 문제의 수치나 변형마다 바뀌는 것(실험 번호, 지점 이름)을 박지 않는다.
+- why에는 이 변경이 막는 결함을 한 문장으로 쓴다.
+${FORMAT}
+반환 JSON 형식:
+{"revise":[{"id":"...","text":"...","why":"..."}],"remove":[{"id":"...","why":"..."}],"add":[{"text":"...","scope":"problem","target":"problem","subjectOnly":false,"why":"..."}]}`;
+
+function learnReviewText({ material, faults, rules }) {
+  return [
+    `[원본] ${material.title || ''} (${[material.subject, material.topic].filter(Boolean).join(' · ')})`,
+    material.problem?.text || '',
+    '\n[선생님 해설]',
+    material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}${s.work ? '\n' + s.work : ''}`).join('\n'),
+    '\n[검수가 찾은 결함]',
+    faults.map((f) => `- (${f.label}) ${f.text}`).join('\n'),
+    '\n[쓰인 학습]',
+    rules.length ? rules.map((r) => `- id=${r.id}${r.editable ? ' (고칠 수 있음)' : ' (선생님 지침 — 고칠 수 없음)'}: ${r.text}`).join('\n') : '없음',
+    '\nJSON만 반환하라.',
+  ].join('\n');
+}
+
 function learnText({ material, faults, existing }) {
   return [
     `[원본] ${material.title || ''} (${[material.subject, material.topic].filter(Boolean).join(' · ')})`,
@@ -608,7 +638,7 @@ const SYSTEMS = {
   analyze: ANALYZE_SYSTEM, proofread: PROOFREAD_SYSTEM, 'reread-question': REREAD_QUESTION_SYSTEM, 'reread-problem': REREAD_PROBLEM_SYSTEM,
   'reread-headings': REREAD_HEADINGS_SYSTEM, regroup: REGROUP_SYSTEM, 'fix-verification': FIX_VERIFICATION_SYSTEM,
   generate: GENERATE_SYSTEM, solve: SOLVE_SYSTEM, 'review-solution': SOLUTION_REVIEW_SYSTEM, repair: REPAIR_SYSTEM,
-  'write-solution': WRITE_SOLUTION_SYSTEM, adjudicate: ADJUDICATE_SYSTEM, learn: LEARN_SYSTEM,
+  'write-solution': WRITE_SOLUTION_SYSTEM, adjudicate: ADJUDICATE_SYSTEM, learn: LEARN_SYSTEM, 'learn-review': LEARN_REVIEW_SYSTEM,
 };
 const PROMPT_VERSION = require('node:crypto').createHash('sha256')
   .update(require('node:fs').readFileSync(__filename)).digest('hex').slice(0, 10);
@@ -632,5 +662,5 @@ module.exports = {
   SOLUTION_REVIEW_SYSTEM, solutionReviewText, solutionReviewParts,
   REPAIR_SYSTEM, repairText, repairParts,
   LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, writeSolutionParts, ADJUDICATE_SYSTEM, adjudicateText,
-  LEARN_SYSTEM, learnText, stageScope, stageInstruction, rulesBlock,
+  LEARN_SYSTEM, learnText, LEARN_REVIEW_SYSTEM, learnReviewText, stageScope, stageInstruction, rulesBlock,
 };

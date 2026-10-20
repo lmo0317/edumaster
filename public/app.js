@@ -519,7 +519,7 @@
   const TARGET_TXT = { problem: '문제', solution: '해설', design: '문제', all: '전체' };
   const targetOptions = (sel) => Object.entries({ all: '전체', problem: '문제', solution: '해설' }).map(([v, t]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${t}</option>`).join('');
   const emptyRow = (text) => `<div class="lt-row lt-plain fb-empty"><span class="muted small">${text}</span></div>`;
-  const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서', auto: '세트 리포트에서 자동으로' };
+  const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서', auto: '세트 리포트에서 자동으로', review: '학습 반복의 검수에서' };
   function learnEffect(x) {
     if (x.status !== 'approved') return '꺼짐';
     if (x.stage === 'analysis') {
@@ -531,7 +531,7 @@
   }
   function learnRow(x, opened) {
     const key = 'L:' + x.id;
-    const from = ['fix', 'auto'].includes(x.from) && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
+    const from = ['fix', 'auto', 'review'].includes(x.from) && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
     return `<div class="lt-row lt-pick${x.status === 'approved' ? '' : ' off'}${opened.has(key) ? ' open' : ''}" data-row="${key}" data-learn="${x.id}">
         <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="적용">
         <div class="lt-main"><span class="lt-name lt-clamp">${inlineRich(x.text)}</span>
@@ -735,12 +735,35 @@
     toast(`세트 ${no}${eulReul(no)} 삭제했습니다.`);
     return true;
   }
+  // 학습 반복 (jobs.js 'train'): each set it made, both reviewers' scores, and what it changed in the learning.
+  function trainPanel(m) {
+    const trains = (m.jobs || []).filter((j) => j.type === 'train').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
+    const KIND = { revise: '고침', remove: '뺌', add: '더함' };
+    return trains.map((t) => {
+      const busy = isBusy(t);
+      const state = busy ? `<span class="set-pill run"><i class="spin"></i>${esc(t.log?.[0]?.message || '진행 중')}</span>`
+        : t.reached ? `<span class="set-pill ok">목표 도달</span>` : t.status === 'done' ? '<span class="set-pill warn">목표 미달</span>' : `<span class="set-pill bad">${esc(t.status === 'cancelled' ? '취소됨' : t.error || t.status)}</span>`;
+      const rows = (t.rounds || []).map((r, k) => `<tr><td><a href="#/j/${r.setId}">${k + 1}번째 세트</a></td>
+        <td>${Object.entries(r.scores || {}).map(([p, s]) => `${CHECK_MODEL[p] || p} <b>${s ?? '실패'}%</b>`).join(' · ')} <a class="muted small" href="#/j/${r.setId}/check">검수 결과</a></td>
+        <td>${r.pass ? '<span class="chip ok">통과</span>' : r.failing?.length ? `걸림: ${r.failing.map(esc).join(', ')}` : '점수 미달'}${r.analysisIssues ? ` · 분석 지적 ${r.analysisIssues}` : ''}</td>
+        <td class="small">${(r.learned || []).map((c) => `<div>${KIND[c.kind]}: ${esc(c.text || c.before || '')}</div>`).join('') || (r.pass ? '' : '<span class="muted">—</span>')}</td></tr>`).join('');
+      return `<article class="panel train-card"><header class="set-head"><div class="set-title"><b>학습 반복</b><span class="set-meta">목표 ${t.target}점 · 최대 ${t.maxRounds}세트 · ${fmtTime(t.createdAt)}</span></div>
+        <div class="set-tally">${state}</div>${busy ? `<div class="set-acts"><button class="small danger" data-cancel-train="${t.id}">멈추기</button></div>` : ''}</header>
+        ${rows ? `<div class="table-wrap"><table class="rules ck-table train-table"><thead><tr><th>세트</th><th>검수 점수</th><th>판정</th><th>고친 학습</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted small">첫 세트를 만드는 중입니다.</p>'}</article>`;
+    }).join('');
+  }
   function variantsPanel(m, gens, on, learning) {
     const el = $('#variants');
     if (!el) return;
+    const trains = trainPanel(m);
+    const bindTrain = () => $$('[data-cancel-train]', el).forEach((b) => b.addEventListener('click', guard(async () => {
+      await api('POST', `/api/jobs/${b.dataset.cancelTrain}/cancel`);
+      toast('학습 반복을 멈췄습니다.');
+    })));
     if (!gens.length) {
-      el.innerHTML = '<div class="panel set-empty"><p>아직 만든 세트가 없습니다.</p><button class="small primary" data-go-make>문제 생성으로 가기</button></div>';
+      el.innerHTML = trains + '<div class="panel set-empty"><p>아직 만든 세트가 없습니다.</p><button class="small primary" data-go-make>문제 생성으로 가기</button></div>';
       $('[data-go-make]', el).addEventListener('click', () => $('[data-stage-tab="make"]')?.click());
+      bindTrain();
       return;
     }
     const stats = new Map(learning.sets.map((s) => [s.id, s]));
@@ -764,7 +787,7 @@
           checkPill(j)].filter(Boolean).join('');
       const meta = [fmtTime(j.createdAt), esc(j.modelLabel || PROVIDER_LABEL[j.options?.provider] || 'DeepSeek'),
         `학습 ${s.rules || 0}개${s.examples ? `·본보기 ${s.examples}개` : ''} 반영`,
-        s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : ''].filter(Boolean).join(' · ');
+        s.kept + s.broken ? `지킴 ${s.kept}/${s.kept + s.broken}` : '', j.trainRound ? `학습 반복 ${j.trainRound}번째` : ''].filter(Boolean).join(' · ');
       return `<article class="panel set-card${busy ? ' busy' : ''}">
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
@@ -784,10 +807,11 @@
       </article>`;
     };
     const cards = gens.map(card);
-    el.innerHTML = `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
+    el.innerHTML = trains + `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
     // 검수하기 / 검수하고 고치기 (server/set-check.js): started here, followed on the set's review page.
     bindCheckButtons(el);
+    bindTrain();
     $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
       const j = gens.find((x) => x.id === b.dataset.delSet);
       if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
@@ -956,7 +980,10 @@
         <div class="gen-row" id="effort-box"><span class="gen-k">사고 강도</span><div class="opts">
           ${opt('effort', 'low', '기본', true)}${opt('effort', 'high', '정밀 (토큰 더 씀)', false)}</div></div>
         <div class="gen-row" id="claude-effort-note" hidden><span class="gen-k">추론 강도</span><div class="gen-v"><b id="claude-effort-name"></b> <a class="muted small" href="#/llm">LLM 탭에서 변경</a></div></div>
+        <div class="gen-row"><span class="gen-k">학습 반복</span><div class="opts">
+          ${opt('train', '', '한 세트만', true)}${[85, 90, 95].map((t) => opt('train', t, `${t}점까지 반복`, false)).join('')}</div></div>
         <p class="gen-hint" id="gen-hint"></p>
+        <p class="gen-hint" id="train-hint" hidden>세트를 만들고 Claude·Gemini가 검수해, 두 검수 점수가 모두 목표 이상이고 모든 문제가 '사용'이 될 때까지 다시 만듭니다 (최대 4세트). 세트 사이에는 검수에서 걸린 점으로 학습만 고칩니다 — 시스템이 배운 학습을 고쳐 쓰거나 빼고 새로 더하며, 선생님이 쓴 지침은 바꾸지 않습니다.</p>
       </div>
       <div class="gen-go"><span id="estimate"></span><button class="primary" id="go">세트 만들기</button></div>`;
     const value = (name) => $(`[name=${name}]:checked`, el)?.value;
@@ -977,6 +1004,8 @@
       $('#claude-effort-note').hidden = chosen !== 'claude-cli';
       if (chosen === 'claude-cli') $('#claude-effort-name').textContent = EFFORT_TXT[providers['claude-cli']?.effort] || '자동';
       $('#gen-hint').textContent = providers[chosen]?.note || '';
+      $('#train-hint').hidden = !value('train');
+      $('#go').textContent = value('train') ? `${value('train')}점까지 반복` : '세트 만들기';
       const c = carryCounts.get(m.id);
       $('#estimate').textContent = [`${p.count}문제`, c ? `학습 ${c.own + c.common}개${c.adopted ? `·본보기 ${c.adopted}개` : ''} 반영` : '', providers[chosen]?.label || ''].filter(Boolean).join(' · ');
     };
@@ -986,8 +1015,10 @@
     $('#go').addEventListener('click', guard(async () => {
       $('#go').disabled = true;
       const p = plan();
-      const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider') });
+      const train = value('train') ? { target: Number(value('train')), maxRounds: 4 } : undefined;
+      const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider'), train });
       try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
+      if (r.trainJobId) { toast('학습 반복을 시작했습니다. 문제 리스트에서 진행을 볼 수 있습니다.'); $('[data-stage-tab="list"]')?.click(); await liveMaterial?.side?.(); return; }
       location.hash = '#/j/' + r.jobId;
     }));
   }
@@ -1504,7 +1535,7 @@
     if (node.startsWith('subj-')) return (x) => x.layer !== 'problem' && x.subject === lmSubjects[Number(node.slice(5))];
     return () => false;
   };
-  const LM_FROM = { input: '직접 입력', check: '확인할 곳에서', fix: '고칠 점에서', auto: '세트 자동', migrated: '옮겨 옴', promote: '올림', merge: '합침', eval: '평가에서' };
+  const LM_FROM = { input: '직접 입력', check: '확인할 곳에서', fix: '고칠 점에서', auto: '세트 자동', migrated: '옮겨 옴', promote: '올림', merge: '합침', eval: '평가에서', review: '학습 반복 검수' };
   const LM_PROVIDER = { 'claude-cli': 'Claude', 'agy-cli': 'Gemini', 'codex-cli': 'GPT', deepseek: 'DeepSeek', relay: 'Claude', claude: 'Claude', gemma: 'PC' };
   const LM_MARK = { k: '지킴', b: '어김', u: '넣었지만 판정 없음' };
   const LM_LAYER = { guide: '지침', lesson: '공통 학습', problem: '문제별' };
@@ -1569,7 +1600,7 @@
       const markCells = (x) => (x.marks ? `<span class="lm-cells" aria-label="최근 세트">${tail(x.marks).map((k, i) => `<i class="${k}" title="${esc(lmSetName(recent[i]))} · ${LM_MARK[k] || '없던 학습'}"></i>`).join('')}</span>` : '<span class="lm-cells"></span>');
       const chips = (x) => [
         node === 'all' || node === 'problems' ? `<span class="lm-chip">${x.layer === 'problem' ? esc(titleOf.get(x.materialId) || '문제별') : LM_LAYER[x.layer]}</span>` : '',
-        `<span class="lm-chip${x.from === 'auto' ? ' auto' : ''}">${LM_FROM[x.from] || '직접 입력'} · ${lmDay(x.createdAt)}</span>`,
+        `<span class="lm-chip${['auto', 'review'].includes(x.from) ? ' auto' : ''}">${LM_FROM[x.from] || '직접 입력'} · ${lmDay(x.createdAt)}</span>`,
         x.merged ? `<span class="lm-chip">${x.merged}개를 합침</span>` : '',
         x.subject ? `<span class="lm-chip subj">${esc(x.subject)}만</span>` : '',
         node === 'all' || node.startsWith('p-') || node === 'problems' ? `<span class="lm-chip">${x.stage === 'analysis' ? '분석' : `생성 · ${TARGET_TXT[x.target] || '전체'}`}</span>` : '',
@@ -1590,7 +1621,7 @@
             ${editing ? `<div class="lm-edit"><textarea data-f="text" rows="3">${esc(x.text)}</textarea>
               <div class="lt-actions">${x.stage === 'generation' ? `<label class="fb-target-label">대상</label><select data-f="target">${targetOptions(x.target === 'design' ? 'problem' : x.target)}</select>` : ''}${x.layer !== 'problem' ? `<label class="fb-target-label">과목</label><select data-f="subject">${subjectOptions(x.subject)}</select>` : ''}<span class="spacer"></span><button class="small" data-act="cancel">취소</button><button class="small primary" data-act="save">저장</button></div></div>` : ''}
             <dl class="lm-kv">
-              <dt>근거</dt><dd>${x.evidence.length ? x.evidence.map((e) => `<div class="lm-quote">${inlineRich(e)}</div>`).join('') : '<span class="muted">선생님이 직접 넣음</span>'}${x.from === 'auto' && x.jobId ? ` <a href="#/j/${x.jobId}">그 세트 보기</a>` : ''}</dd>
+              <dt>근거</dt><dd>${x.evidence.length ? x.evidence.map((e) => `<div class="lm-quote">${inlineRich(e)}</div>`).join('') : '<span class="muted">선생님이 직접 넣음</span>'}${['auto', 'review'].includes(x.from) && x.jobId ? ` <a href="#/j/${x.jobId}">그 세트 보기</a>` : ''}</dd>
               ${x.stage === 'generation' ? `<dt>결과</dt><dd>${x.kept + x.broken ? `지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 판정 없음'}${used ? `<div class="muted small">최근 세트: ${used}</div>` : ''}</dd>` : `<dt>결과</dt><dd>${x.uses ? `분석 ${x.uses}번에 들어감` : '아직 이 학습으로 분석한 문제가 없습니다'}</dd>`}
               ${pairIds.has(x.id) ? '<dt>겹침</dt><dd>AI가 다른 학습과 같은 지시라고 봤습니다. 아래 <b>정리 후보</b>에서 합치거나 따로 둡니다.</dd>' : ''}
               ${x.learnedOn ? `<dt>배운 곳</dt><dd>${esc(x.learnedOn)}</dd>` : ''}

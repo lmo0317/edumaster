@@ -150,6 +150,64 @@ function createJobs({ store, llm, config }) {
         if (last?.jobId === ctx.job.id) setCheck.writeCheck(config.dataDir, parentId, { ...last, rounds, running: false });
       }
     },
+    // 학습 반복: a set is made, Claude·Gemini review it (the 검수하기 review, kept with the set), and until both score it
+    // at `target` with every problem passed, what they found changes the learning (pipeline.learnFromReview) — never the
+    // code — and a new set is made with it, up to `maxRounds` sets. Each set is an ordinary set of the problem.
+    async train(ctx) {
+      const t = ctx.job;
+      const images = pipeline.originalImages(store, store.materials.get(t.materialId));
+      const call = (provider, args) => llm.json({ ...args, provider, jobId: t.id, signal: ctx.signal, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }) });
+      t.rounds = t.rounds || [];
+      for (let r = t.rounds.length; r < t.maxRounds; r++) {
+        const material = store.materials.get(t.materialId);
+        if (!material) throw new Error('문제를 찾지 못했습니다.');
+        const { images: im, ...snapshot } = material;
+        const items = JSON.parse(JSON.stringify(t.items));
+        const set = {
+          id: newId(), type: 'generate', createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
+          materialId: t.materialId, title: material.title, material: { ...snapshot, images: im }, items,
+          rules: pipeline.pickRules(store, material), options: t.options, trainJobId: t.id, trainRound: r + 1,
+          budget: { maxCalls: callCap(items.length, t.options?.provider), maxTokens: tokenCap(t.options?.provider, 'generate') },
+          usage: { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 }, status: 'running', startedAt: new Date().toISOString(),
+        };
+        const sctx = context(set, { signal: ctx.signal });
+        if (sctx.provider === 'claude-cli') set.modelLabel = claudeCliChoice(config).label;
+        sctx.save();
+        ctx.log(`${r + 1}번째 세트를 만드는 중`);
+        try {
+          await workers.generate(sctx);
+          set.status = 'done';
+        } catch (e) {
+          set.status = ctx.signal.aborted ? 'cancelled' : 'failed';
+          set.error = e.message;
+          if (ctx.signal.aborted) throw e;
+        } finally {
+          set.finishedAt = new Date().toISOString();
+          sctx.save();
+        }
+        ctx.log(`${r + 1}번째 세트를 Claude·Gemini가 검수하는 중`);
+        const save = (rec) => setCheck.writeCheck(config.dataDir, set.id, { ...rec, jobId: t.id, running: true });
+        const record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
+        setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
+        const scores = Object.fromEntries(Object.entries(record.checklist.models).map(([p, m]) => [p, m.score]));
+        const fails = setCheck.failing(record);
+        const issues = setCheck.analysisIssues(record);
+        const reviewed = Object.values(scores).filter((s) => s != null);
+        const pass = reviewed.length > 0 && Math.min(...reviewed) >= t.target && !fails.length && !issues.length;
+        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), analysisIssues: issues.length, pass };
+        t.rounds.push(round);
+        ctx.log(`${r + 1}번째 세트: ${Object.entries(scores).map(([p, s]) => `${setCheck.NAME[p] || p} ${s ?? '실패'}%`).join(' · ')}${fails.length ? ` — 걸린 문제 ${round.failing.join(', ')}` : ''}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);
+        ctx.save();
+        if (pass) { t.reached = true; ctx.log(`목표(${t.target}점)에 도달했습니다`); return; }
+        if (r + 1 >= t.maxRounds) break;
+        // The analysis the reviewers fault is fixed against the original's images; everything else goes into learning.
+        if (issues.length) round.analysisFixed = await pipeline.fixAnalysis(ctx, store.materials.get(t.materialId), issues);
+        round.learned = await pipeline.learnFromReview(ctx, store.materials.get(t.materialId), set, fails.flatMap((f) => f.faults.map((text) => ({ label: f.label, text }))));
+        ctx.save();
+      }
+      t.reached = false;
+      ctx.log(`${t.maxRounds}번 만들었지만 목표(${t.target}점)에 이르지 못했습니다`);
+    },
   };
 
   // 🔄 다시 만들기 of one problem of a set (a teacher's note, or what the review found), through the final review while made.
@@ -245,6 +303,10 @@ function createJobs({ store, llm, config }) {
     generate({ material, items, rules, options }) {
       return create('generate', { materialId: material.id, title: material.title, material, items, rules, options }, 'generate');
     },
+    // 학습 반복: the job's own budget is for the learning calls; each set it makes has a set's budget.
+    train({ material, items, options, target = 90, maxRounds = 4 }) {
+      return create('train', { materialId: material.id, title: material.title, items, options, target, maxRounds, rounds: [] }, 'analyze');
+    },
     regenerate(parent, itemIndex, feedback) {
       if (!FINISHED.has(parent.status)) throw Object.assign(new Error('세트 생성이 끝난 뒤에 다시 만들 수 있습니다.'), { status: 409 });
       busyGuard(parent);
@@ -272,6 +334,7 @@ function createJobs({ store, llm, config }) {
       return false;
     },
     activeCount: () => running.size + queue.length,
+    list: () => [...running.keys(), ...queue].map((id) => store.jobs.get(id)).filter(Boolean),
   };
 }
 

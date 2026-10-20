@@ -657,3 +657,29 @@ test('검수하고 고치기: what Claude·Gemini find is remade with their faul
     assert.equal((await s.call('GET', '/api/rules')).data.length, rulesBefore, 'the review changes the set, not the learning');
   } finally { await s.close(); }
 });
+
+test('학습 반복: a set is made and reviewed, the learning changed from what the review found, and sets are made until the target', async () => {
+  require('../server/mock-llm').setLooks.clear(); // the mock's first two looks at a set fail its final problem
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
+    const created = await s.call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
+    await s.waitJob(created.data.jobId);
+    const materialId = created.data.material.id;
+    const rulesBefore = (await s.call('GET', '/api/rules')).data.length;
+    const started = await s.call('POST', '/api/generations', { materialId, mode: 'integrated', provider: 'claude-cli', train: { target: 90, maxRounds: 3 } });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    assert.equal((await s.call('POST', '/api/generations', { materialId, mode: 'integrated', provider: 'claude-cli', train: { target: 90 } })).status, 409, 'one repeat per problem');
+    const train = await s.waitJob(started.data.trainJobId);
+    assert.equal(train.status, 'done', train.error);
+    assert.equal(train.reached, true);
+    assert.deepEqual(train.rounds.map((r) => [r.pass, r.failing]), [[false, ['최종 문제']], [true, []]], 'the first set failed its review, the second passed');
+    assert.equal(train.rounds[0].learned.length, 1);
+    assert.equal(train.rounds[0].learned[0].kind, 'add');
+    const rules = (await s.call('GET', '/api/rules')).data;
+    assert.ok(rules.length > rulesBefore && rules.some((r) => /검수에서 걸린 최종 문제/.test(r.text) && r.source?.from === 'review'), 'the learning was changed, not the code');
+    const sets = (await s.call('GET', `/api/jobs?materialId=${materialId}`)).data.filter((j) => j.type === 'generate');
+    assert.deepEqual(sets.map((j) => j.trainRound).sort(), [1, 2]);
+    assert.equal((await s.call('GET', `/api/jobs/${train.rounds[1].setId}/check`)).data.check.done, true, 'each set keeps its review');
+  } finally { await s.close(); }
+});

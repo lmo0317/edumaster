@@ -985,3 +985,7 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 /* An original's own rounds, under the originals. */
 .cmp-round-sub { margin: 0 0 16px; }
 .cmp-round-sub .cmp-tab { padding: 6px 13px; font-size: .92em; font-weight: 500; }
+
+.train-card { margin-bottom: 12px; }
+.train-table td { white-space: normal; vertical-align: top; }
+.train-table td:first-child { white-space: nowrap; }

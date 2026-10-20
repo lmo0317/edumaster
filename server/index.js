@@ -117,6 +117,8 @@ function createApp(options = {}) {
   const jobSummary = (j) => ({
     id: j.id, type: j.type, status: j.status, title: j.title, materialId: j.materialId, createdAt: j.createdAt, finishedAt: j.finishedAt, error: j.error, usage: j.usage, options: j.options,
     parentJobId: j.parentJobId, itemIndex: j.itemIndex, modelLabel: j.modelLabel, check: j.type === 'generate' ? checkSummary(readCheck(j.id)) : null,
+    trainJobId: j.trainJobId, trainRound: j.trainRound,
+    ...(j.type === 'train' ? { target: j.target, maxRounds: j.maxRounds, rounds: j.rounds || [], reached: j.reached, log: (j.log || []).slice(-1) } : {}),
     items: (j.items || []).map((i) => ({ index: i.index, label: i.label, status: i.status, adopted: Boolean(i.adopted), preview: questionLine(i.problem?.text),
       // 남은 점 in the problem itself (not only the solution's wording), for the list's state.
       problemLeft: (i.warnings || []).some((w) => !/^해설: /.test(w)), designed: Boolean(i.design) })),
@@ -525,7 +527,15 @@ function createApp(options = {}) {
     const { images, ...snapshot } = material;
     // 가정 방향: keep or flip which case STEP 1 assumes and rules out (only for an original whose STEP 1 does that).
     const direction = ['same', 'flip'].includes(body.direction) && harness.assumes(`${material.steps[0]?.work || ''}${material.steps[0]?.technique || ''}`) ? body.direction : undefined;
-    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length } });
+    const options = { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length };
+    // 학습 반복: sets made and reviewed until both reviewers reach the target, the learning changed in between.
+    if (body.train) {
+      if (jobs.list().some((j) => j.type === 'train' && j.materialId === material.id)) throw fail(409, '이 문제는 이미 학습 반복 중입니다.');
+      const target = Math.min(100, Math.max(50, Number(body.train.target) || 90));
+      const maxRounds = Math.min(6, Math.max(1, Number(body.train.maxRounds) || 4));
+      return { trainJobId: jobs.train({ material, items, options, target, maxRounds }).id, materialId: material.id };
+    }
+    const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options });
     return { jobId: job.id };
   });
   route('GET', /^\/api\/jobs$/, (req) => {
