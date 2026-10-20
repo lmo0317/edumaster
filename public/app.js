@@ -769,7 +769,7 @@
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
           <div class="set-tally">${tally}</div>
-          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy || j.check?.running ? '' : `<button class="small" data-check-set="${j.id}" title="Claude·Gemini가 원본과 대조해 검수하고 점수를 매깁니다. 문제는 바꾸지 않습니다.">검수하기</button><button class="small" data-check-set="${j.id}" data-fix="1" title="검수에서 걸린 문제를 지적대로 다시 만들고 다시 검수합니다 (최대 2번). 학습은 바꾸지 않습니다.">검수하고 고치기</button>`}${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
+          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy || j.check?.running ? '' : checkButtons(j.id)}${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
@@ -787,12 +787,7 @@
     el.innerHTML = `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
     // 검수하기 / 검수하고 고치기 (server/set-check.js): started here, followed on the set's review page.
-    $$('[data-check-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
-      const fix = Boolean(b.dataset.fix);
-      if (fix && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
-      await api('POST', `/api/jobs/${b.dataset.checkSet}/check`, { fix });
-      location.hash = `#/j/${b.dataset.checkSet}/check`;
-    })));
+    bindCheckButtons(el);
     $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
       const j = gens.find((x) => x.id === b.dataset.delSet);
       if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
@@ -1155,7 +1150,7 @@
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
-        <div class="name-btns">${busy ? '' : `<a class="btn small" href="#/j/${job.id}/check">${job.check ? '검수 결과' : '검수하기'}</a>`}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
+        <div class="name-btns">${job.check ? `<a class="btn small" href="#/j/${job.id}/check">${job.check.running ? '검수 중' : '검수 결과'}</a>` : ''}${busy || job.check?.running ? '' : checkButtons(job.id)}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>
@@ -1262,7 +1257,18 @@
     const list = rounds.length ? `<ol class="jt-steps">${rounds.map((r, k) => `<li>${k + 1}번째 검수${r.design > 1 ? ` (${r.design}번째 설계)` : ''}: ${r.faults.length ? `${r.faults.length}건${k < rounds.length - 1 || !f?.passed ? ' → 고침' : ''}<ul class="lt-ul">${r.faults.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>` : '통과'}</li>`).join('')}</ol>` : '';
     return `<div class="jt-report-item ${f?.passed ? 'ok' : 'bad'}"><p>${head}</p>${answer || list ? `<details data-k="final-review"><summary>검수 내용 보기</summary><div class="jt-check-in">${answer}${list}</div></details>` : ''}</div>`;
   }
+  // 검수하기 / 검수하고 고치기 (server/set-check.js): on the set card and the set page, followed on the set's review page.
+  const checkButtons = (id) => `<button class="small" data-check-set="${id}" title="Claude·Gemini가 원본과 대조해 검수하고 점수를 매깁니다. 문제는 바꾸지 않습니다.">검수하기</button><button class="small" data-check-set="${id}" data-fix="1" title="검수에서 걸린 문제를 지적대로 다시 만들고 다시 검수합니다 (최대 2번). 학습은 바꾸지 않습니다.">검수하고 고치기</button>`;
+  function bindCheckButtons(el) {
+    $$('[data-check-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
+      const fix = Boolean(b.dataset.fix);
+      if (fix && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
+      await api('POST', `/api/jobs/${b.dataset.checkSet}/check`, { fix });
+      location.hash = `#/j/${b.dataset.checkSet}/check`;
+    })));
+  }
   function bindHead(job) {
+    bindCheckButtons($('.jt-head') || document);
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
     $('#resume')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/resume`); toast('이어서 진행합니다.'); route(); }));
     $('#delete')?.addEventListener('click', guard(async () => {
