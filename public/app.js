@@ -769,7 +769,7 @@
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
           <div class="set-tally">${tally}</div>
-          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
+          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy || j.check?.running ? '' : `<button class="small" data-check-set="${j.id}" title="Claude·Gemini가 원본과 대조해 검수하고 점수를 매깁니다. 문제는 바꾸지 않습니다.">검수하기</button><button class="small" data-check-set="${j.id}" data-fix="1" title="검수에서 걸린 문제를 지적대로 다시 만들고 다시 검수합니다 (최대 2번). 학습은 바꾸지 않습니다.">검수하고 고치기</button>`}${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
@@ -786,6 +786,13 @@
     const cards = gens.map(card);
     el.innerHTML = `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
+    // 검수하기 / 검수하고 고치기 (server/set-check.js): started here, followed on the set's review page.
+    $$('[data-check-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
+      const fix = Boolean(b.dataset.fix);
+      if (fix && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
+      await api('POST', `/api/jobs/${b.dataset.checkSet}/check`, { fix });
+      location.hash = `#/j/${b.dataset.checkSet}/check`;
+    })));
     $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
       const j = gens.find((x) => x.id === b.dataset.delSet);
       if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
@@ -1010,7 +1017,7 @@
     const text = models.map(([p, v]) => `${CHECK_MODEL[p] || p} ${v.error ? '실패' : c.scores?.[p] != null ? `${c.scores[p]}%` : `사용 ${v.use}/${v.total}`}`).join(' · ');
     return `<a class="set-pill ${all ? 'ok' : 'warn'}" href="#/j/${j.id}/check" title="Claude·Gemini 검수 결과 (요구사항 충실도)">검수 ${esc(text)}</a>`;
   }
-  async function checkView(id) {
+  async function checkView(id, again = false) {
     const token = routeToken;
     const r = await api('GET', `/api/jobs/${id}/check`);
     const c = r.check;
@@ -1023,12 +1030,14 @@
       <p class="muted small"><b>검수하고 고치기</b>: 검수에서 걸린 문제를 지적 내용대로 다시 만들고(원본 분석 지적은 원본과 대조해 고침) 다시 검수합니다. 최대 2번 고치며, 학습은 바꾸지 않습니다.</p></div>`;
     const bind = () => {
       $$('[data-check]').forEach((b) => b.addEventListener('click', guard(async () => {
+        if (b.dataset.check === 'fix' && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
         await api('POST', `/api/jobs/${id}/check`, { fix: b.dataset.check === 'fix' });
         toast(b.dataset.check === 'fix' ? '검수하고 고치기를 시작했습니다.' : '검수를 시작했습니다.');
         route();
       })));
       // While the review (and the remakes) run, the page follows them.
-      if (busy) setTimeout(() => { if (token === routeToken && location.hash.startsWith(`#/j/${id}/check`)) route(); }, 15000);
+      if (busy) setTimeout(() => { if (token === routeToken && location.hash.startsWith(`#/j/${id}/check`)) checkView(id, true).catch(() => {}); }, 15000);
+      if (!again) window.scrollTo(0, 0);
     };
     if (!c) { view.innerHTML = head + '<div class="panel muted">이 세트는 아직 검수하지 않았습니다.</div>'; bind(); return; }
     const rv = (p) => c.reviews[p]?.review;
