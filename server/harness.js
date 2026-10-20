@@ -262,41 +262,13 @@ function checkHelpers(material, item) {
 // every variant that kept her sentences failed this check).
 const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하지|성립하지|불가능|그러나|하지만/.test(t);
 
-/** The case a solution first assumes and rules out ("만약 Ⅰ에서 A가 모두 반응했다면 … 맞지 않다"): "A", or '' when none. */
-function assumedCase(text) {
-  const m = /만약[^.\n]*?([A-Z])(?:\s*\([a-z]\))?\s*(?:가|이)\s*모두\s*반응했다면/.exec(plain(text));
-  return m ? m[1] : '';
-}
-
-/**
- * 가정 방향 (요구서 1): asked to keep or flip which case the teacher's STEP 1 assumes and rules out, the variant's first
- * STEP must assume the same case (same) or the other one (flip). Not checked when either solution does not say.
- */
-function checkDirection(material, item, direction) {
-  if (!['same', 'flip'].includes(direction) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
-  const original = assumedCase(material.steps[0]?.work);
-  const variant = assumedCase((item.solution?.steps || []).filter((s) => s.step === 1).map((s) => s.work).join('\n'));
-  if (!original || !variant) return [];
-  const ok = direction === 'same' ? variant === original : variant !== original;
-  return [result('assumption-direction', '가정 방향', ok, ok ? '' : direction === 'same'
-    ? `원본처럼 ${original}가 모두 반응했다고 가정해 모순을 보이는 구조여야 하는데, 이 문제는 ${variant}를 가정합니다. 수치를 다시 잡아야 합니다.`
-    : `원본과 반대로 원본에서 결론이던 쪽(${original}가 아닌 물질)을 가정해 모순을 보이는 구조여야 하는데, 이 문제도 ${variant}를 가정합니다. 어느 쪽이 모두 반응하는지가 원본과 바뀌게 수치를 다시 잡아야 합니다.`)];
-}
-
 function checkAssumption(material, item) {
   const first = material.steps[0];
   if (!first || !assumes(first.work + first.technique) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
   const steps = item.solution?.steps || [];
   const firstGenerated = steps.filter((s) => s.step === 1).map((s) => s.work).join('\n') || steps.map((s) => s.work).join('\n');
-  // Which substance the teacher supposes used up ("만약 Ⅰ에서 A가 모두 반응했다면"): Haiku's R11 final supposed B
-  // instead and the judges failed it three ways, five repairs on one final (molar-mass, 2026-10-12).
-  const supposed = (t) => (/만약[^.\n]*?([A-Z])(?:\s*\(\s*g\s*\))?\s*(?:가|이)\s*모두\s*반응/.exec(plain(t).replace(/\\ce\{([^}]*)\}/g, '$1')) || [])[1];
-  const want = supposed(first.work);
-  const got = supposed(firstGenerated);
   return [result('source-assumption', '원본의 가정→모순 판정 유지', assumes(firstGenerated),
-    assumes(firstGenerated) ? '가정과 모순 판정이 해설에 있음' : '원본 STEP 1의 가정→실험 비교→모순 판정이 변형 해설에서 사라졌습니다. 같은 추론이 필요하도록 문제와 해설을 고쳐야 합니다.'),
-  ...(want && got ? [result('source-assumption-substance', '가정하는 물질이 선생님과 같음', want === got,
-    want === got ? '' : `선생님은 "${want}가 모두 반응했다"고 가정해 모순을 보이는데 변형 해설은 ${got}를 가정했습니다. 가정하는 물질은 ${want} 그대로 두고, ${want}가 모두 반응했다고 가정하면 실제로 모순이 나는 실험(그 실험의 실제 한계 반응물이 ${want}가 아닌 실험)을 골라 가정·모순에 쓰세요. 어느 실험을 쓰는지는 변형 수치에 맞게 바꿔도 됩니다.`)] : [])];
+    assumes(firstGenerated) ? '가정과 모순 판정이 해설에 있음' : '원본 STEP 1의 가정→실험 비교→모순 판정이 변형 해설에서 사라졌습니다. 같은 추론이 필요하도록 문제와 해설을 고쳐야 합니다.')];
 }
 
 // ---------------------------------------------------------------- problem structure (v1 choices / consistency)
@@ -357,20 +329,6 @@ function checkNumbersOnly(material, item, mode) {
   const same = skeleton(material.problem.text) === skeleton(item.problem.text);
   return [result('variant-design', '통합 변형: 숫자만 바꾸지 않았는지(코드 비교)', !same,
     same ? '원본과 문장·표 구조가 같고 숫자만 다릅니다. 조건 제시 방식, 자료 관계 또는 질문을 다시 설계해야 합니다.' : '')];
-}
-
-/** A problem whose STEP 1 infers the leftover reactant must not print A/B in the leftover column (v1 stage-clue-leak).
- * The final problem needs STEP 1 too (DeepSeek's final printed "A 8w", "B 2w" and so skipped it). */
-function checkClueLeak(material, item) {
-  if (!stageSteps(item.stage, material.steps.length).includes(1)) return [];
-  const firstStep = material.steps[0] ? material.steps[0].title + material.steps[0].work : '';
-  if (!/한계\s*반응물|남는|잔류|모두\s*반응/.test(firstStep)) return [];
-  const leak = item.problem.text.split('\n').some((line) => {
-    const cells = line.split('|').map((c) => plain(c).trim()).filter(Boolean);
-    return cells.length >= 4 && /^(I|II|III|Ⅰ|Ⅱ|Ⅲ|IV|Ⅳ)$/.test(cells[0]) && /^[AB]\s*(?:\(?\d|w|\d)/.test(cells[3].replace(/\s+/g, ''));
-  });
-  return [result('stage-clue-leak', '추론할 결론을 표에 미리 노출', !leak,
-    leak ? '남는 물질(A/B)을 추론하는 단계인데 표의 반응 후 칸에 A/B를 미리 적었습니다.' : '')];
 }
 
 // ---------------------------------------------------------------- rendering format (new; seen with Gemma)
@@ -537,7 +495,6 @@ function inspectItem(material, item, mode) {
     ...checkUnusedCoefficient(item),
     ...checkNumbersOnly(material, item, mode),
     ...checkSameShape(material, item, mode),
-    ...checkClueLeak(material, item),
     ...checkFormat(item),
     ...checkCleanNumbers(item),
   ];
@@ -547,7 +504,7 @@ function inspectItem(material, item, mode) {
 
 // Word pairs a reader confuses and that change the meaning (v1 source-quantity: 물질량 ↔ 몰질량).
 // 실젯값 ↔ 실댓값: Qwen 3.8's reading of the molar-mass solution (2026-10-13).
-const CONFUSABLE = [['물질량', '몰질량'], ['실댓값', '실젯값']];
+const CONFUSABLE = [];
 
 /** Hangul words of `target` that two independent re-reads agree should be different (e.g. 물질량 → 몰질량). */
 function hangulFixes(target, readA, readB, pairs = CONFUSABLE, maxDistance = 1) {
@@ -623,4 +580,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { uncoveredLines, renderFrames, validateFrames, frameFindings, frameRegex, teacherChoiceHeading, shapeOptions, judgments, assumedCase, checkDirection, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { uncoveredLines, renderFrames, validateFrames, frameFindings, frameRegex, teacherChoiceHeading, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

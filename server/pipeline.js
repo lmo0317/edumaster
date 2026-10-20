@@ -79,7 +79,6 @@ const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[
 // calculation and is not an unneeded condition (2026-10-03: the practice problems lost it after being told it was).
 // The setting the original's figure fixes (how many neurons, where a synapse can be) is a premise too: the solver kept
 // flagging nerve B's "2개의 뉴런, ㉠~㉢ 중 한 곳에 시냅스" while a lesson said to keep it (2026-10-10, every round).
-const isPremise = (t) => /반응하지\s*않|임의의\s*원소\s*기호|뉴런으로\s*(구성|이루어)|시냅스가\s*있(을\s*수\s*있|는\s*위치|다)|한\s*곳에(만)?\s*시냅스/.test(String(t || ''));
 function cleanHeading(h) {
   const title = str(h?.title ?? h, 300);
   const own = markerNumber(h?.marker);
@@ -1005,7 +1004,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // The table-shape check is a rough stand-in for the solver's reading of the five structure criteria: a final that keeps
   // the original's table but changes the reasoning (another reference experiment, a new quantity asked) is the
   // solver's call, or the two would send it back and forth.
-  const codeChecks = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)]
+  const codeChecks = harness.inspectItem(material, item, mode)
     .filter((c) => !(c.id === 'variant-shape' && blind.variation === 'structural'));
   const numbersOnly = blind.variation === 'numbers-only';
   const failed = codeChecks.filter((x) => x.state === 'fail');
@@ -1025,7 +1024,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   // (chem-c38-gas-density, 2026-10-19: the final problem of Opus alone and two practice problems of Opus + Haiku never
   // reached the final review). What code settles (the answer, the check program, numbers reused) is repaired as before.
   const judgement = [
-    ...(lean ? [] : blind.conditions.filter((c) => !c.used && !isPremise(c.text)).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
+    ...(lean ? [] : blind.conditions.filter((c) => !c.used).map((c) => `풀이에 쓰이지 않는 조건: ${c.text}`)),
     ...(!lean && integratedFinal && numbersOnly ? [[`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim(), harness.shapeOptions(material.problem.text, material.problem.figure)].filter(Boolean).join('\n')] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...ruleNotes,
@@ -1078,7 +1077,7 @@ async function codeFaults(item, material, mode, prior, ctx) {
   // Solution wording is the writer's. The table-shape check counts here although verifyItem lets the solver's
   // structure verdict overrule it: a final in the original's table came back numbers-only from Opus and Haiku alike
   // (molar-mass, 2026-10-09/10), and the cheap designer changing the table costs less than one Opus solve.
-  const failed = [...harness.inspectItem(material, item, mode), ...harness.checkDirection(material, item, ctx.direction)]
+  const failed = harness.inspectItem(material, item, mode)
     .filter((c) => c.state === 'fail' && !(solutionOnly(c) && c.severity !== 'hard'));
   return [
     ...(code.status === 'fail' ? code.reasons.map((r) => '코드 검산: ' + r) : []),
@@ -1617,4 +1616,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, isPremise, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

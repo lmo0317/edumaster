@@ -33,6 +33,8 @@ test('analysis path fixes the misread question word, the STEP count and the step
   const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em2-an-')));
   const img = store.files.saveDataUrl('data:image/png;base64,' + Buffer.alloc(300, 1).toString('base64'));
   const material = { id: 'm1', note: '', images: { problem: img.id, solution: img.id, sameImage: false, views: { problem: [], solution: [] } } };
+  // No word pair is built in: this one is known because the teacher once corrected it.
+  store.corrections.put({ id: '0123456789abcdef', wrong: '물질량', right: '몰질량', count: 1, materials: [] });
   const answers = {
     [prompts.ANALYZE_SYSTEM]: () => ANALYSIS,
     [prompts.PROOFREAD_SYSTEM]: () => ({ fixes: [], solutionStepCount: 3 }),

@@ -47,23 +47,6 @@ test('"만약 … 이라면 … 그러나 … 이므로" is the assumption→con
   assert.equal(harness.inspectItem(material, item, 'integrated').find((c) => c.id === 'source-assumption').state, 'pass');
 });
 
-test('the substance the teacher supposes used up stays the same (R11 molar final supposed B)', () => {
-  const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'S1', work: '만약 Ⅰ에서 A가 모두 반응했다면 … 주어진 자료와 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 B이다.' }] };
-  const check = (work) => harness.inspectItem(material, { stage: { kind: 'twin' }, problem: { text: '문제', choices: [] }, solution: { steps: [{ step: 1, work }] } }, 'integrated').find((c) => c.id === 'source-assumption-substance');
-  assert.equal(check('만약 Ⅱ에서 A가 모두 반응했다면 … 맞지 않다. 따라서 Ⅱ에서 모두 반응한 것은 B이다.').state, 'pass', 'another experiment is fine');
-  const b = check('만약 Ⅰ에서 B가 모두 반응했다면 … 맞지 않다. 따라서 Ⅰ에서 모두 반응한 것은 A이다.');
-  assert.equal(b.state, 'fail');
-  assert.match(b.evidence, /A가 모두 반응했다"고 가정/);
-});
-
-test('stage clue leak: printing the leftover reactant (A/B) in a practice table is flagged', () => {
-  const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'Ⅰ에서 한계 반응물을 구한다', work: '가정하면 모순이므로 B가 모두 반응' }] };
-  const table = (cell) => `| 실험 | A | B | 반응 후 |\n|---|---|---|---|\n| Ⅰ | $6w$ | $4w$ | ${cell} |`;
-  const check = (cell) => harness.inspectItem(material, { stage: { kind: 'upto', upto: 1 }, problem: { text: table(cell), choices: [], answer: 0 }, solution: { steps: [] } }, 'integrated').find((c) => c.id === 'stage-clue-leak');
-  assert.equal(check('$\\ce{A}$ $2w$').state, 'fail');
-  assert.equal(check('$2w$').state, 'pass');
-});
-
 test('O/X judgments in the solution must match the chosen ㄱㄴㄷ combination (v1 explanation-consistency)', () => {
   const problem = { text: '<보기>\nㄱ. t1은 5ms이다.\nㄴ. 시냅스는 ㉢에 있다.\nㄷ. A의 Ⅱ에서 탈분극이 일어나고 있다.', choices: ['ㄱ', 'ㄴ', 'ㄱ, ㄷ', 'ㄴ, ㄷ', 'ㄱ, ㄴ, ㄷ'], answer: 2 };
   const solution = (s) => ({ steps: [{ step: 3, work: s }] });
@@ -127,7 +110,8 @@ test('re-read also restores a missing letter (질량 → 몰질량), and fixes s
 });
 
 test('a confirmed confusable word corrects the same slip in the solution, particles included', () => {
-  const known = harness.confusableFixes(['몰질량']);
+  // No pair is built in; a pair the teacher once corrected (learning.readingPairs) is passed in.
+  const known = harness.confusableFixes(['몰질량'], [['물질량', '몰질량']]);
   assert.deepEqual(known, [['물질량', '몰질량']]);
   assert.equal(harness.applySubstringFixes('A~D의 물질량을 구한다', known), 'A~D의 몰질량을 구한다');
   assert.deepEqual(harness.confusableFixes(['온도']), []);

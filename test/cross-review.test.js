@@ -4,7 +4,7 @@
 // the premise that the gases do not react was reported as an unused condition and left out.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { cleanHeading, isPremise } = require('../server/pipeline');
+const { cleanHeading } = require('../server/pipeline');
 const { titleKey } = require('../server/harness');
 
 test('a heading keeps a reference to another step and loses only its own marker', () => {
@@ -16,11 +16,6 @@ test('a heading keeps a reference to another step and loses only its own marker'
 test('a solution title may name only the containers this problem has', () => {
   assert.equal(titleKey('(가)~(다)에 들어 있는 기체의 분자 수비를 구한다'), titleKey('(가)와 (나)에 들어 있는 기체의 분자 수비를 구한다'));
   assert.notEqual(titleKey('(가)~(다)에 들어 있는 기체의 분자 수비를 구한다'), titleKey('(가)~(다)에 들어 있는 기체의 질량비를 구한다'));
-});
-
-test('premises that make the situation hold are not unused conditions', () => {
-  assert.ok(isPremise('(단, X~Z는 임의의 원소 기호이고, 모든 기체는 반응하지 않는다.)'));
-  assert.ok(!isPremise('(단, 온도와 압력은 일정하다.)'));
 });
 
 // Claude's review of the same set: the STEP 1~2 practice solution stopped at the mass ratio and never judged ㄱ, ㄴ, ㄷ.

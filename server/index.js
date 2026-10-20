@@ -524,7 +524,7 @@ function createApp(options = {}) {
     const rules = pipeline.pickRules(store, material);
     const { images, ...snapshot } = material;
     // 가정 방향: keep or flip which case STEP 1 assumes and rules out (only for an original whose STEP 1 does that).
-    const direction = ['same', 'flip'].includes(body.direction) && harness.assumedCase(material.steps[0]?.work) ? body.direction : undefined;
+    const direction = ['same', 'flip'].includes(body.direction) && harness.assumes(`${material.steps[0]?.work || ''}${material.steps[0]?.technique || ''}`) ? body.direction : undefined;
     const job = jobs.generate({ material: { ...snapshot, images }, items, rules, options: { mode, effort, provider, designWith, repairWith, lean, direction, perStage: items.length / stages.length } });
     return { jobId: job.id };
   });
