@@ -23,18 +23,18 @@ const dataDir = path.join(__dirname, '.work', stamp);
   await call('POST', '/api/login', { username: 'eval', password: 'eval-harness' });
   const dir = path.join(dataDir, 'materials');
   const materials = fs.readdirSync(dir).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
-  const runs = [];
+  // One original at a time, so the subscription's five-hour limit is not spent by several repeats at once.
+  const done = (j) => ['done', 'failed', 'cancelled', 'interrupted'].includes(j.status);
   for (const name of cases.split(',')) {
     const material = materials.find((m) => m.title.includes(`] ${name} ·`));
     const started = await call('POST', '/api/generations', { materialId: material.id, mode: 'integrated', provider: 'claude-cli', train: { target: Number(target), maxRounds: Number(maxRounds) } });
     console.log(name, material.id, started.trainJobId);
-    runs.push([name, started.trainJobId]);
-  }
-  for (;;) {
-    const jobs = await Promise.all(runs.map(([, id]) => call('GET', `/api/jobs/${id}`)));
-    console.log(new Date().toISOString(), jobs.map((j, i) => `${runs[i][0]}:${j.status}${j.reached ? '(도달)' : ''}:${JSON.stringify(j.rounds || [])}`).join('\n  '));
-    if (jobs.every((j) => ['done', 'failed', 'cancelled', 'interrupted'].includes(j.status))) break;
-    await new Promise((r) => setTimeout(r, 300000));
+    for (;;) {
+      const job = await call('GET', `/api/jobs/${started.trainJobId}`);
+      console.log(new Date().toISOString(), `${name}:${job.status}${job.reached ? '(도달)' : ''}${job.error ? ` ${job.error}` : ''}:${JSON.stringify(job.rounds || [])}`);
+      if (done(job)) break;
+      await new Promise((r) => setTimeout(r, 300000));
+    }
   }
   await new Promise((r) => app.server.close(r));
   process.exit(0);
