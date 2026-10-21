@@ -1365,27 +1365,6 @@
     $$('[data-jump]').forEach((b) => b.addEventListener('click', () => $(`#item-${b.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
   }
 
-  function verificationHtml(v) {
-    if (!v) return '<span class="muted small">아직 검증하지 않았습니다.</span>';
-    const code = v.code || {};
-    const blind = v.blind || {};
-    const cstat = { pass: ['통과', 'ok'], fail: ['불일치', 'bad'], skip: ['수치 검산 대상 아님', ''] };
-    return `
-      <h3>코드 검산 ${chip(cstat, code.status)}</h3>
-      <p class="muted small">모델이 쓴 검산 프로그램을 서버가 ${code.mode === 'number' ? '실수 계산(무리수 포함)' : '정확한 분수 계산'}으로 실행해 정답·선택지·조건을 확인합니다.</p>
-      ${code.reasons?.length ? `<div class="note bad"><ul>${code.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
-      ${code.checks?.length ? `<ul class="small">${code.checks.map((c) => `<li>${c.ok ? '✅' : '❌'} ${esc(c.desc || c.expr)} <span class="muted">(${esc(c.expr)})</span></li>`).join('')}</ul>` : ''}
-      ${code.values?.length ? `<pre class="values">${esc(code.values.join('\n'))}</pre>` : ''}
-      <h3>독립 풀이 ${blind.answer ? chip({ ok: ['정답 일치', 'ok'], bad: ['정답 불일치', 'bad'] }, blind.match ? 'ok' : 'bad') : ''}</h3>
-      <p class="muted small">정답과 해설을 보지 않은 별도 호출이 문제만 보고 풀었습니다.</p>
-      <div class="kv"><div class="k">고른 답</div><div>${blind.answer ? circled(blind.answer) : '없음'} ${inlineRich(blind.answerValue || '')} ${blind.confident === false ? '<span class="chip warn">확신 낮음</span>' : ''}</div>
-        <div class="k">필요했던 STEP</div><div>${(blind.stepsUsed || []).join(', ') || '-'} ${v.coverage ? `(목표: ${v.coverage.expected.join(', ')}) ${chip({ pass: ['범위 일치', 'ok'], warn: ['범위 확인', 'warn'] }, v.coverage.status)}` : ''}</div></div>
-      ${blind.conditions?.length ? `<details data-k="conds"><summary>조건 사용 점검 (${blind.conditions.filter((c) => !c.used).length ? `안 쓰인 조건 ${blind.conditions.filter((c) => !c.used).length}개` : '모두 사용'})</summary><div class="inner"><ul class="small">${blind.conditions.map((c) => `<li>${c.used ? '✅' : '⚠️ 안 쓰임 —'} ${inlineRich(c.text)}</li>`).join('')}</ul></div></details>` : ''}
-      ${blind.variation && blind.variation !== 'n/a' ? `<p class="small">원본 대비 변형: ${blind.variation === 'structural' ? '<span class="chip ok">구조 변형</span>' : '<span class="chip warn">숫자만 바뀜</span>'} ${inlineRich(blind.variationNote || '')}</p>` : ''}
-      ${blind.issues?.length ? `<div class="note warn"><b>독립 풀이가 지적한 점</b><ul>${blind.issues.map((i) => `<li>[${esc(i.type)}] ${inlineRich(i.detail)}</li>`).join('')}</ul></div>` : ''}
-      ${blind.solution ? `<details data-k="blind"><summary>독립 풀이 전문</summary><div class="inner rich">${rich(blind.solution)}</div></details>` : ''}`;
-  }
-
   // Under the problem, its report: one line on how it was made (first design, fixed n times, or an answer that could
   // not be confirmed), and in a fold what each check found and what was done about it, what is left, and the learning
   // it kept or broke.
@@ -1438,20 +1417,12 @@
     const p = item.problem;
     const v = item.verification;
     if (v?.blind && p) v.blind.match = v.blind.answer === p.answer;
-    const repairs = (item.attempts || []).filter((a) => a.kind === 'repair').length;
     const running = ['generating', 'verifying', 'repairing'].includes(item.status);
     const finished = p && ['passed', 'warning', 'needs_review'].includes(item.status);
     const state = item.adopted ? '<span class="chip ok">채택됨</span>'
       : item.status === 'warning' ? ((item.warnings || []).some((x) => !/^해설: /.test(x)) ? `<span class="chip warn">완성 · 남은 점 있음</span>` : '<span class="chip ok">완성</span>')
       : legacyReview(item) ? '<span class="chip bad">검토 필요</span>'
       : item.status === 'needs_review' && item.finalReview && !item.finalReview.passed ? '<span class="chip bad">미완료 · 최종 검수 미통과</span>' : chip(ITEM_STATUS, item.status);
-    const made = [
-      item.examplesUsed && `채택한 문제 ${item.examplesUsed}개를 본보기로 참고`,
-      repairs && `검토 후 고친 횟수 ${repairs}회`,
-      item.redesigned && `새로 설계 ${item.redesigned}번 (${item.design}번째 설계를 씀)`,
-      item.history?.length && `다시 만든 횟수 ${item.history.length}회`,
-      item.usesSteps?.length && `사용한 원본 STEP ${item.usesSteps.join(', ')}`,
-    ].filter(Boolean);
     return `<div class="item${item.adopted ? ' adopted' : ''}" data-item="${item.index}" id="item-${item.index}">
       <div class="head"><span class="num">문제 ${item.index + 1}</span><span>${esc(item.label)}</span><span class="spacer"></span>${busy ? '<span class="chip run">다시 만드는 중</span>' : state}</div>
       <div class="body">
@@ -1474,14 +1445,7 @@
       ${p ? `
       <details data-k="sol"><summary>정답과 해설 — 정답 ${p.answer ? circled(p.answer) : '(서술형)'}</summary><div class="inner">
         ${(item.solution?.steps || []).map((s) => `<div class="step"><div class="head">${s.step ? `<span class="badge">원본 STEP ${s.step}</span>` : ''}${flat(s.title)}</div><div class="rich">${rich(s.work)}</div></div>`).join('')}
-        ${item.solution?.summary ? `<p><b>정리</b> ${flat(item.solution.summary)}</p>` : ''}</div></details>
-      <details data-k="more"><summary>만든 과정</summary><div class="inner">
-        ${made.length ? `<p class="small muted">${made.join(' · ')}</p>` : ''}
-        ${item.designNote ? `<h3>설계 의도</h3><div class="rich">${rich(item.designNote)}</div>` : ''}
-        <h3>자동 검토</h3>${verificationHtml(v)}
-        <h3>피드백을 지켰는지 (${v?.rules?.length || 0})</h3>${v?.rules?.length ? `<div class="table-wrap"><table class="rules"><tr><th>피드백·지침</th><th>AI가 밝힌 적용 방법</th><th>독립 검토</th></tr>${v.rules.map((r) => `<tr><td>${inlineRich(r.text)}</td><td>${esc(r.how || '— (언급 없음)')}</td><td>${r.judged ? (r.judged.ok ? '✅ ' : '❌ ') + esc(r.judged.note || '') : '<span class="muted">해설 지침은 원문 확인</span>'}</td></tr>`).join('')}</table></div>` : '<p class="muted small">붙인 피드백이 없습니다.</p>'}
-        ${item.history?.length ? `<h3>이전 버전 (${item.history.length})</h3>${item.history.map((h) => `<div class="note"><div class="small muted">${fmtTime(h.replacedAt)} 교체 · 남긴 점: ${esc(h.feedback || '없음')}</div><div class="rich">${rich(h.problem?.text || '')}</div>${h.problem ? choicesHtml(h.problem) : ''}</div>`).join('')}` : ''}
-      </div></details>` : ''}
+        ${item.solution?.summary ? `<p><b>정리</b> ${flat(item.solution.summary)}</p>` : ''}</div></details>` : ''}
     </div>`;
   }
 
