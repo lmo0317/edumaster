@@ -17,6 +17,45 @@ function plain(text) {
 
 const result = (id, label, ok, evidence, severity = 'design') => ({ id, label, state: ok ? 'pass' : 'fail', evidence, severity });
 
+// ---------------------------------------------------------------- notation (the system's, never the model's)
+
+const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
+const subDigits = (t) => String(t).replace(/[₀-₉]/g, (d) => String(SUBSCRIPT.indexOf(d)));
+// A chemical formula written as plain text: element-like capitals with a count (X2, X₂, CO2, X2Z4) or a state (A(s)).
+const FORMULA = /(?<![A-Za-z0-9\\{}_^])((?:[A-Z][a-z]?[0-9₀-₉]*)+(?:\((?:g|l|s|aq)\))?)(?![A-Za-z0-9{(])/g;
+// A count in a formula is 2 or more, so a label like S1 or A1 is not one.
+const isFormula = (f) => /[0-9₀-₉]|\((?:g|l|s|aq)\)$/.test(f) && (subDigits(f).match(/\d+/g) || []).every((n) => n !== '1' && n[0] !== '0');
+/**
+ * Every chemical formula outside $…$ written as $\ce{…}$, the form the review criteria hold all text to (D 표기). The
+ * system writes it, in every text a problem has — its question, choices, figure, the solution's titles and lines —
+ * so no fault of notation ever goes back to a model. Fixed where it was seen only (the body lines of density's
+ * frames, 2026-10-16), the STEP titles the system copies from the analysis kept X₂ and the gas original's four sets
+ * failed on it to the end (2026-10-21).
+ */
+function notation(text) {
+  return String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? part
+    : part.replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join('');
+}
+/** notation() over all of a problem's text (mutates `item`). */
+function notateItem(item) {
+  if (item.problem) {
+    item.problem.text = notation(item.problem.text);
+    item.problem.choices = (item.problem.choices || []).map(notation);
+    if (item.problem.figure) item.problem.figure = notation(item.problem.figure);
+  }
+  for (const s of item.solution?.steps || []) { s.title = notation(s.title); s.work = notation(s.work); }
+  if (item.solution?.summary) item.solution.summary = notation(item.solution.summary);
+}
+/** The original as the system shows it to writers and reviewers: the same notation (a copy). */
+function notateMaterial(material) {
+  if (!material?.problem) return material;
+  return {
+    ...material,
+    problem: { ...material.problem, text: notation(material.problem.text), choices: (material.problem.choices || []).map(notation), figure: material.problem.figure ? notation(material.problem.figure) : material.problem.figure },
+    steps: (material.steps || []).map((s) => ({ ...s, title: notation(s.title), work: notation(s.work), result: s.result ? notation(s.result) : s.result })),
+  };
+}
+
 // ---------------------------------------------------------------- teacher method (v1 TeacherMethodPolicy)
 
 /** Letters the teacher defines to simplify the solution ("A w g의 양(mol)을 n", "…을 m이라 하면"). */
@@ -66,7 +105,8 @@ function teacherChoiceHeading(material, item) {
  * solutions were frame slips (two sentences joined, "반응 후" added, "모두 반응하고" rewritten), 2026-10-13 rounds 1–4.
  */
 // "$\ce{A(g)}$" and "A(g)" are the same words to a reader (the readings differ in this): compared without \ce.
-const frameLine = (l) => String(l || '').replace(/\$\\ce\{([^{}]*)\}\$/g, '$1').replace(/\\ce\{([^{}]*)\}/g, '$1').replace(/\s+/g, ' ').trim();
+// So are X₂ and X2 (notation writes every formula as $\ce{X2}$).
+const frameLine = (l) => subDigits(String(l || '').replace(/\$\\ce\{([^{}]*)\}\$/g, '$1').replace(/\\ce\{([^{}]*)\}/g, '$1')).replace(/\s+/g, ' ').trim();
 // Not held to a frame: table rows, a line of formulas only (a proportion, the choice's own numbers — the teacher's has
 // other numbers in it, so its frame is all slots), and the closing choice and answer lines (teacherChoiceHeading).
 const frameSkip = (l) => !l || /^\|.*\|$/.test(l) || /^\|?\s*-{3}/.test(l) || /^[★*•\s]*([①②③④⑤]|정답은)/.test(l)
@@ -149,7 +189,6 @@ function frameFindings(material, item, limit = 8) {
  * value) — content for the writer, never wording.
  */
 const FRAME_REF = /^\s*\[틀\s*(\d+)\s*[-–.]\s*(\d+)\]\s*(.*)$/;
-const ROMAN = /Ⅰ|Ⅱ|Ⅲ|Ⅳ|Ⅴ/g;
 // Frames are kept without \ce (frameLine), so a species the teacher writes as "$\ce{A(s)}$" goes back in that form
 // outside the frame's $…$ (reaction-density, 2026-10-16: every set wrote "A(s)" and the judge failed the notation).
 function teacherCe(material, text) {
@@ -192,19 +231,35 @@ function renderFrames(material, item) {
       .replace(/(?<![\w{])(\d+)\s*([a-z])\s*\/\s*(\d+)(?![\w}])/g, '\\frac{$1}{$3}$2')
       .replace(/(?<![\w{])(\d+)\s*\/\s*(\d+)(?![\w}])/g, '\\frac{$1}{$2}'));
     const original = material.steps?.[step.step - 1]?.title;
-    // The teacher's words to the letter, not only to titleKey: "Ⅰ 에서" and "A-D" for "Ⅰ에서" and "A~D" passed the key and
-    // stayed in Haiku's set (Gemini's review, 2026-10-16).
-    if (original && step.title) {
-      const mine = String(step.title).match(ROMAN) || [];
-      const theirs = String(original).match(ROMAN) || [];
-      let k = 0;
-      const title = mine.length === theirs.length ? String(original).replace(ROMAN, () => mine[k++]) : original;
-      if (step.title !== title) step.title = title;
-    }
+    if (original && step.title) step.title = stepTitle(original, step.title);
   }
   answerLine(item);
   teacherChoiceHeading(material, item);
+  notateItem(item);
   return missing;
+}
+
+// Labels a problem names its experiments, containers or points by: Ⅰ, (가), ㉠, and runs of them ("(가)~(다)",
+// "Ⅰ과 Ⅱ", "(가), (나)").
+const LABEL = '(?:[ⅠⅡⅢⅣⅤ]|\\([가-하]\\)|[㉠-㉭])';
+const LABEL_RUN = new RegExp(`${LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${LABEL})*`, 'g');
+/**
+ * A solution STEP's title: the teacher's words to the letter, with the labels the problem has. The writer's title is
+ * taken where it is the teacher's title with other label runs ("(가)와 (나)" for "(가)~(다)", "Ⅱ" for "Ⅰ"), so a
+ * problem with fewer containers names its own; anything else gets the teacher's title. Only Roman numerals were carried
+ * over before, so a title kept "(가)~(다)" for a problem with (가), (나) and no model could change it (the criteria,
+ * D STEP 제목). "Ⅰ 에서" and "A-D" for "Ⅰ에서" and "A~D" are not taken (Haiku's set, Gemini's review, 2026-10-16).
+ */
+function stepTitle(original, mine) {
+  const o = String(original);
+  const plainTitle = (s) => frameLine(s).replace(/\s*\.$/, '');
+  const parts = plainTitle(o).split(LABEL_RUN);
+  if (parts.length < 2) return o;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*');
+  const m = new RegExp(`^${parts.map(esc).join(`\\s*(${LABEL_RUN.source})\\s*`)}$`).exec(plainTitle(mine));
+  if (!m) return o;
+  let k = 1;
+  return o.replace(LABEL_RUN, () => m[k++].trim());
 }
 
 /**
@@ -262,13 +317,16 @@ function checkHelpers(material, item) {
 // every variant that kept her sentences failed this check).
 const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하지|성립하지|불가능|그러나|하지만/.test(t);
 
+// Any STEP of the teacher's that reasons by assumption, not STEP 1 only (where the originals it was written for had it).
 function checkAssumption(material, item) {
-  const first = material.steps[0];
-  if (!first || !assumes(first.work + first.technique) || !stageSteps(item.stage, material.steps.length).includes(1)) return [];
+  const used = stageSteps(item.stage, material.steps.length);
+  const want = used.filter((n) => material.steps[n - 1] && assumes(material.steps[n - 1].work + material.steps[n - 1].technique));
+  if (!want.length) return [];
   const steps = item.solution?.steps || [];
-  const firstGenerated = steps.filter((s) => s.step === 1).map((s) => s.work).join('\n') || steps.map((s) => s.work).join('\n');
-  return [result('source-assumption', '원본의 가정→모순 판정 유지', assumes(firstGenerated),
-    assumes(firstGenerated) ? '가정과 모순 판정이 해설에 있음' : '원본 STEP 1의 가정→실험 비교→모순 판정이 변형 해설에서 사라졌습니다. 같은 추론이 필요하도록 문제와 해설을 고쳐야 합니다.')];
+  const all = steps.map((s) => s.work).join('\n');
+  const lost = want.filter((n) => !assumes(steps.filter((s) => s.step === n).map((s) => s.work).join('\n') || all));
+  return [result('source-assumption', '원본의 가정→모순 판정 유지', !lost.length,
+    !lost.length ? '가정과 모순 판정이 해설에 있음' : `원본 STEP ${lost.join(', ')}의 가정→비교→모순 판정이 변형 해설에서 사라졌습니다. 같은 추론이 필요하도록 문제와 해설을 고쳐야 합니다.`)];
 }
 
 // ---------------------------------------------------------------- problem structure (v1 choices / consistency)
@@ -385,13 +443,28 @@ function checkStepTitles(material, item) {
     out.length ? `해설 STEP 제목을 선생님 해설의 제목대로 써야 합니다: ${out.join('; ')}` : '')];
 }
 
-/** Data rows of the first table: experiment rows (Ⅰ, Ⅱ, …) and the cells that hold a hidden letter (x, y). */
+// A table's data rows are those named by a label: experiments Ⅰ, Ⅱ (or I, II), containers or gases (가), (나), ㉠. Only
+// Roman numerals were read before, so the gas original's (가)~(다) table had no shape and its final's "only the numbers
+// changed" check never ran (2026-10-21).
+const rowLabel = (c) => new RegExp(`^(?:${LABEL}|I{1,3}|IV)$`).test(String(c).trim());
+const LABEL_SERIES = ['ⅠⅡⅢⅣⅤ', '가나다라마바사아자차카타파하', '㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭'];
+function nextLabel(last) {
+  const t = String(last || '').replace(/^I{1,3}$|^IV$/, (r) => ({ I: 'Ⅰ', II: 'Ⅱ', III: 'Ⅲ', IV: 'Ⅳ' })[r]);
+  const ch = t.replace(/[()]/g, '');
+  for (const series of LABEL_SERIES) {
+    const i = series.indexOf(ch);
+    if (i >= 0 && i + 1 < series.length) return t.startsWith('(') ? `(${series[i + 1]})` : series[i + 1];
+  }
+  return '새 행';
+}
+
+/** Data rows of the first table: labelled rows (Ⅰ, (가), ㉠ …) and the cells that hold a hidden letter (x, y). */
 function tableShape(text) {
   const rows = String(text || '').split('\n')
     .map((l) => l.trim())
     .filter((l) => l.startsWith('|'))
     .map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim()))
-    .filter((cells) => /^(Ⅰ|Ⅱ|Ⅲ|Ⅳ|I|II|III|IV)$/.test(cells[0]));
+    .filter((cells) => rowLabel(cells[0]));
   if (!rows.length) return null;
   // A letter used as the unit elsewhere ("5w") is a quantity when it stands alone ("w" = 1w), not a hidden value.
   const units = new Set(rows.flat().flatMap((c) => [...c.matchAll(/\d\s*([a-z])\b/g)].map((m) => m[1])));
@@ -406,7 +479,7 @@ function shapeOptions(text) {
   if (!shape || !shape.hidden.length) return '';
   const lines = String(text || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
   const header = (lines[0] || '').replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim());
-  const rows = lines.map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim())).filter((c) => /^(Ⅰ|Ⅱ|Ⅲ|Ⅳ|I|II|III|IV)$/.test(c[0])).map((c) => c[0]);
+  const rows = lines.map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => plain(c).trim())).filter((c) => rowLabel(c[0])).map((c) => c[0]);
   const col = (i) => `'${header[i] || `${i + 1}번째 열`}'`;
   const hiddenAt = shape.hidden.map((h) => h.split(':').map(Number));
   const taken = new Set(shape.hidden);
@@ -416,12 +489,12 @@ function shapeOptions(text) {
       if (!taken.has(`${r}:${i}`) && hiddenAt.some(([hr, hi]) => hr !== r || hi !== i) && (hiddenAt.some(([, hi]) => hi === i) || hiddenAt.some(([hr]) => hr === r))) moves.push(`${rows[r]}의 ${col(i)}`);
     }
   }
-  const next = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ'][rows.length] || '새 실험';
+  const next = nextLabel(rows[rows.length - 1]);
   return [
-    `원본 표: 실험 ${rows.join(', ')} ${rows.length}개, 숨긴 값 ${hiddenAt.map(([r, i]) => `${rows[r]}의 ${col(i)}`).join(', ')}. 다음 중 둘 이상을 함께 바꾼다:`,
+    `원본 표: 행 ${rows.join(', ')} ${rows.length}개, 숨긴 값 ${hiddenAt.map(([r, i]) => `${rows[r]}의 ${col(i)}`).join(', ')}. 다음 중 둘 이상을 함께 바꾼다:`,
     moves.length ? `(1) 숨긴 값을 다른 칸으로 옮긴다 — 예: ${moves.join(', ')}. 원래 숨긴 칸에는 수치를 준다.` : '',
-    `(2) 실험 수를 바꾼다 — 실험 ${next}를 더해 ${rows.length + 1}개로 하거나, 풀이에 꼭 필요한 ${rows.length - 1}개만 둔다.`,
-    '(3) 가정→모순을 판정하는 실험이나 남는 물질을 원본과 다르게 잡는다 (원본 STEP의 기법은 그대로 필요해야 한다).',
+    `(2) 행(실험·대상) 수를 바꾼다 — ${next}를 더해 ${rows.length + 1}개로 하거나, 풀이에 꼭 필요한 ${rows.length - 1}개만 둔다.`,
+    '(3) 원본 풀이가 기준으로 삼는 행이나 판정·계산의 방향(무엇을 주고 무엇을 구하는지)을 원본과 다르게 잡는다 (원본 STEP의 기법은 그대로 필요해야 한다).',
     '(4) 원본에서 수치로 준 칸 하나를 숨기고 그 값을 묻는 식에 쓴다.',
   ].filter(Boolean).join('\n');
 }
@@ -435,7 +508,7 @@ function checkSameShape(material, item, mode) {
   if (!a || !b || !a.hidden.length) return [];
   const same = a.rows === b.rows && a.cols === b.cols && a.hidden.join() === b.hidden.join();
   return [result('variant-shape', '통합 변형: 표 구조와 숨긴 값 위치를 바꿨는지', !same,
-    same ? `실험 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 실험 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험을 넣어 구조를 바꿔야 합니다.\n${shapeOptions(material.problem.text)}` : '')];
+    same ? `행 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 행 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험·대상을 넣어 구조를 바꿔야 합니다.\n${shapeOptions(material.problem.text)}` : '')];
 }
 
 /** A reaction equation printed in the problem keeps the original's coefficients (DeepSeek set b to 1 so the
@@ -580,4 +653,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { uncoveredLines, renderFrames, validateFrames, frameFindings, frameRegex, teacherChoiceHeading, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { notation, notateItem, notateMaterial, stepTitle, uncoveredLines, renderFrames, validateFrames, frameFindings, frameRegex, teacherChoiceHeading, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

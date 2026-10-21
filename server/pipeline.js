@@ -647,7 +647,7 @@ async function finalGate(ctx, item, material, prior, hints = []) {
     // Every round is kept for the set page: what each review found, and that the next one passed.
     (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
     ctx.save();
-    return { faults, review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(data) };
+    return { faults, notes: faults.length ? [] : finalReview.itemNotes(data), review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(data) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
@@ -1269,6 +1269,9 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   // Up to ctx.maxRepairs repairs, a further one only when the previous one changed what is wrong (the same complaints
   // twice means the model is stuck: a fresh design does better). The solution alone is rewritten up to twice.
   const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+  // Stuck is the same kinds of fault again: a reviewer words one fault differently every round ("[STEP 제목 · low] …"),
+  // so compared word for word the gas original's final never counted as stuck and spent 13 repairs (2026-10-21).
+  const kinds = (reasons) => [...new Set(reasons.map((r) => r.replace(/^(최종 검수: \[[^\]·]+).*$/s, '$1').replace(/^(최종 검수: )[^[].*$/s, '$1답').slice(0, 200)))].sort();
   let lastRepair = null;
   for (let round = 0; ;) {
     if (ctx.signal?.aborted) break;
@@ -1301,7 +1304,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
       continue;
     }
     if (!repairReasons(check).length || round >= ctx.maxRepairs) break;
-    if (lastRepair && same(repairReasons(check), lastRepair)) break;
+    if (lastRepair && same(kinds(repairReasons(check)), kinds(lastRepair))) break;
     // A repair costs a repair and a new solve; skip it when that would leave too little for the later problems.
     if (ctx.budget.affords && !ctx.budget.affords(3 + (ctx.reserveCalls || 0))) {
       const byCalls = ctx.budget.calls + 3 + (ctx.reserveCalls || 0) > ctx.budget.maxCalls;
@@ -1385,6 +1388,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
     ...best.reasons.filter((r) => !check.invalid.some((x) => r.endsWith(x)) && !r.startsWith('최종 검수: ')),
     ...check.soft.filter((w) => !check.coverageNotes.includes(w) && !check.designNotes.includes(w) && !check.invalid.includes(w)),
     ...check.rewriteNotes.map((n) => '해설: ' + n), ...best.writeNotes,
+    ...(gate?.notes || []).map((n) => '최종 검수 참고: ' + n),
   ])];
   // With the final review on, made means it passed: a problem that never reached it (other faults left) is not made
   // either, and what the earlier checks noted but the final review does not count as a fault stays as a note.
@@ -1395,6 +1399,11 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
   ctx.log(`${item.label}: ${{ passed: '완성', warning: `완성 (남은 점 ${item.warnings.length}개)`, needs_review: ctx.finalGate ? '최종 검수를 통과하지 못해 미완료' : '정답을 확정하지 못함' }[item.status]}${fixes ? ` — 자동 수정 ${fixes}번${item.redesigned ? `, 새 설계 ${item.redesigned}번` : ''}` : ''}`);
   ctx.save();
 }
+
+// Low notes of the final review: notation, a title, wording. The system lays these out (harness.notation, stepTitle),
+// so they are never learned: the gas original's 학습 반복 (2026-10-21) learned "write X₂ in the title as $\ce{X2}$ with
+// its full stop" set after set, a lesson no writer could keep (the system wrote that title), and fell from 89 to 61.
+const LOW_NOTE = /· low\]/;
 
 // After a set: what its checks found becomes at most three learning items (this problem's or every problem's), so the
 // next set avoids it from the start. Recorded on the job for its report. A failure here never fails the set.
@@ -1414,7 +1423,8 @@ async function learnFromSet(ctx) {
     for (const a of item.attempts || []) for (const f of a.failures || []) {
       if (gated && !['repair', 'redesign'].includes(a.kind) && !String(f).startsWith('최종 검수: ')) continue;
       const text = String(f).replace(/^(문제 설계|STEP 범위|해설|최종 검수): /, '');
-      if (seen.has(text)) continue;
+      // A low note (a title, notation, wording) is the system's to write, not a lesson (LOW_NOTE).
+      if (seen.has(text) || LOW_NOTE.test(text)) continue;
       seen.add(text);
       faults.push({ label: item.label, text: text.slice(0, 400), left: [...left].some((x) => x.includes(text.slice(0, 60))) });
     }
@@ -1460,7 +1470,8 @@ async function learnFromSet(ctx) {
  * next set is made with — lessons the system learned itself are rewritten or dropped, new ones added; the teacher's
  * own items are never touched. Returns what changed.
  */
-async function learnFromReview(ctx, material, set, faults) {
+async function learnFromReview(ctx, material, set, all) {
+  const faults = all.filter((f) => !LOW_NOTE.test(f.text));
   if (!faults.length || !ctx.store) return [];
   const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review'].includes(r.source?.from);
   const rules = selectRules(ctx.store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, editable: editable(r) }));

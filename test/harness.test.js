@@ -126,8 +126,34 @@ test('two agreeing re-reads restore a number a proofreader changed (Gemma: 휴�
 test('a final in the original table shape is told which cells and rows it can change', () => {
   const text = '| 실험 | 반응 전 A의 질량(g) | 반응 전 B의 질량(g) | 반응 후 남은 질량(g) | 상댓값 |\n|---|---|---|---|---|\n| Ⅰ | $5w$ | $5w$ | $\frac{10}{3}w$ | $x$ |\n| Ⅱ | $4w$ | $6w$ | $w$ | $18$ |\n| Ⅲ | $3w$ | $9w$ | $5w$ | $20$ |';
   const hint = harness.shapeOptions(text);
-  assert.match(hint, /실험 Ⅰ, Ⅱ, Ⅲ 3개, 숨긴 값 Ⅰ의 '상댓값'/);
+  assert.match(hint, /행 Ⅰ, Ⅱ, Ⅲ 3개, 숨긴 값 Ⅰ의 '상댓값'/);
   assert.match(hint, /Ⅱ의 '상댓값'/, 'the hidden value can move to another row');
-  assert.match(hint, /실험 Ⅳ를 더해 4개/);
+  assert.match(hint, /Ⅳ를 더해 4개/);
+  // Rows named (가)~(다) are rows too (the gas original, 2026-10-21: its table had no shape and the check never ran).
+  const gas = '| 기체 | 질량(g) | 부피(L) | 전체 원자 수 |\n|---|---|---|---|\n| (가) | 17 | 12 | 3 |\n| (나) | 6 | a | 1 |\n| (다) | 14 | 6 | b |';
+  assert.match(harness.shapeOptions(gas), /행 \(가\), \(나\), \(다\) 3개, 숨긴 값 \(나\)의 '부피\(L\)', \(다\)의 '전체 원자 수'/);
+  assert.match(harness.shapeOptions(gas), /\(라\)를 더해 4개/);
 });
 
+
+// The gas original's 학습 반복 (2026-10-21): a STEP title the system copies from the analysis kept "X₂" and "(가)~(다)"
+// whatever the writer wrote, and the final review failed it to the end. Notation and titles are the system's, everywhere.
+test('every formula written as text becomes $\\ce{…}$ in all of a problem\'s text; labels and math are left alone', () => {
+  const { notation, notateItem } = require('../server/harness');
+  assert.equal(notation('따라서 X2의 분자량은 $28$이다.'), '따라서 $\\ce{X2}$의 분자량은 $28$이다.');
+  assert.equal(notation('원소 X~Z의 원자량과 X₂의 분자량'), '원소 X~Z의 원자량과 $\\ce{X2}$의 분자량');
+  assert.equal(notation('| (다) | X2Z4 | 24L |'), '| (다) | $\\ce{X2Z4}$ | 24L |');
+  assert.equal(notation('A(s)와 B(g)'), '$\\ce{A(s)}$와 $\\ce{B(g)}$');
+  assert.equal(notation('이미 $\\ce{X2}$, $x_2=3$, STEP 2, S1, A1, pH 7, Ⅰ에서'), '이미 $\\ce{X2}$, $x_2=3$, STEP 2, S1, A1, pH 7, Ⅰ에서');
+  const item = { problem: { text: 'XY2 기체', choices: ['CO2', '3'] }, solution: { steps: [{ step: 3, title: 'X₂의 분자량을 구한다.', work: 'X2 12L' }], summary: 'X2' } };
+  notateItem(item);
+  assert.deepEqual([item.problem.text, item.problem.choices[0], item.solution.steps[0].title, item.solution.steps[0].work], ['$\\ce{XY2}$ 기체', '$\\ce{CO2}$', '$\\ce{X2}$의 분자량을 구한다.', '$\\ce{X2}$ 12L']);
+});
+
+test('a STEP title is the teacher\'s with the labels the problem has; anything else gets the teacher\'s words', () => {
+  const { stepTitle } = require('../server/harness');
+  assert.equal(stepTitle('(가)~(다)에 들어 있는 기체의 양(mol)을 구한다.', '(가)와 (나)에 들어 있는 기체의 양(mol)을 구한다'), '(가)와 (나)에 들어 있는 기체의 양(mol)을 구한다.');
+  assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ 에서 반응한 A의 질량을 구한다.'), 'Ⅱ에서 반응한 A의 질량을 구한다.');
+  assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ에서 반응한 B의 질량'), 'Ⅰ에서 반응한 A의 질량을 구한다.');
+  assert.equal(stepTitle('원소 X~Z의 원자량과 X₂의 분자량을 구한다.', '원자량'), '원소 X~Z의 원자량과 X₂의 분자량을 구한다.');
+});

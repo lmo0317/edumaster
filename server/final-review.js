@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { selectRules, analysisLearning, layerOf } = require('./learning');
+const { notateMaterial } = require('./harness');
 
 const CRITERIA_FILE = path.join(__dirname, '..', 'scripts', 'review-criteria.md');
 const criteria = () => fs.readFileSync(CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## A\.)/, '');
@@ -55,10 +56,14 @@ const itemText = (material, it) => [
   // reading as one more row of it: joined by '\n' the reviewers failed E37's final three sets running for "표 뒤 빈 줄 없음".
   '해설:', ...(it.solution?.steps || []).map((s) => `\nSTEP ${s.step}. ${s.title}\n${s.work}`), it.solution?.summary ? `\n정리: ${it.solution.summary}` : '',
 ].filter(Boolean).join('\n');
-const materialText = (m) => [
-  `[원본 문제를 AI가 옮겨 적은 것]\n${[m.problem.text, figure(m.problem), choices(m.problem)].filter(Boolean).join('\n')}\n정답: ${m.problem.answer}번`,
-  `\n[AI가 원본 해설을 STEP으로 정리한 것]\n${m.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n')}`,
-];
+// The original in the system's notation, as its problems are (harness.notation).
+const materialText = (original) => {
+  const m = notateMaterial(original);
+  return [
+    `[원본 문제를 AI가 옮겨 적은 것]\n${[m.problem.text, figure(m.problem), choices(m.problem)].filter(Boolean).join('\n')}\n정답: ${m.problem.answer}번`,
+    `\n[AI가 원본 해설을 STEP으로 정리한 것]\n${m.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n')}`,
+  ];
+};
 
 /** The whole set, reviewed after it is made (scripts/review-problem.js). */
 function setText(material, items) {
@@ -90,15 +95,26 @@ function solutionOnly(review) {
   return Boolean(it && it.answerOk !== false && it.issues?.length && it.issues.every((x) => SOLUTION_NAMES.includes(x.rule)));
 }
 
-/** A reviewer's verdict on one problem → what must still be fixed (empty when it can be used as it is). */
+/**
+ * A reviewer's verdict on one problem → what must still be fixed (empty when it can be used as it is). A problem is held
+ * back by a wrong answer or a high or mid fault; low ones (a title, notation, wording) never hold it back — they go
+ * along to be fixed with a fault that does, and are kept as notes otherwise. Held back by the reviewer's 'fix' alone,
+ * the gas original's final went through 13 repairs and 3 designs over low notes on its STEP 3 title and was not made
+ * (2026-10-21).
+ */
 function itemFaults(review) {
   const it = (review?.items || [])[0];
   if (!it) return ['최종 검수가 결과를 내지 못했습니다.'];
   const faults = (it.issues || []).map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
+  const blocking = it.answerOk === false || (it.issues || []).some((x) => x.severity !== 'low');
   if (it.answerOk === false) faults.unshift(`검수자가 직접 푼 정답은 ${it.myAnswer || '?'}로 표시된 정답 ${it.markedAnswer ?? ''}번과 다릅니다.`);
-  // "use" with only low notes is a problem the reviewer would hand out as it is.
-  if (it.verdict === 'use' && it.answerOk !== false) return [];
+  if (!blocking && (it.verdict === 'use' || it.issues?.length)) return [];
   return faults.length ? faults : [`검수 판정이 '${it.verdict || '없음'}'입니다.`];
+}
+/** The low notes a reviewer left on a problem it passed. */
+function itemNotes(review) {
+  const it = (review?.items || [])[0];
+  return (it?.issues || []).filter((x) => x.severity === 'low').map((x) => `[${x.rule || '기준'} · low] ${x.detail || ''}`.trim());
 }
 
 /** The analysis alone, reviewed once before an original's problems are made. */
@@ -145,4 +161,4 @@ function checklistOf(part, { analysis = false, final = false } = {}) {
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, solutionOnly, checklistOf, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, checklistOf, CHECKLIST, CRITERIA_FILE };

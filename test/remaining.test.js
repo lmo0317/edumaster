@@ -269,13 +269,27 @@ test('a wrong answer found by the final reviewer is a fault even when its verdic
 
 // chem-c32-molar-volume (2026-10-19): the solution review and the final review judged the same solution and disagreed.
 test('with the final review on, the solution is judged by that review alone and a fault only there is a rewrite', async () => {
-  const { item, purposes } = await gated([verdict('fix', [{ severity: 'low', rule: '표기', detail: '수식이 $ 밖에 있음' }]), verdict('use')]);
+  const { item, purposes } = await gated([verdict('fix', [{ severity: 'mid', rule: '풀이 방식', detail: '선생님과 다른 순서로 풂' }]), verdict('use')]);
   assert.equal(purposes.filter((p) => p === 'final-review').length, 2);
   assert.ok(!purposes.includes('solution-review') && !purposes.includes('review-solution'), purposes.join());
   const rewrite = item.attempts.find((a) => a.kind === 'rewrite');
-  assert.match(rewrite.failures.join(), /최종 검수: \[표기 · low\]/);
+  assert.match(rewrite.failures.join(), /최종 검수: \[풀이 방식 · mid\]/);
   assert.ok(!item.attempts.some((a) => a.kind === 'repair'), 'the problem was not redesigned for its solution');
   assert.equal(item.status, 'passed');
+});
+
+// The gas original's 학습 반복 (2026-10-21): its final went through 13 repairs and 3 designs over low notes on a STEP
+// title the system writes, and was not made.
+test('a low note alone never holds a problem back: it passes with the note kept, and the note is not learned', async () => {
+  const { itemFaults } = require('../server/final-review');
+  const low = { items: [{ answerOk: true, verdict: 'fix', issues: [{ severity: 'low', rule: 'STEP 제목', detail: '마침표 없음' }] }] };
+  assert.deepEqual(itemFaults(low), []);
+  assert.equal(itemFaults({ items: [{ answerOk: true, verdict: 'use', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바꿈' }] }] }).length, 1, 'a mid fault holds it back even under use');
+  assert.equal(itemFaults({ items: [{ answerOk: false, myAnswer: '②', verdict: 'use', issues: [] }] }).length, 1);
+  const { item, purposes } = await gated([verdict('fix', [{ severity: 'low', rule: '표기', detail: '수식이 $ 밖에 있음' }])]);
+  assert.equal(purposes.filter((p) => p === 'final-review').length, 1, 'no rewrite for a low note');
+  assert.equal(item.status, 'passed');
+  assert.match(item.warnings.join(), /최종 검수 참고: \[표기 · low\]/);
 });
 
 // The set page shows the 모델 비교 checklist filled from each problem's final review (server/final-review.js).
