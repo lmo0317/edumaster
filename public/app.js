@@ -817,7 +817,7 @@
         <header class="set-head">
           <div class="set-title"><a href="#/j/${j.id}">세트 ${s.no}</a>${i === 0 ? '<span class="set-new">최신</span>' : ''}<span class="set-meta">${meta}</span></div>
           <div class="set-tally">${tally}</div>
-          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy || j.check?.running ? '' : checkButtons(j.id)}${busy ? '' : `<button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
+          <div class="set-acts"><a class="btn small set-open" href="#/j/${j.id}">${busy ? '진행 보기' : '세트 열기'} ›</a>${busy ? '' : `<a class="btn small" href="#/j/${j.id}/check">검수</a><button class="small set-del" data-del-set="${j.id}" data-no="${s.no}">세트 삭제</button>`}</div>
         </header>
         ${later && !busy && i === 0 ? `<p class="set-later">이 세트 뒤에 가르친 생성 학습 ${later}개는 들어가 있지 않습니다. 새 세트를 만들면 반영됩니다.</p>` : ''}
         <ol class="set-items">${items.map((it, k) => {
@@ -834,8 +834,6 @@
     const cards = gens.map(card);
     el.innerHTML = trains + `<div class="set-list">${cards.slice(0, 4).join('')}</div>`
       + (cards.length > 4 ? `<details class="set-older"><summary>이전 세트 ${cards.length - 4}개 더 보기</summary><div class="set-list">${cards.slice(4).join('')}</div></details>` : '');
-    // 검수하기 / 검수하고 고치기 (server/set-check.js): started here, followed on the set's review page.
-    bindCheckButtons(el);
     $$('[data-del-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
       const j = gens.find((x) => x.id === b.dataset.delSet);
       if (!(await deleteSet(b.dataset.no, j.items || [], j.id))) return;
@@ -1070,15 +1068,30 @@
   }
   async function checkView(id, again = false) {
     const token = routeToken;
-    const r = await api('GET', `/api/jobs/${id}/check`);
+    const [r, job] = await Promise.all([api('GET', `/api/jobs/${id}/check`), api('GET', '/api/jobs/' + id)]);
+    const train = job.trainJobId ? (await api('GET', '/api/jobs?materialId=' + job.materialId)).find((j) => j.id === job.trainJobId) : null;
     const c = r.check;
+    let tab = 'result';
+    try { tab = sessionStorage.getItem('em-check-tab') || 'result'; } catch { /* no storage */ }
     const models = Object.keys(c?.reviews || {});
     const busy = Boolean(c?.running);
     const acts = busy ? '' : `<button class="small" data-check="review">${c ? '다시 검수' : '검수하기'}</button><button class="small primary" data-check="fix">검수하고 고치기</button>`;
     const head = `<div class="lt jt-head"><a class="lt-back" href="#/m/${r.materialId}">‹ ${esc(r.materialTitle)}</a>
-      <div class="lt-head"><h1>검수 결과</h1><div class="name-btns"><a class="btn small" href="#/j/${id}">세트 열기</a>${acts}</div></div>
+      <div class="lt-head"><h1>검수</h1><div class="name-btns"><a class="btn small" href="#/j/${id}">세트 열기</a>${acts}</div></div>
       <p class="lt-meta">Claude와 Gemini가 원본 이미지와 대조해 분석과 변형 문제를 검토하고, 문제마다 직접 풀어 정답을 확인합니다. 모델 비교와 같은 요구사항 체크리스트로 채점합니다.${c ? ` · ${fmtTime(c.at)}` : ''}</p>
       <p class="muted small"><b>검수하고 고치기</b>: 검수에서 걸린 문제를 지적 내용대로 다시 만들고(원본 분석 지적은 원본과 대조해 고침) 다시 검수합니다. 최대 2번 고치며, 학습은 바꾸지 않습니다.</p></div>`;
+    const TABS = [['result', '검수 결과'], ['detail', '검수 내용'], ['learn', '학습 내용'], ['log', '만든 기록']];
+    const making = setMaking(job);
+    const page = (panes) => head + `<nav class="ck-tabs" role="tablist">${TABS.map(([k, t]) => `<button type="button" role="tab" data-ck-tab="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</nav>`
+      + TABS.map(([k]) => `<div class="ck-pane" data-ck-pane="${k}"${k === tab ? '' : ' hidden'}>${panes[k] || ''}</div>`).join('');
+    const tabs = () => $$('[data-ck-tab]').forEach((b) => b.addEventListener('click', () => {
+      tab = b.dataset.ckTab;
+      try { sessionStorage.setItem('em-check-tab', tab); } catch { /* no storage */ }
+      $$('[data-ck-tab]').forEach((x) => x.classList.toggle('on', x === b));
+      $$('[data-ck-pane]').forEach((x) => { x.hidden = x.dataset.ckPane !== tab; });
+    }));
+    const learnPane = learnHtml(job, train);
+    const logPane = `<section class="panel">${making.quota ? `<p class="muted">이 세트가 쓴 구독 한도: ${making.quota}. 같은 시간에 이 구독을 쓴 다른 작업이 있었다면 그 몫도 들어 있습니다.</p>` : ''}${makeLog(job)}</section>`;
     const bind = () => {
       $$('[data-check]').forEach((b) => b.addEventListener('click', guard(async () => {
         if (b.dataset.check === 'fix' && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
@@ -1090,7 +1103,10 @@
       if (busy) setTimeout(() => { if (token === routeToken && location.hash.startsWith(`#/j/${id}/check`)) checkView(id, true).catch(() => {}); }, 15000);
       if (!again) window.scrollTo(0, 0);
     };
-    if (!c) { view.innerHTML = head + '<div class="panel muted">이 세트는 아직 검수하지 않았습니다.</div>'; bind(); return; }
+    if (!c) {
+      view.innerHTML = page({ result: '<div class="panel muted">이 세트는 아직 Claude·Gemini 검수를 하지 않았습니다. 위의 <b>검수하기</b>로 시작합니다.</div>', detail: making.html, learn: learnPane, log: logPane });
+      tabs(); bind(); return;
+    }
     const rv = (p) => c.reviews[p]?.review;
     const name = (p) => esc(CHECK_MODEL[p] || p);
     const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
@@ -1123,16 +1139,16 @@
     </tbody></table>`;
     const part = (title, body) => `<section class="panel"><h2>${title}</h2>${body}</section>`;
     const perModel = (pick) => models.filter((p) => rv(p)).map((p) => `<div class="ck-model"><h3>${name(p)}</h3>${pick(rv(p), p)}</div>`).join('');
-    view.innerHTML = head
-      + (busy ? `<div class="note info"><i class="spin"></i> ${c.fix ? '검수하고 고치는 중입니다. 걸린 문제를 다시 만든 뒤 다시 검수합니다.' : '검수 중입니다.'} 이 화면은 저절로 바뀝니다.</div>` : '')
+    const result = (busy ? `<div class="note info"><i class="spin"></i> ${c.fix ? '검수하고 고치는 중입니다. 걸린 문제를 다시 만든 뒤 다시 검수합니다.' : '검수 중입니다.'} 이 화면은 저절로 바뀝니다.</div>` : '')
       + (failed.length ? `<div class="note bad">${failed.map((p) => `${name(p)} 검수 실패: ${esc(c.reviews[p].error)}`).join('<br>')}</div>` : '')
-      + checklist + rounds
-      + part('문제별 판정', table)
-      + part('총평', perModel((x) => `<p>${inlineRich(x.summary || '')}</p>`))
-      + part('원본 분석', perModel((x) => issues(x.analysis?.issues)))
+      + part('문제별 판정', table) + part('총평', perModel((x) => `<p>${inlineRich(x.summary || '')}</p>`)) + checklist + rounds;
+    const detail = part('원본 분석', perModel((x) => issues(x.analysis?.issues)))
       + items.map((it, i) => part(esc(it.label), `<p class="muted small">${esc(it.stage || '')} · 표시된 정답 ${'①②③④⑤'[it.answer - 1] || esc(it.answer)}</p>`
         + perModel((x) => { const v = x.items?.[i]; return v ? `<p>${verdict(v)} <span class="muted">검수자 풀이:</span> ${inlineRich(v.myAnswer || '')}</p>${issues(v.issues)}` : '<span class="muted">결과 없음</span>'; }))).join('')
-      + `<p class="muted small">${models.map((p) => { const x = c.reviews[p]; return `${name(p)} ${x.seconds || 0}초${x.usage?.total ? ` · ${Number(x.usage.total).toLocaleString()}토큰` : ''}`; }).join(' · ')}</p>`;
+      + `<p class="muted small">${models.map((p) => { const x = c.reviews[p]; return `${name(p)} ${x.seconds || 0}초${x.usage?.total ? ` · ${Number(x.usage.total).toLocaleString()}토큰` : ''}`; }).join(' · ')}</p>`
+      + making.html;
+    view.innerHTML = page({ result, detail, learn: learnPane, log: logPane });
+    tabs();
     bind();
   }
 
@@ -1206,36 +1222,66 @@
     return `<div class="lt jt-head">
       <a class="lt-back" href="#/m/${job.materialId}">‹ ${esc(job.materialTitle || job.title)}</a>
       <div class="lt-head"><h1>${no ? `세트 ${no}` : job.trainRound ? `학습 반복 ${job.trainRound}번째 세트` : '변형 세트'}${job.options.mode === 'numeric' ? ' · 쌍둥이' : ''}${job.options.direction === 'flip' ? ' · 가정 반대로' : job.options.direction === 'same' ? ' · 가정 원본대로' : ''}</h1>
-        <div class="name-btns">${job.check ? `<a class="btn small" href="#/j/${job.id}/check">${job.check.running ? '검수 중' : '검수 결과'}</a>` : ''}${busy || job.check?.running ? '' : checkButtons(job.id)}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
+        <div class="name-btns">${busy ? '' : `<a class="btn small primary" href="#/j/${job.id}/check">검수</a>`}<a class="btn small" href="report.html?job=${job.id}" target="_blank" rel="noopener">학습지·PDF</a>${busy ? '' : '<button id="delete" class="small danger">세트 삭제</button>'}</div></div>
       <div class="jt-status"><span class="lt-meta">${line}</span><span class="spacer"></span>
         ${busy ? '<button id="cancel" class="small danger">취소</button>' : ''}
         ${['interrupted', 'failed', 'cancelled'].includes(job.status) ? '<button id="resume" class="small primary">남은 문제 이어서 만들기</button>' : ''}</div>
       ${busy ? `<div class="jt-bar"><span style="width:${items.length ? Math.round((made / items.length) * 100) : 0}%"></span></div><p class="muted small jt-wait">문제마다 설계 → 검산 → 다시 풀어 보기를 거쳐 몇 분 걸립니다. 화면을 닫아도 서버에서 계속되고, 이 화면은 저절로 바뀝니다.</p>` : ''}
       ${job.error ? `<div class="note ${job.status === 'cancelled' ? 'warn' : 'bad'}">${esc(job.error)}</div>` : ''}
       ${regenerating.length ? `<div class="note info"><i class="spin"></i> 문제 ${regenerating.map((r) => r.itemIndex + 1).join(', ')}번을 다시 만드는 중입니다. 끝나면 저절로 바뀝니다.</div>` : ''}
-      ${busy ? '' : setReport(job)}
+      ${busy ? '' : trustLine(job)}
       ${busy ? '' : '<p class="jt-howto">문제마다 <b>👍 채택</b>하면 이 원본으로 다음 세트를 만들 때 같은 단계 문제의 본보기(좋은 예시)로 AI에게 보여 줍니다. <b>✏️ 고칠 점</b>은 이 문제의 생성 학습이 되어 다음 세트부터 지킵니다. <b>🔄 다시 만들기</b>는 그 문제 하나만 새로 만듭니다.</p>'}
       <nav class="jt-jump">${items.map((i) => `<button type="button" data-jump="${i.index}"><i class="lt-dot ${JUMP[i.adopted ? 'adopted' : i.status] || ''}"></i>${i.index + 1} ${esc(i.label)}${i.adopted ? ' ✓' : ''}</button>`).join('')}</nav>
-      <details class="lt-base jt-log" data-k="log"><summary>만든 기록</summary><div class="jt-log-in">
-        <p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회${job.budget.maxTokens < 1e7 ? ` / ${Number(job.budget.maxTokens).toLocaleString()}토큰` : ''}${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
-        <p class="small"><b>붙인 피드백·지침 ${job.rules.length}개</b></p>
-        ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${{ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제'}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : ''}
-        <p class="small"><b>진행 기록</b></p>
-        <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>
-      </div></details>
+      ${busy ? `<details class="lt-base jt-log" data-k="log"><summary>진행 기록</summary><div class="jt-log-in">${makeLog(job)}</div></details>` : ''}
     </div>`;
   }
-  // What the set's checks found and fixed, what is left, and what was learned from it.
-  function setReport(job) {
+  // How far the set can be trusted, in one line: the Claude·Gemini review (검수) if it had one, else what its own
+  // final review passed while it was made. The detail is on #/j/<id>/check.
+  function trustLine(job) {
+    const items = job.items;
+    const done = items.filter((i) => ['passed', 'warning'].includes(i.status)).length;
+    const unsure = items.filter((i) => i.status === 'needs_review').length;
+    const made = `<b>${done === items.length ? `${done}문제 모두 완성` : `${items.length}문제 중 ${done}문제 완성`}</b>${unsure ? ` · <span class="bad">정답 확인 필요 ${unsure}</span>` : ''}`;
+    const c = job.check;
+    const tone = (pct) => (pct >= 90 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
+    let review;
+    if (c?.running || (c && !c.done)) review = `<span class="set-pill run"><i class="spin"></i>${c.fix ? '검수·고치는 중' : '검수 중'}</span>`;
+    else if (c) {
+      const models = Object.entries(c.models || {});
+      review = models.map(([p, v]) => (v.error ? `${CHECK_MODEL[p] || p} <span class="muted">실패</span>`
+        : `${CHECK_MODEL[p] || p} <span class="cv2-pct ${tone(c.scores?.[p] ?? 0)}">${c.scores?.[p] ?? '–'}%</span> <span class="muted small">사용 ${v.use}/${v.total} · 정답 ${v.answersOk}/${v.total}</span>`)).join(' · ');
+    } else review = '<span class="muted">아직 Claude·Gemini 검수 전입니다.</span>';
+    return `<div class="jt-trust"><span>${made}</span><span class="jt-trust-sep"></span><span>검수 ${review}</span><a class="small" href="#/j/${job.id}/check">자세히 ›</a></div>`;
+  }
+  // The set's making: limits, calls, what the learning gave it, the log — on the 검수 page's 만든 기록.
+  function makeLog(job) {
+    return `<p class="small">${fmtTime(job.createdAt)} · ${tokens(job.usage, job.options.provider)} · 상한 ${job.budget.maxCalls}회${job.budget.maxTokens < 1e7 ? ` / ${Number(job.budget.maxTokens).toLocaleString()}토큰` : ''}${job.options.provider === 'deepseek' ? ` · 사고 강도 ${job.options.effort === 'high' ? '정밀' : '기본'}` : ''}</p>
+      <div class="log">${(job.log || []).slice().reverse().map((l) => `<div>${fmtTime(l.t)} ${esc(l.message)}</div>`).join('')}</div>`;
+  }
+  // 학습 내용: what the learning gave the set, what the set taught it, and — in a 학습 반복 — what its review changed.
+  function learnHtml(job, train) {
+    const KIND = { revise: '고침', remove: '뺌', add: '더함' };
+    const where = (r) => ({ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제');
+    const round = train?.rounds?.find((r) => r.setId === job.id);
+    const learned = job.learned || [];
+    return `<section class="panel"><h2>이 세트에 들어간 학습 ${job.rules.length}개</h2>
+        ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${where(r)}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : '<p class="muted">없습니다.</p>'}</section>
+      <section class="panel"><h2>이 세트를 만들며 배운 학습</h2>
+        ${learned.length ? `<ul class="lt-ul">${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''}</li>`).join('')}</ul><p class="muted small">다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.</p>` : '<p class="muted">새로 배운 학습은 없었습니다.</p>'}</section>
+      ${round ? `<section class="panel"><h2>학습 반복 ${job.trainRound}번째 세트 — 검수 뒤 고친 학습</h2>
+        ${round.pass ? '<p>목표에 닿아 학습을 고치지 않았습니다.</p>' : (round.learned || []).length ? `<ul class="lt-ul">${round.learned.map((c) => `<li><b>${KIND[c.kind]}</b> ${inlineRich(c.text || c.before || '')}${c.why ? ` <span class="muted">— ${inlineRich(c.why)}</span>` : ''}</li>`).join('')}</ul>` : '<p class="muted">고친 학습이 없습니다.</p>'}
+        <p class="small"><a href="#/m/${job.materialId}/history">학습 반복 기록 전체 ›</a></p></section>` : ''}`;
+  }
+  // What the set's own checks found and fixed while it was made (검수 내용), and the limits it used (만든 기록).
+  function setMaking(job) {
     const items = job.items.filter((i) => i.problem);
-    if (!items.length) return '';
+    if (!items.length) return { html: '', quota: '' };
     const count = (kind) => items.reduce((n, i) => n + (i.attempts || []).filter((a) => a.kind === kind).length, 0);
     const done = items.filter((i) => ['passed', 'warning'].includes(i.status));
     const first = done.filter((i) => !(i.attempts || []).some((a) => a.kind !== 'generate'));
     const left = items.filter((i) => i.status === 'warning');
     const unsure = items.filter((i) => i.status === 'needs_review');
     const fixes = [count('rewrite') && `해설 다시 쓰기 ${count('rewrite')}번`, count('repair') && `문제 수정 ${count('repair')}번`, count('redesign') && `새로 설계 ${count('redesign')}번`].filter(Boolean);
-    const learned = job.learned;
     // How much of the subscription's 1-week and 5-hour limits the set used (read before and after it).
     const q = job.quota;
     const usedOf = (k) => {
@@ -1250,16 +1296,12 @@
     };
     const tokenCount = (n) => (n >= 1e4 ? `${Math.round(n / 1e3) / 10}만` : (n || 0).toLocaleString());
     const quotaLine = q?.after ? [usedOf('sevenDay'), usedOf('fiveHour'), job.usage?.calls && `호출 ${job.usage.calls}번 · 토큰 ${tokenCount(job.usage.total)}`].filter(Boolean).join(' · ') : '';
-    return `<section class="jt-report">
-      <h2>세트 리포트</h2>
+    return { quota: quotaLine, html: `<section class="jt-report">
+      <h2>만들면서 한 검수</h2>
       <p><b>${done.length === job.items.length ? `${done.length}문제 모두 완성` : `${job.items.length}문제 중 ${done.length}문제 완성`}</b>${first.length ? ` · 첫 설계로 통과 ${first.length}` : ''}${left.length ? ` · 남은 점이 있는 문제 ${left.length}` : ''}${unsure.length ? ` · <span class="bad">정답 확인 필요 ${unsure.length}</span>` : ''}</p>
-      ${quotaLine ? `<p class="muted">이 세트가 쓴 구독 한도: ${quotaLine}. 같은 시간에 이 구독을 쓴 다른 작업이 있었다면 그 몫도 들어 있습니다.</p>` : ''}
-      ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 문제마다 아래 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
+      ${fixes.length ? `<p class="muted">자동으로 고친 것: ${fixes.join(' · ')}. 세트 페이지의 문제마다 <b>리포트</b>에 무엇을 찾아 어떻게 고쳤는지 있습니다.</p>` : '<p class="muted">자동 검토에서 고칠 것이 없었습니다.</p>'}
       ${reviewTable(job)}
-      ${learned ? (learned.length ? `<div class="jt-learned"><b>이번 세트에서 배운 학습 ${learned.length}개</b> — 다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.
-        <ul>${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''} <a href="#/learn/map/${l.scope === 'common' ? 'common' : 'p-' + job.materialId}">보기</a></li>`).join('')}</ul></div>`
-        : '<p class="muted">이번 세트에서 새로 추가할 학습은 없었습니다.</p>') : ''}
-    </section>`;
+    </section>` };
   }
   // 최종 검수 (server/final-review.js): the 모델 비교 page's checklist for this set — a column per problem, filled from the
   // review each problem passed while it was made (review-criteria.md, the same review a finished set gets); the rows on
@@ -1313,18 +1355,7 @@
     const list = rounds.length ? `<ol class="jt-steps">${rounds.map((r, k) => `<li>${k + 1}번째 검수${r.design > 1 ? ` (${r.design}번째 설계)` : ''}: ${r.faults.length ? `${r.faults.length}건${k < rounds.length - 1 || !f?.passed ? ' → 고침' : ''}<ul class="lt-ul">${r.faults.map((x) => `<li>${inlineRich(x)}</li>`).join('')}</ul>` : '통과'}</li>`).join('')}</ol>` : '';
     return `<div class="jt-report-item ${f?.passed ? 'ok' : 'bad'}"><p>${head}</p>${answer || list ? `<details data-k="final-review"><summary>검수 내용 보기</summary><div class="jt-check-in">${answer}${list}</div></details>` : ''}</div>`;
   }
-  // 검수하기 / 검수하고 고치기 (server/set-check.js): on the set card and the set page, followed on the set's review page.
-  const checkButtons = (id) => `<button class="small" data-check-set="${id}" title="Claude·Gemini가 원본과 대조해 검수하고 점수를 매깁니다. 문제는 바꾸지 않습니다.">검수하기</button><button class="small" data-check-set="${id}" data-fix="1" title="검수에서 걸린 문제를 지적대로 다시 만들고 다시 검수합니다 (최대 2번). 학습은 바꾸지 않습니다.">검수하고 고치기</button>`;
-  function bindCheckButtons(el) {
-    $$('[data-check-set]', el).forEach((b) => b.addEventListener('click', guard(async () => {
-      const fix = Boolean(b.dataset.fix);
-      if (fix && !confirm('검수에서 걸린 문제를 지적대로 다시 만듭니다. 걸린 문제는 지금 내용이 바뀝니다(이전 내용은 문제의 기록에 남음). 진행할까요?')) return;
-      await api('POST', `/api/jobs/${b.dataset.checkSet}/check`, { fix });
-      location.hash = `#/j/${b.dataset.checkSet}/check`;
-    })));
-  }
   function bindHead(job) {
-    bindCheckButtons($('.jt-head') || document);
     $('#cancel')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/cancel`); toast('취소를 요청했습니다.'); wake(); }));
     $('#resume')?.addEventListener('click', guard(async () => { await api('POST', `/api/jobs/${job.id}/resume`); toast('이어서 진행합니다.'); route(); }));
     $('#delete')?.addEventListener('click', guard(async () => {

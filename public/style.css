@@ -990,3 +990,8 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .train-table td { white-space: normal; vertical-align: top; }
 .train-table td:first-child { white-space: nowrap; }
 .set-history { margin: 0 0 12px; font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.jt-trust { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 10px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.jt-trust-sep { flex: 1; }
+.ck-tabs { display: flex; gap: 4px; margin: 12px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.ck-tabs button { border: 0; background: none; padding: 8px 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; white-space: nowrap; }
+.ck-tabs button.on { color: inherit; border-bottom-color: currentColor; }
