@@ -189,11 +189,10 @@ function createJobs({ store, llm, config }) {
         const save = (rec) => setCheck.writeCheck(config.dataDir, set.id, { ...rec, jobId: t.id, running: true });
         const record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
         setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
-        const scores = Object.fromEntries(Object.entries(record.checklist.models).map(([p, m]) => [p, m.score]));
+        const scores = setCheck.scores(record);
         const fails = setCheck.failing(record);
         const issues = setCheck.analysisIssues(record);
-        const reviewed = Object.values(scores).filter((s) => s != null);
-        const pass = reviewed.length > 0 && Math.min(...reviewed) >= t.target && !fails.length && !issues.length;
+        const pass = setCheck.reaches(record, t.target);
         const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), analysisIssues: issues.length, pass };
         t.rounds.push(round);
         ctx.log(`${r + 1}번째 세트: ${Object.entries(scores).map(([p, s]) => `${setCheck.NAME[p] || p} ${s ?? '실패'}%`).join(' · ')}${fails.length ? ` — 걸린 문제 ${round.failing.join(', ')}` : ''}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);

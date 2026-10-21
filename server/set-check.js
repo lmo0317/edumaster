@@ -115,7 +115,15 @@ function checklist(record) {
   return { groups: finalReview.CHECKLIST.map((g) => ({ title: g.title, items: g.items.map(({ id, text }) => ({ id, text })) })), models };
 }
 
+/** Each reviewer's score of the set, null for one that failed (a lost connection, the subscription's limit). */
+const scores = (record) => Object.fromEntries(REVIEWERS.map((p) => [p, record.checklist?.models?.[p]?.score ?? null]));
+/**
+ * Whether a reviewed set reached the 학습 반복 target: every reviewer at the target, no problem failing, the analysis
+ * unfaulted. A reviewer that failed leaves the set unjudged, so the other's score alone never reaches it.
+ */
+const reaches = (record, target) => Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record).length && !analysisIssues(record).length;
+
 /** The remake's note: what the reviewers found, for the writer to fix. */
 const remakeNote = (f) => `Claude·Gemini 검수에서 이 문제에 걸린 점입니다. 모두 고친 문제를 새로 만듭니다.\n${f.faults.map((x) => `- ${x}`).join('\n')}`;
 
-module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, reviewSet, failing, analysisIssues, checklist, remakeNote };
+module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, reviewSet, failing, analysisIssues, checklist, scores, reaches, remakeNote };

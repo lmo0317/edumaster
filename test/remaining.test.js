@@ -442,3 +442,15 @@ test('the reviewers read a STEP that ends in a table as its own block, not one m
     assert.match(text, /\$3\.6\$ \|\n\n정리: 끝/);
   }
 });
+
+test('학습 반복 reaches its target only when every reviewer scored the set', () => {
+  const setCheck = require('../server/set-check');
+  const record = (models, reviews) => ({ set: { items: [] }, reviews, checklist: { models } });
+  const both = record({ 'claude-cli': { score: 94 }, 'agy-cli': { score: 100 } }, { 'claude-cli': {}, 'agy-cli': {} });
+  assert.equal(setCheck.reaches(both, 90), true);
+  assert.equal(setCheck.reaches(both, 95), false);
+  // On 2026-10-21 Claude's review hit the subscription's limit and Gemini's 100 alone was taken as reached.
+  const one = record({ 'agy-cli': { score: 100 } }, { 'claude-cli': { error: "You've hit your session limit" }, 'agy-cli': {} });
+  assert.deepEqual(setCheck.scores(one), { 'claude-cli': null, 'agy-cli': 100 });
+  assert.equal(setCheck.reaches(one, 90), false);
+});
