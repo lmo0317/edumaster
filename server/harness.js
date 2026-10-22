@@ -153,7 +153,15 @@ function frameFixed(frame) {
 /** The extracted frames kept: those that match a line of their own STEP of the teacher's solution. */
 function validateFrames(material, extracted) {
   const out = [];
+  // One entry per STEP: the frames asked for again for the lines left over came back as a second entry of the same STEP,
+  // and every lookup took the first — the choice analysis' frames ([틀 3-4] on) were "없는 틀 번호" and the writer was
+  // asked again and again (7 of 9 new originals on 2026-10-21/22; molar mass and density, framed in one pass, had one).
+  const byStep = new Map();
   for (const s of extracted?.steps || []) {
+    const k = Number(s.step);
+    byStep.set(k, { step: k, frames: [...(byStep.get(k)?.frames || []), ...(s.frames || [])] });
+  }
+  for (const s of [...byStep.values()].sort((a, b) => a.step - b.step)) {
     const i = Number(s.step) - 1;
     // Every line but the table's: formula lines and the closing lines have frames too (round 10's mass-conservation
     // line had none, and Qwen's own wording of it broke the $ pairs).
@@ -169,7 +177,9 @@ function validateFrames(material, extracted) {
         return all.filter((x) => x === base).length > 1 ? `《${base}${seen[base]}》` : `《${base}》`;
       });
     };
-    const frames = [...new Set((s.frames || []).map(frameLine).map(unique))].filter((f) => f && frameFixed(f) >= 6 && lines.some((l) => frameRegex(f).test(l)));
+    // In the order of the teacher's lines, so [틀 n-k] runs down the STEP as the teacher wrote it.
+    const at = (f) => lines.findIndex((l) => frameRegex(f).test(l));
+    const frames = [...new Set((s.frames || []).map(frameLine).map(unique))].filter((f) => f && frameFixed(f) >= 6 && at(f) >= 0).sort((a, b) => at(a) - at(b));
     if (frames.length) out.push({ step: i + 1, frames, lines: lines.length, covered: lines.filter((l) => frames.some((f) => frameRegex(f).test(l))).length });
   }
   return out;
@@ -351,7 +361,11 @@ const assumes = (t) => /가정|만약/.test(t) && /모순|맞지\s*않|일치하
 // Any STEP of the teacher's that reasons by assumption, not STEP 1 only (where the originals it was written for had it).
 function checkAssumption(material, item) {
   const used = stageSteps(item.stage, material.steps.length);
-  const want = used.filter((n) => material.steps[n - 1] && assumes(material.steps[n - 1].work + material.steps[n - 1].technique));
+  // The STEP's own reasoning, not the choice analysis at its end: 생명 L64's STEP 4 matches members by A+b values, and
+  // only its analysis of ㄱ recalls STEP 2's assumption — the check asked STEP 4 for one and the solution was written
+  // again 26 times (2026-10-21/22).
+  const own = (s) => String(s.work || '').split(/\n\s*\[?\s*(?:보기|선택지)\s*분석/)[0] + (s.technique || '');
+  const want = used.filter((n) => material.steps[n - 1] && assumes(own(material.steps[n - 1])));
   if (!want.length) return [];
   const steps = item.solution?.steps || [];
   const all = steps.map((s) => s.work).join('\n');

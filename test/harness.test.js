@@ -176,3 +176,25 @@ test('inside $…$ a formula alone is \\ce and Korean is \\text; a formula the p
   assert.equal(item.solution.steps[0].work, r`$\ce{XZ}$ 1개, $\ce{XZ}$ 분자 수를 $n$이라 하면, XZY는 그대로`);
   assert.equal(item.solution.steps[0].title, r`$\ce{X2}$의 분자량`);
 });
+
+test("a STEP's frames are one list in the teacher's order, however they were asked for, and every one of them can be filled", () => {
+  const { validateFrames, renderFrames } = require('../server/harness');
+  const material = { steps: [{ title: 'S1', work: '(가)의 질량은 5w이다.\n[보기 분석]\nㄱ. 질량은 (가)가 크다. (○)\n따라서 정답은 ① ㄱ이다.' }] };
+  // The lines left over were framed in a second request and came back as a second entry of STEP 1.
+  const frames = validateFrames(material, { steps: [{ step: 1, frames: ['(가)의 질량은 《질량》이다.'] }, { step: 1, frames: ['따라서 정답은 《번호》 《보기》이다.', 'ㄱ. 질량은 (가)가 크다. 《판정》'] }] });
+  assert.equal(frames.length, 1);
+  assert.deepEqual(frames[0].frames, ['(가)의 질량은 《질량》이다.', 'ㄱ. 질량은 (가)가 크다. 《판정》', '따라서 정답은 《번호》 《보기》이다.']);
+  const item = { solution: { steps: [{ step: 1, title: 'S1', work: '[틀 1-1] 질량=7w\n[틀 1-3] 번호=②; 보기=ㄴ' }] } };
+  assert.deepEqual(renderFrames({ ...material, frames }, item), []);
+  assert.match(item.solution.steps[0].work, /따라서 정답은 ② ㄴ이다\./);
+});
+
+test('the assumption a STEP must keep is in its own reasoning, not in a choice analysis that recalls another STEP', () => {
+  const { inspectItem } = require('../server/harness');
+  const material = { problem: { text: '', choices: [] }, steps: [
+    { title: 'S1', work: '(가)를 X 염색체 유전이라 가정하면 모순이다.' },
+    { title: 'S2', work: '4의 A+b의 값이 1이므로 ㉣은 4이다.\n보기 분석\nㄱ. (○) step1을 참고하면, X 염색체 유전이라 가정하면 모순이다.' }] };
+  const item = { stage: { kind: 'upto', upto: 2 }, problem: { text: '', choices: [] }, solution: { steps: [{ step: 1, work: '(가)를 X 염색체 유전이라 가정하면 모순이다.' }, { step: 2, work: '6의 A+b의 값이 2이므로 ㉣은 6이다.' }] } };
+  const check = inspectItem(material, item, 'integrated').find((c) => c.id === 'source-assumption');
+  assert.equal(check?.state ?? 'pass', 'pass');
+});

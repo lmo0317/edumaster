@@ -1614,6 +1614,13 @@ async function learnFromReview(ctx, material, set, all) {
  * harness.validateFrames): only frames that match the teacher's own lines stay. A failure leaves the set without them.
  */
 async function ensureFrames(ctx, material) {
+  // Frames kept with a STEP in two entries (before validateFrames merged them) are merged, without asking again.
+  if (material.frames && new Set(material.frames.map((f) => f.step)).size < material.frames.length) {
+    material.frames = harness.validateFrames(material, { steps: material.frames });
+    const stored = ctx.store?.materials?.get(ctx.job.materialId);
+    if (stored) ctx.store.materials.put({ ...stored, frames: material.frames });
+    ctx.save();
+  }
   if (material.frames || !material.steps?.length) return;
   ctx.log('선생님 해설의 문장 틀 뽑는 중');
   // A whole-solution answer that cannot be read (Qwen 3.8 looped and stopped twice, 2026-10-14) leaves the STEP-by-STEP
