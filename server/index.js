@@ -951,7 +951,7 @@ function createApp(options = {}) {
       // The subjects an every-problem item can be tagged with: those of the problems, and any already used.
       subjects: [...new Set([...materials.map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort(),
       recent: { added: lately.length, auto: lately.filter((r) => r.source?.from === 'auto').length },
-      load: last ? { materialId: last.id, title: last.title, items: picked.length, chars: picked.reduce((n, r) => n + r.text.length, 0), limit: 24, maxChars: 6000 } : null,
+      load: last ? { materialId: last.id, title: last.title, items: picked.length, chars: picked.reduce((n, r) => n + r.text.length, 0), limit: 40, maxChars: 6000 } : null,
       candidates: pairs.filter((p) => p.decision?.decision === 'same').map((p) => ({ key: p.key, a: { id: p.a.id, text: p.a.text, layer: layerOf(p.a) }, b: { id: p.b.id, text: p.b.text, layer: layerOf(p.b) }, text: p.decision.text, why: p.decision.why })),
       checking: pairs.filter((p) => !p.decision).length,
     };

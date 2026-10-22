@@ -85,11 +85,11 @@ function overlap(a, b) {
 }
 
 /**
- * Picks the rules for one material: first every approved feedback on this very problem, then every approved global
- * rule, then approved topic rules whose source problem looks like this one. At most `limit` rules and ~`maxChars`
- * characters in total; this problem's own feedback always comes first.
+ * Picks the rules for one material: the 지침, every approved feedback on this very problem, the lessons (most useful
+ * first, see below), then approved topic rules whose source problem looks like this one. At most `limit` rules and
+ * ~`maxChars` characters in total; this problem's own feedback always comes first.
  */
-function selectRules(allRules, material, { limit = 24, maxChars = 6000, stage = 'generation' } = {}) {
+function selectRules(allRules, material, { limit = 40, maxChars = 6000, stage = 'generation' } = {}) {
   const approved = allRules.filter((r) => r.status === 'approved' && stageOf(r) === stage);
   const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const byTime = (a, b) => a.createdAt.localeCompare(b.createdAt);
@@ -97,8 +97,15 @@ function selectRules(allRules, material, { limit = 24, maxChars = 6000, stage = 
   // every problem); within the lessons, ones for this subject come before the untagged ones, so the cap drops those first.
   const reaches = (r) => !r.subject || !material.subject || r.subject === material.subject;
   const guides = approved.filter((r) => r.scope === 'global' && r.layer === 'guide' && reaches(r)).sort(byTime);
-  const lessons = approved.filter((r) => r.scope === 'global' && r.layer !== 'guide' && reaches(r)).sort((a, b) => Number(!a.subject) - Number(!b.subject) || byTime(a, b));
   const target = grams([material.subject, material.topic, material.problem?.text, ...(material.techniques || [])].join(' '));
+  // Lessons, most useful first, so the cap drops the least: those learned from this problem's own reviews (학습 반복 —
+  // oldest-first sent only 1-2 of the 4-7 a 2026-10-21 repeat had learned, and the next set made the same faults), then
+  // this subject's, then the ones closest to this problem, the newer first.
+  const near = new Map();
+  const closeness = (r) => near.get(r) ?? near.set(r, overlap(grams([r.text, r.source?.label, r.source?.excerpt].join(' ')), target)).get(r);
+  const fromHere = (r) => Number(r.source?.materialId === material.id);
+  const lessons = approved.filter((r) => r.scope === 'global' && r.layer !== 'guide' && reaches(r))
+    .sort((a, b) => fromHere(b) - fromHere(a) || Number(!a.subject) - Number(!b.subject) || closeness(b) - closeness(a) || -byTime(a, b));
   // A topic feedback belongs to its subject: shared exam wording ("조건", "자료") must not carry a 화학 note to 생명과학.
   const topical = approved.filter((r) => r.scope === 'topic' && !(r.subject && material.subject && r.subject !== material.subject)).map((r) => {
     let score = overlap(grams([r.subject, r.topic, r.source?.excerpt, r.text].join(' ')), target);

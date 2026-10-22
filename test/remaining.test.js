@@ -293,13 +293,14 @@ test('a low note alone never holds a problem back: it passes with the note kept,
 });
 
 // The set page shows the 모델 비교 checklist filled from each problem's final review (server/final-review.js).
-test('a final review fills the checklist rows: a mid fault is ✕, a low one △, the final-only row is – for practice', () => {
+test('a final review fills the checklist rows: a mid fault is ✕, a low one only a note, the final-only row is – for practice', () => {
   const { checklistOf } = require('../server/final-review');
   const review = { answerOk: true, myAnswer: '③ 6', checks: { 정답: 'ok', 조건: 'fix', 구조: 'na', '정답 줄': 'fix' },
     issues: [{ severity: 'mid', rule: '조건', detail: '"달리하여"가 남음' }, { severity: 'low', rule: '정답 줄', detail: '정답 줄 없음' }] };
   const rows = checklistOf(review);
   assert.deepEqual(rows.clean, ['no', '"달리하여"가 남음']);
-  assert.deepEqual(rows.method, ['partial', '정답 줄 없음']);
+  assert.deepEqual(rows.method, ['ok', '정답 줄 없음'], 'a low note costs no score');
+  assert.equal(checklistOf({ checks: { 조건: 'fix' }, issues: [] }).clean[0], 'partial', 'fix without a fault named is △');
   assert.deepEqual(rows.correct, ['ok', '검수자 풀이 ③ 6']);
   assert.equal(rows.final[0], 'na');
   assert.equal(rows.read, undefined, 'the analysis rows come from the analysis review');
@@ -453,4 +454,17 @@ test('학습 반복 reaches its target only when every reviewer scored the set',
   const one = record({ 'agy-cli': { score: 100 } }, { 'claude-cli': { error: "You've hit your session limit" }, 'agy-cli': {} });
   assert.deepEqual(setCheck.scores(one), { 'claude-cli': null, 'agy-cli': 100 });
   assert.equal(setCheck.reaches(one, 90), false);
+});
+
+test("the lessons a problem's own reviews taught reach its next set first, the closest and newer lessons next", () => {
+  const { selectRules } = require('../server/learning');
+  const r = (id, text, extra = {}) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: `2026-10-${id}`, ...extra });
+  // Oldest-first under the cap sent 1-2 of the 4-7 lessons the gas original's 학습 반복 had learned (2026-10-21).
+  const old = Array.from({ length: 50 }, (_, i) => r(String(10 + i).padStart(2, '0') + 'a', `오래된 일반 교훈 ${i} `.repeat(6)));
+  const mine = [r('21x', '최종 문제는 기체 행을 추가하지 않는다', { source: { materialId: 'gas', from: 'review' } }), r('21y', '해설의 수는 표에 주어진 값에서 온다', { source: { materialId: 'gas', from: 'review' } })];
+  const close = r('05c', '기체의 분자량과 부피 비로 전체 원자 수를 구하는 문제는 행 배수를 쓰지 않는다');
+  const picked = selectRules([...old, close, ...mine], { id: 'gas', subject: '화학', problem: { text: '기체 (가)~(다)의 분자량, 부피, 전체 원자 수' } }).map((x) => x.id);
+  assert.deepEqual([...picked.slice(0, 2)].sort(), ['21x', '21y'], "this problem's own lessons first");
+  assert.equal(picked[2], '05c', 'then the closest');
+  assert.ok(picked.length > 24, `more than 24 fit in the characters (${picked.length})`);
 });

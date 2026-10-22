@@ -153,8 +153,10 @@ function checklistOf(part, { analysis = false, final = false } = {}) {
     const said = row.names.map((n) => checks[n]).filter(Boolean);
     const wrong = row.id === 'correct' && part.answerOk === false;
     const note = [wrong && `검수자가 직접 푼 답 ${part.myAnswer || '?'}`, ...mine.map((x) => x.detail)].filter(Boolean).join(' / ');
+    // A low note (표기·제목·표현) neither stops a problem being made (itemFaults) nor costs its score: on the gas
+    // original's 학습 반복 (2026-10-21) a set with low notes only scored 83 and was made again.
     const mark = wrong || mine.some((x) => x.severity !== 'low') ? 'no'
-      : mine.length || said.includes('fix') ? 'partial'
+      : said.includes('fix') && !mine.length ? 'partial'
       : said.length && said.every((s) => s === 'na') ? 'na' : 'ok';
     out[row.id] = [mark, mark === 'ok' && row.id === 'correct' && part.myAnswer ? `검수자 풀이 ${part.myAnswer}` : note];
   }

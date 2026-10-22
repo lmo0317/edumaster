@@ -107,7 +107,7 @@ test('a subject-tagged item reaches only that subject; promotion clears the tag'
   const ids = (m) => selectRules(rules, { id: 'm', subject: m }).map((x) => x.id);
   assert.deepEqual(ids('화학'), ['d', 'b', 'a'], '지침 first, then this subject, then every subject');
   assert.deepEqual(ids('생명과학'), ['c', 'a']);
-  assert.deepEqual(ids(''), ['d', 'b', 'c', 'a'], 'a problem without a subject gets everything');
+  assert.deepEqual(ids(''), ['d', 'c', 'b', 'a'], 'a problem without a subject gets everything, the newer lessons first');
   const own = { ...r('e', '문제 학습'), scope: 'material', subject: '화학', source: { materialId: 'm' } };
   assert.equal(updateRule(own, { scope: 'global' }).subject, '', 'moved up: reaches every subject until tagged');
   assert.equal(updateRule(r('f', 'x'), { subject: '화학' }).subject, '화학');
