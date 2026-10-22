@@ -830,8 +830,16 @@ function numbersReused(item, prior, material) {
   const myHidden = hiddenValues(item.problem.text, item.solution?.steps);
   const compare = (text, steps, whose) => {
     const theirHidden = hiddenValues(text, steps);
-    const theirs = new Set([...designedRows(text, vocab), ...designedRows(text, vocab, theirHidden)].map((r) => r.sig));
-    for (const r of mine) if (theirs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
+    // A row's values as a set of values, in any order: the teacher's rule is about a row's 값 조합, and D50's final put
+    // the original's A row (−80, 0, ?, 0) in other columns (?, 0, −80, 0) past the check (학습 반복, 2026-10-23).
+    const combo = (r) => [...r.cells].sort().join(',');
+    const theirs = [...designedRows(text, vocab), ...designedRows(text, vocab, theirHidden)];
+    const sigs = new Set(theirs.map((r) => r.sig));
+    const combos = new Set(theirs.filter((r) => r.cells.length >= 3).map(combo));
+    for (const r of mine) {
+      if (sigs.has(r.sig)) notes.push(`${whose}의 실험 수치(${r.sig})를 그대로 썼습니다 (${r.label} 행).`);
+      else if (r.cells.length >= 3 && combos.has(combo(r))) notes.push(`${whose}의 한 행과 같은 값 조합(${r.cells.join(', ')})을 칸 순서만 바꿔 썼습니다 (${r.label} 행). 값 조합을 새로 잡습니다.`);
+    }
     for (const [l, v] of Object.entries(myHidden)) if (theirHidden[l] === v) notes.push(`${whose}에서 숨긴 값과 같은 값(${l}=${v})을 구하게 합니다. ${l}가 다른 값이 되게 수치를 잡습니다.`);
   };
   compare(material.problem.text, material.steps, '원본');
@@ -897,13 +905,15 @@ function scaledOrKept(item, prior, material, vocab) {
         else if (same >= 2 && same * 3 >= given * 2) notes.push(`${whose}의 ${r.label} 행과 같은 칸에 같은 수치가 ${same}개 있습니다 (${r.cols.filter((c) => c !== null).join(', ')}). 그 행의 수치를 새로 잡습니다.`);
       }
     }
-    // The figure's setting scaled whole is the final problem's (a practice problem may keep the original's setting).
-    const a = item.stage.kind === 'twin' ? namedValues(item.problem) : {};
+    // The figure's setting kept or scaled whole. A practice problem may keep the original's setting, but scaled it is the
+    // original's numbers in disguise: D50's STEP 1~2 practice put d₁~d₄ at twice the original's with twice the speed,
+    // and every time and potential came out the original's (학습 반복, 2026-10-23, Claude).
+    const a = namedValues(item.problem);
     const b = namedValues(problem);
     const names = Object.keys(a).filter((n) => n in b);
     if (names.length >= 3) {
       const k = commonRatio(names.map((n) => a[n]), names.map((n) => b[n]));
-      if (k !== null) notes.push(`${whose}의 ${names.join(', ')} 값을 ${k === 1 ? '그대로 썼습니다' : `모두 ${times(k)} 했습니다`}. 비가 같아 구하는 값과 판단이 그대로 같아지므로, 값 사이의 비가 달라지게 잡습니다.`);
+      if (k !== null && (item.stage.kind === 'twin' || k !== 1)) notes.push(`${whose}의 ${names.join(', ')} 값을 ${k === 1 ? '그대로 썼습니다' : `모두 ${times(k)} 했습니다`}. 비가 같아 구하는 값과 판단이 그대로 같아지므로, 값 사이의 비가 달라지게 잡습니다.`);
     }
   }
   return notes;

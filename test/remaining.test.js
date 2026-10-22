@@ -23,6 +23,12 @@ test('final problem reusing a practice problem\'s experiment numbers is flagged;
   assert.deepEqual(numbersReused(fresh, [practice], material), []);
   const fromOriginal = { index: 0, stage: { kind: 'upto', upto: 1 }, problem: { text: table(['| Ⅰ | $4w$ | $6w$ | $2w$ |']) } };
   assert.match(numbersReused(fromOriginal, [], material).join(), /원본의 실험 수치\(4w,6w\)/);
+  // A row's values in other columns are the same 값 조합 (생명 D50, 2026-10-23).
+  const nerve = (a) => ['| 신경 | Ⅰ | Ⅱ | Ⅲ | Ⅳ |', '|---|---|---|---|---|', `| A | ${a} |`, '| B | $0$ | $+30$ | ? | ? |'].join('\n');
+  const nerveMaterial = { problem: { text: nerve('$-80$ | $0$ | ? | $0$') }, steps: [] };
+  const moved = { index: 2, stage: { kind: 'twin' }, problem: { text: nerve('? | $0$ | $-80$ | $0$').replace('$+30$', '$-60$') } };
+  assert.match(numbersReused(moved, [], nerveMaterial).join(), /같은 값 조합\(0, -80, 0\)을 칸 순서만 바꿔/);
+  assert.deepEqual(numbersReused({ ...moved, problem: { text: nerve('? | $0$ | $-60$ | $+30$').replace('$+30$ | ? | ?', '$-80$ | ? | ?') } }, [], nerveMaterial), []);
 });
 
 const material = {
@@ -484,9 +490,12 @@ test('a row or the figure scaled by one factor, or a row keeping most amounts in
   assert.match(numbersReused(twin(['| Ⅱ | $8w$ | $12w$ | $6w$ |']), [], material).join(), /원본의 Ⅱ 행 수치를 모두 2배 한 값/);
   assert.match(numbersReused(twin(['| Ⅱ | $7w$ | $6w$ | $3w$ |']), [], material).join(), /원본의 Ⅱ 행과 같은 칸에 같은 수치가 2개/);
   assert.match(numbersReused(twin(['| Ⅱ | $7w$ | $9w$ | $5w$ |'], '$d_1=0$, $d_2=6$, $d_3=15$, $d_4=21$ (cm)'), [], material).join(), /원본의 d1, d2, d3, d4 값을 모두 3배 했습니다/);
-  // A ratio that is not a whole factor is a coincidence, 0 and 1 match by themselves, and a practice problem may keep the setting.
+  // A ratio that is not a whole factor is a coincidence, 0 and 1 match by themselves, and a practice problem may keep the
+  // setting, but not scale it (D50's STEP 1~2 practice, 2026-10-23).
   assert.deepEqual(numbersReused(twin(['| Ⅱ | $5w$ | $7.5w$ | $1w$ |', '| Ⅰ | $1$ | $5w$ | $9w$ |']), [], material), []);
-  assert.deepEqual(numbersReused({ ...twin(['| Ⅱ | $7w$ | $9w$ | $5w$ |'], '$d_1=0$, $d_2=4$, $d_3=10$, $d_4=14$'), stage: { kind: 'upto', upto: 1 } }, [], material), []);
+  const practice = (figure) => ({ ...twin(['| Ⅱ | $7w$ | $9w$ | $5w$ |'], figure), stage: { kind: 'upto', upto: 2 } });
+  assert.deepEqual(numbersReused(practice('$d_1=0$, $d_2=2$, $d_3=5$, $d_4=7$'), [], material), []);
+  assert.match(numbersReused(practice('$d_1=0$, $d_2=4$, $d_3=10$, $d_4=14$'), [], material).join(), /원본의 d1, d2, d3, d4 값을 모두 2배 했습니다/);
 });
 
 test("a set's score counts each problem's mark on each row, so one problem's fault is not a ninth of it", () => {

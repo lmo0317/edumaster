@@ -169,6 +169,10 @@ test('the particle after a Roman numeral follows how the numeral is read', () =>
   const { notation } = require('../server/harness');
   assert.equal(notation('Ⅳ이 d4이다. 나머지 Ⅰ와 Ⅲ는 Ⅱ과 Ⅲ가 Ⅲ로 Ⅰ로'), 'Ⅳ가 d4이다. 나머지 Ⅰ과 Ⅲ은 Ⅱ와 Ⅲ이 Ⅲ으로 Ⅰ로');
   assert.equal(notation('Ⅱ이다, Ⅰ이고'), 'Ⅱ이다, Ⅰ이고', 'a particle running on (이다, 이고) is left');
+  // A name or value ending in a digit is read by that digit (D50 학습 반복, L64 2026-10-23); a formula's count is not.
+  assert.equal(notation('$d_1$는 Ⅰ이고 $3$와 $4$은, 구성원 $5$이 된다. $-70$는 t₂로'), '$d_1$은 Ⅰ이고 $3$과 $4$는, 구성원 $5$가 된다. $-70$은 t₂로');
+  assert.equal(notation('따라서 $d_3$는 Ⅲ이다. step 3를 참고하면 $d_3$와 $d_4$ 사이'), '따라서 $d_3$는 Ⅲ이다. step 3를 참고하면 $d_3$와 $d_4$ 사이', 'the teachers read an index in English');
+  assert.equal(notation(String.raw`$\ce{XY3}$는 $x=2$이고 $2$으로`), String.raw`$\ce{XY3}$는 $x=2$이고 $2$로`);
 });
 
 test('inside $…$ a formula alone is \\ce and Korean is \\text; a formula the problem writes is \\ce where the solution leaves it bare', () => {

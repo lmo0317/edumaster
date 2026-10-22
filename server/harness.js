@@ -59,12 +59,28 @@ const knownFormulas = (text) => [...new Set([...String(text || '').matchAll(/\\c
 // another numeral in its place and kept the particle ("Ⅳ이 d₄이다", "Ⅰ와 Ⅲ는"), which both reviewers marked on 생명 D50.
 const FINAL = { 'Ⅰ': 'ㄹ', 'Ⅱ': '', 'Ⅲ': 'ㅁ', 'Ⅳ': '', 'Ⅴ': '' };
 const PAIRS = [['은', '는'], ['이', '가'], ['을', '를'], ['과', '와']];
+// The same for a name or value ending in a digit, read by its last digit: a number in Korean ($3$ 삼, 구성원 4 사, 0 as
+// 영·십·백), a letter's index in English as the teachers write it ($d_3$는 디쓰리, step 3를, $d_1$은 디원). A frame that
+// took $d_1$ for the teacher's $d_3$ kept "$d_1$는" (생명 D50 학습 반복, 2026-10-23, Claude).
+const DIGIT_FINAL = { 0: 'ㅇ', 1: 'ㄹ', 2: '', 3: 'ㅁ', 4: '', 5: '', 6: 'ㄱ', 7: 'ㄹ', 8: 'ㄹ', 9: '' };
+const INDEX_FINAL = { 0: '', 1: 'ㄴ', 2: '', 3: '', 4: '', 5: '', 6: '', 7: 'ㄴ', 8: 'ㅅ', 9: 'ㄴ' };
+const SUB_DIGIT = '₀₁₂₃₄₅₆₇₈₉';
 function josa(text) {
-  return text.replace(/([ⅠⅡⅢⅣⅤ])(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])/g, (all, n, p) => {
-    if (p === '으로' || p === '로') return n + (FINAL[n] && FINAL[n] !== 'ㄹ' ? '으로' : '로');
+  const fit = (final, p) => {
+    if (p === '으로' || p === '로') return final && final !== 'ㄹ' ? '으로' : '로';
     const pair = PAIRS.find((x) => x.includes(p));
-    return n + (FINAL[n] ? pair[0] : pair[1]);
-  });
+    return final ? pair[0] : pair[1];
+  };
+  return text.replace(/([ⅠⅡⅢⅣⅤ])(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])/g, (all, n, p) => n + fit(FINAL[n], p))
+    .replace(/([0-9₀-₉])(\}?\$?)(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])/g, (all, d, close, p, at, s) => {
+      // A count in a formula is read in English ($\ce{XY3}$ 엑스와이쓰리): left as written.
+      const before = s.slice(0, at + 1);
+      // A fraction is read denominator first (\frac{1}{3} 삼분의 일): left as written too.
+      if (/\\ce\{[^}]*$/.test(before) || /[A-Z][0-9₀-₉]+$/.test(before) || /\\[dt]?frac\{[^}]*\}\{[^}]*$/.test(before)) return all;
+      const digit = SUB_DIGIT.includes(d) ? SUB_DIGIT.indexOf(d) : Number(d);
+      const indexed = /[A-Za-z]\s*_?\{?[0-9₀-₉]+$/.test(before);
+      return d + close + fit((indexed ? INDEX_FINAL : DIGIT_FINAL)[digit], p);
+    });
 }
 /** notation() over all of a problem's text (mutates `item`). */
 function notateItem(item) {
