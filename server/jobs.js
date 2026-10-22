@@ -46,8 +46,10 @@ function createJobs({ store, llm, config }) {
       precheck: provider === 'claude-cli' && Boolean(claudeDesignModel(config) || job.options?.designWith),
       // A problem is made only once it passes the final review a finished set gets (pipeline.finalGate, 2026-10-19).
       finalGate: job.options?.finalGate !== false,
-      // Claude's final review of each problem is looked at again by Gemini, as the finished set is (pipeline.finalGate).
-      secondReviewer: job.options?.secondReviewer ?? (provider === 'claude-cli' ? 'agy-cli' : ''),
+      // A second reviewer of each problem while it is made (pipeline.finalGate), only when a set asks for it: problems are
+      // made first and the set reviewed after (the user, 2026-10-22: make them, find what is wrong, fix the system or keep
+      // it as learning, then review) — Gemini on every problem made a set take over an hour.
+      secondReviewer: job.options?.secondReviewer || '',
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: args.purpose === 'final-review-second' ? args.provider : ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       direction: job.options?.direction || '',
