@@ -512,3 +512,15 @@ test('a problem the final review passes is looked at by the second reviewer too,
   await finalGate(ctx('agy-cli', { 'final-review': fault }), item, material, []);
   assert.deepEqual(calls, ['final-review'], 'what the first review fails is repaired without a second look');
 });
+
+test('the reviewer judges by the criteria and the teacher\'s learning; what the system learned itself is shown for reference only', () => {
+  const { reviewSystem } = require('../server/final-review');
+  const r = (id, text, from) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: '2026-10-01', source: from ? { from } : undefined });
+  const system = reviewSystem({ id: 'm', subject: '생명과학', problem: { text: '' }, steps: [] }, [r('t', '선생님이 쓴 학습'), r('a', '검수에서 AI가 배운 학습', 'review'), r('b', '세트에서 AI가 배운 학습', 'auto')]);
+  const teacher = system.slice(system.indexOf('[선생님 지침·학습 — 변형 문제와 해설]'), system.lastIndexOf('[AI가 정리한 학습'));
+  const ai = system.slice(system.lastIndexOf('[AI가 정리한 학습'));
+  assert.match(teacher, /선생님이 쓴 학습/);
+  assert.doesNotMatch(teacher, /AI가 배운/);
+  assert.match(ai, /검수에서 AI가 배운 학습[\s\S]*세트에서 AI가 배운 학습/);
+  assert.match(system, /판정 기준이 아니다/);
+});

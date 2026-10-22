@@ -1569,7 +1569,7 @@ async function learnFromSet(ctx) {
 async function learnFromReview(ctx, material, set, all) {
   const faults = all.filter((f) => !LOW_NOTE.test(f.text));
   if (!faults.length || !ctx.store) return [];
-  const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review'].includes(r.source?.from);
+  const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review', 'eval'].includes(r.source?.from);
   const rules = selectRules(ctx.store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, editable: editable(r) }));
   ctx.log('검수에서 걸린 점으로 학습을 고치는 중');
   const { data } = await ctx.llm.json({

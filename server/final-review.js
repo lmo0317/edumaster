@@ -18,25 +18,39 @@ const ANALYSIS_NAMES = ['판독', '용어', 'STEP 수와 순서', 'STEP 제목',
 const ITEM_NAMES = ['정답', 'STEP 범위', '결론 노출', '조건', '단서', '수치', '용기·실험 구성', '형식', '구조', 'STEP 전부 필요', 'STEP 제목', '범위', '풀이 방식', '보기 분석', '덧붙임', '숨긴 값의 판단', '정답 줄', '표기'];
 const RULE_NAMES = [...new Set([...ANALYSIS_NAMES, ...ITEM_NAMES])].join(', ');
 
+// Learning the system wrote itself from reviews and sets (from 'review', 'auto', 'eval') guides the writer; the reviewer
+// is shown it but judges by the criteria and the teacher's own items. Judged as criteria, such lessons piled up against
+// one another — on 생명 D50 (2026-10-22) one said keep A's two 0 mV points and another change its −80, the review
+// failed each design on whichever it broke, and the set never finished.
+const BY_SYSTEM = new Set(['review', 'auto', 'eval']);
+const bySystem = (r) => BY_SYSTEM.has(r.source?.from);
+
 /** The reviewer's instructions: the criteria, and the learning for this problem (all rules, or the given ones). */
 function reviewSystem(material, allRules, generationRules = null) {
   const learnedA = analysisLearning(allRules, material);
   const learnedG = generationRules || selectRules(allRules, material);
+  const full = new Map(allRules.map((r) => [r.id, r]));
+  const system = (r) => bySystem(full.get(r.id) || r);
+  const analysisRules = [...learnedA.guides, ...learnedA.own, ...learnedA.lessons];
   return `너는 고등학교 ${material.subject || '과학'} 문항을 검토하는 출제 전문가다. AI가 정리한 분석 결과와 AI가 만든 변형 문제를 원본 이미지와 대조해 독립적으로 검토한다.
 - 변형 문제는 반드시 네가 직접 끝까지 풀어서 정답을 확인한다. 표시된 정답이나 해설을 믿지 않는다.
 - 변형 문제에 [그림]이 있으면 그것이 학생이 받는 그 문제의 그림이다 (지점 위치, 신경의 방향, 그래프). 원본 그림이 아니라 이 그림으로 푼다.
-- 아래 [검수 기준]과 [이 문제에 적용되는 학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
-- 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. 학습을 어겼으면 rule은 "학습"이고 detail 앞에 그 학습 문장을 인용한다.
+- 아래 [검수 기준]과 [선생님 지침·학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
+- [AI가 정리한 학습]은 문제를 만든 AI가 받은 안내다. 판정 기준이 아니다: 그 문장과 다르게 만들었어도 [검수 기준]과 [선생님 지침·학습]에 어긋나지 않으면 결함이 아니다. 그 학습이 가리키는 결함이 실제로 있으면 해당 기준 항목 이름으로 적는다.
+- 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. [선생님 지침·학습]을 어겼으면 rule은 "학습"이고 detail 앞에 그 문장을 인용한다.
 - checks에는 기준 항목마다 판정을 적는다: 지켰으면 "ok", 결함이 있으면 "fix", 이 문제에 해당하지 않으면 "na" (예: 연습 문제의 '구조'·'STEP 전부 필요', ㄱ·ㄴ·ㄷ 문제가 아닌데 '보기 분석'). analysis.checks는 A의 항목(${ANALYSIS_NAMES.join(', ')}), items[].checks는 B~D의 항목(${ITEM_NAMES.join(', ')}).
 - 한국어로 쓴다. JSON만 출력한다.
 
 [검수 기준]
 ${criteria()}
-[이 문제에 적용되는 학습 — 분석]
-${ruleLines([...learnedA.guides, ...learnedA.own, ...learnedA.lessons])}
+[선생님 지침·학습 — 분석]
+${ruleLines(analysisRules.filter((r) => !system(r)))}
 
-[이 문제에 적용되는 학습 — 변형 문제와 해설]
-${ruleLines(learnedG)}
+[선생님 지침·학습 — 변형 문제와 해설]
+${ruleLines(learnedG.filter((r) => !system(r)))}
+
+[AI가 정리한 학습 — 참고만 한다]
+${ruleLines([...analysisRules, ...learnedG].filter(system))}
 
 반환 형식:
 {"analysis":{"verdict":"ok|issues","checks":{"판독":"ok"},"issues":[{"severity":"high|mid|low","rule":"...","where":"문제/STEP n","detail":"..."}]},
