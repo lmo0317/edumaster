@@ -8,6 +8,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { selectRules, analysisLearning, layerOf } = require('./learning');
 const { notateMaterial } = require('./harness');
+// The final review counted '구조' by feel while the independent solve counts these five items: L64's final, the
+// original's table and three kinds of 보기 with members regrouped, passed the one and failed the other (2026-10-22).
+const { VARIATION_CRITERIA } = require('./prompts');
 
 const CRITERIA_FILE = path.join(__dirname, '..', 'scripts', 'review-criteria.md');
 const criteria = () => fs.readFileSync(CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## A\.)/, '');
@@ -39,6 +42,7 @@ function reviewSystem(material, allRules, generationRules = null) {
 - [AI가 정리한 학습]은 문제를 만든 AI가 받은 안내다. 판정 기준이 아니다: 그 문장과 다르게 만들었어도 [검수 기준]과 [선생님 지침·학습]에 어긋나지 않으면 결함이 아니다. 그 학습이 가리키는 결함이 실제로 있으면 해당 기준 항목 이름으로 적는다.
 - 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. [선생님 지침·학습]을 어겼으면 rule은 "학습"이고 detail 앞에 그 문장을 인용한다.
 - checks에는 기준 항목마다 판정을 적는다: 지켰으면 "ok", 결함이 있으면 "fix", 이 문제에 해당하지 않으면 "na" (예: 연습 문제의 '구조'·'STEP 전부 필요', ㄱ·ㄴ·ㄷ 문제가 아닌데 '보기 분석'). analysis.checks는 A의 항목(${ANALYSIS_NAMES.join(', ')}), items[].checks는 B~D의 항목(${ITEM_NAMES.join(', ')}).
+- 최종 문제의 '구조'는 독립 풀이와 같은 기준으로 센다: ${VARIATION_CRITERIA} 원본과 다른 항목이 둘 이상일 때만 "ok"이고, 하나 이하이면 "fix"로 하고 issues에 달라진 항목 번호와 근거를 적는다.
 - 한국어로 쓴다. JSON만 출력한다.
 
 [검수 기준]

@@ -531,4 +531,6 @@ test('the reviewer judges by the criteria and the teacher\'s learning; what the 
   assert.doesNotMatch(teacher, /AI가 배운/);
   assert.match(ai, /검수에서 AI가 배운 학습[\s\S]*세트에서 AI가 배운 학습/);
   assert.match(system, /판정 기준이 아니다/);
+  // '구조' is counted by the same five items as the independent solve.
+  assert.ok(system.includes(require('../server/prompts').VARIATION_CRITERIA));
 });

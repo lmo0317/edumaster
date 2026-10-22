@@ -663,7 +663,7 @@ module.exports = {
   SYSTEMS, PROMPT_VERSION, MERGE_SYSTEM, mergeText, RULE_NOTES_SYSTEM, ruleNotesParts,
   ANALYZE_SYSTEM, analyzeText, PROOFREAD_SYSTEM, proofreadText, FIX_ANALYSIS_SYSTEM, fixAnalysisText, REGROUP_SYSTEM, regroupText, REREAD_QUESTION_SYSTEM, REREAD_PROBLEM_SYSTEM, rereadProblemText, FIX_VERIFICATION_SYSTEM, fixVerificationText, REREAD_HEADINGS_SYSTEM,
   GENERATE_SYSTEM, generateText, generateParts, EXTRACT_FRAMES_SYSTEM, extractFramesText, framesBlock,
-  SOLVE_SYSTEM, solveText, solveParts,
+  SOLVE_SYSTEM, solveText, solveParts, VARIATION_CRITERIA,
   SOLUTION_REVIEW_SYSTEM, solutionReviewText, solutionReviewParts,
   REPAIR_SYSTEM, repairText, repairParts,
   LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, writeSolutionParts, ADJUDICATE_SYSTEM, adjudicateText,
