@@ -217,6 +217,11 @@ test('PC call cap, commented program lines, and STEP titles as the teacher wrote
   // Every loaded rule (selectRules gives up to 40) keeps its note.
   const notes = normalizeGenerated({ problem: { text: '문제 본문입니다', choices: ['1', '2'], answer: 1 }, appliedRules: Array.from({ length: 40 }, (_, i) => ({ id: `r${i}`, how: '지킴' })) }).appliedRules;
   assert.equal(notes.length, 40);
+  // The independent solver is told whether it judges the rules on a practice or the final problem.
+  const { solveParts } = require('../server/prompts');
+  const solveFor = (kind) => solveParts({ item: { stage: { kind }, problem: { text: '문제' } }, material: { steps: [{ title: 't' }], problem: { text: '' } }, rules: [{ id: 'r', text: '합답형 최종 문제는 …', target: 'problem' }] }).context;
+  assert.match(solveFor('upto'), /이 문제는 연습 문제다/);
+  assert.match(solveFor('twin'), /이 문제는 최종 문제다/);
   const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
   const { createJobs } = require('../server/jobs');
   const config = require('../server/config');

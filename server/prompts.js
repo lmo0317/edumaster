@@ -390,7 +390,9 @@ function solveParts({ item, material, rules, compareOriginal }) {
   const context = [
     '[참고: 원본 풀이의 STEP 목록 — stepsUsed 판정에만 사용]',
     material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}${s.technique ? ' — ' + s.technique : ''}`).join('\n'),
-    problemRules.length ? '\n[판정할 교사 지침]\n' + problemRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 교사 지침] 없음. rules의 kept와 broken은 빈 배열.',
+    // Which kind of problem it is, not its STEP range (stepsUsed stays the solver's own): a rule written for the final
+    // problem was judged broken on a practice problem (E38, 2026-10-22).
+    problemRules.length ? `\n[판정할 교사 지침] 이 문제는 ${item.stage?.kind === 'twin' ? '최종 문제' : '연습 문제'}다. 다른 종류의 문제에 대한 지침(예: 연습 문제에서 최종 문제·마지막 STEP 지침)은 해당 없으므로 kept에 넣는다.\n` + problemRules.map((r) => `- (${r.id}) ${r.text}`).join('\n') : '\n[판정할 교사 지침] 없음. rules의 kept와 broken은 빈 배열.',
   ].join('\n');
   const text = [
     compareOriginal ? '[원본 문제 — variation 판정에만 사용. 풀지 않는다]\n' + material.problem.text : '',
