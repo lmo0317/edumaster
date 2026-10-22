@@ -284,6 +284,10 @@ function renderFrames(material, item) {
 // "Ⅰ과 Ⅱ", "(가), (나)").
 const LABEL = '(?:[ⅠⅡⅢⅣⅤ]|\\([가-하]\\)|[㉠-㉭])';
 const LABEL_RUN = new RegExp(`${LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${LABEL})*`, 'g');
+// A title also names the problem's members, parts and moments: "구성원 3, 4, 8", ⓐ~ⓒ, ㄹ~ㅂ as read, t₁. Without the
+// numbers the system put L64's "3, 4, 8" back over the writer's "3, 4, 7" in two runs (2026-10-22).
+const TITLE_LABEL = `(?:${LABEL}|[㉮-㉻ⓐ-ⓩⒶ-Ⓩㄱ-ㅎ]|t(?:[₀-₉]+|_?\\{?\\d+\\}?)|\\d+)`;
+const TITLE_RUN = new RegExp(`${TITLE_LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${TITLE_LABEL})*`, 'g');
 /**
  * A solution STEP's title: the teacher's words to the letter, with the labels the problem has. The writer's title is
  * taken where it is the teacher's title with other label runs ("(가)와 (나)" for "(가)~(다)", "Ⅱ" for "Ⅰ"), so a
@@ -294,13 +298,16 @@ const LABEL_RUN = new RegExp(`${LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${LABEL})*`,
 function stepTitle(original, mine) {
   const o = String(original);
   const plainTitle = (s) => frameLine(s).replace(/\s*\.$/, '');
-  const parts = plainTitle(o).split(LABEL_RUN);
+  const parts = plainTitle(o).split(TITLE_RUN);
   if (parts.length < 2) return o;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*');
-  const m = new RegExp(`^${parts.map(esc).join(`\\s*(${LABEL_RUN.source})\\s*`)}$`).exec(plainTitle(mine));
-  if (!m) return o;
+  const m = new RegExp(`^${parts.map(esc).join(`\\s*(${TITLE_RUN.source})\\s*`)}$`).exec(plainTitle(mine));
+  if (!m || (o.match(TITLE_RUN) || []).length !== parts.length - 1) return o;
   let k = 1;
-  return o.replace(LABEL_RUN, () => m[k++].trim());
+  // The plain form reads t₁ and $t_1$ as t1; the title writes it as the teacher's title does.
+  const asTeacher = (mineRun, teacherRun) => mineRun.replace(/t_?\{?(\d+)\}?/g, (x, d) => (/t_/.test(teacherRun) ? `t_${d}`
+    : /t[₀-₉]/.test(teacherRun) ? 't' + [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[c]).join('') : 't' + d));
+  return o.replace(TITLE_RUN, (run) => asTeacher(m[k++].trim(), run));
 }
 
 /**

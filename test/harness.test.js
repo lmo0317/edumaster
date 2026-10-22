@@ -156,6 +156,13 @@ test('a STEP title is the teacher\'s with the labels the problem has; anything e
   assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ 에서 반응한 A의 질량을 구한다.'), 'Ⅱ에서 반응한 A의 질량을 구한다.');
   assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ에서 반응한 B의 질량'), 'Ⅰ에서 반응한 A의 질량을 구한다.');
   assert.equal(stepTitle('원소 X~Z의 원자량과 X₂의 분자량을 구한다.', '원자량'), '원소 X~Z의 원자량과 X₂의 분자량을 구한다.');
+  // Members, parts and moments are the problem's too (L64, E38 2026-10-22).
+  assert.equal(stepTitle('㉣~㉥과 구성원 3, 4, 8 매칭하기', '㉣~㉥과 구성원 3, 4, 7 매칭하기'), '㉣~㉥과 구성원 3, 4, 7 매칭하기');
+  assert.equal(stepTitle('구성원 ㉠ 추론 및 유전 형질 (나) 분석하기', '구성원 ㉢ 추론 및 유전 형질 (나) 분석하기'), '구성원 ㉢ 추론 및 유전 형질 (나) 분석하기');
+  assert.equal(stepTitle('t₂일 때 X의 길이 구하기', 't₁일 때 X의 길이 구하기'), 't₁일 때 X의 길이 구하기');
+  assert.equal(stepTitle('t₂일 때 X의 길이 구하기', 't₁일 때 A대의 길이 구하기'), 't₂일 때 X의 길이 구하기');
+  assert.equal(stepTitle('$t_1$과 시냅스가 있는 부분 추론하기', '$t_2$과 시냅스가 있는 부분 추론하기'), '$t_2$과 시냅스가 있는 부분 추론하기');
+  assert.equal(stepTitle('$t_1$과 시냅스가 있는 부분 추론하기', '$t_1$과 시냅스가 있는 부분 추론하기'), '$t_1$과 시냅스가 있는 부분 추론하기');
 });
 
 test('the particle after a Roman numeral follows how the numeral is read', () => {
