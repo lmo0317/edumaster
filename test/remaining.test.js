@@ -214,6 +214,9 @@ test('PC call cap, commented program lines, and STEP titles as the teacher wrote
   const { normalizeGenerated } = require('../server/pipeline');
   const titles = normalizeGenerated({ problem: { text: '문제 본문입니다', choices: ['1', '2'], answer: 1 }, solution: { steps: [{ step: 1, title: 'STEP 1. I에서 한계 반응물을 구한다.', work: 'w' }, { step: 2, title: 'I ~ III에서 구한다', work: 'w' }] } }).solution.steps.map((s) => s.title);
   assert.deepEqual(titles, ['Ⅰ에서 한계 반응물을 구한다.', 'Ⅰ ~ Ⅲ에서 구한다']);
+  // Every loaded rule (selectRules gives up to 40) keeps its note.
+  const notes = normalizeGenerated({ problem: { text: '문제 본문입니다', choices: ['1', '2'], answer: 1 }, appliedRules: Array.from({ length: 40 }, (_, i) => ({ id: `r${i}`, how: '지킴' })) }).appliedRules;
+  assert.equal(notes.length, 40);
   const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
   const { createJobs } = require('../server/jobs');
   const config = require('../server/config');

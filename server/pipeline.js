@@ -212,7 +212,8 @@ function normalizeGenerated(data) {
     solution: normalizeSolution(data?.solution),
     usesSteps: arr(data?.usesSteps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0).slice(0, 12),
     designNote: str(data?.designNote, 3000),
-    appliedRules: arr(data?.appliedRules).map((r) => ({ id: str(r?.id, 40), how: str(r?.how, 600) })).filter((r) => r.id).slice(0, 30),
+    // One note per rule given; a cap below the rules loaded (40) dropped the last notes of every problem.
+    appliedRules: arr(data?.appliedRules).map((r) => ({ id: str(r?.id, 40), how: str(r?.how, 600) })).filter((r) => r.id).slice(0, 100),
     verificationSpec: data?.verification && typeof data.verification === 'object' ? data.verification : null,
   };
 }
