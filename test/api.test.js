@@ -683,3 +683,20 @@ test('학습 반복: a set is made and reviewed, the learning changed from what 
     assert.equal((await s.call('GET', `/api/jobs/${train.rounds[1].setId}/check`)).data.check.done, true, 'each set keeps its review');
   } finally { await s.close(); }
 });
+
+test('학습 반복 stops when a reviewer cannot review the set, instead of going on with the other alone', async () => {
+  const mock = require('../server/mock-llm');
+  mock.setLooks.clear();
+  mock.failing.setReviews = 9; // every review call of the first set fails, as at the subscription's limit (2026-10-22)
+  const s = await start();
+  try {
+    await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
+    const created = await s.call('POST', '/api/materials', { title: '몰질량', problemImage: image, solutionImage: image });
+    await s.waitJob(created.data.jobId);
+    const started = await s.call('POST', '/api/generations', { materialId: created.data.material.id, mode: 'integrated', provider: 'claude-cli', train: { target: 90, maxRounds: 4 } });
+    const train = await s.waitJob(started.data.trainJobId);
+    assert.equal(train.status, 'failed');
+    assert.match(train.error, /1번째 세트의 .+ 검수가 실패해 멈췄습니다: .*session limit/);
+    assert.equal((train.rounds || []).length, 0, 'no round is counted, nothing learned');
+  } finally { mock.failing.setReviews = 0; await s.close(); }
+});

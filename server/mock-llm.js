@@ -157,6 +157,8 @@ function mock(messages) {
   // A whole set reviewed (server/set-check.js): the first two looks at a set (Claude and Gemini) find a fault in its
   // final problem, so 검수하고 고치기 has something to remake; later looks pass it.
   else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system) && text.includes('[AI가 만든 변형 세트]')) {
+    // A test can make the next set reviews fail, as a subscription at its limit does.
+    if (failing.setReviews > 0) { failing.setReviews--; throw Object.assign(new Error("모의 한도: You've hit your session limit"), { status: 502 }); }
     const labels = [...text.matchAll(/^### (.+?) — 목표/gm)].map((x) => x[1]);
     const seen = (setLooks.get(labels.join('|')) || 0) + 1;
     setLooks.set(labels.join('|'), seen);
@@ -176,5 +178,6 @@ function mock(messages) {
 }
 
 const setLooks = new Map();
+const failing = { setReviews: 0 };
 
-module.exports = { mock, SAMPLE, setLooks };
+module.exports = { mock, SAMPLE, setLooks, failing };

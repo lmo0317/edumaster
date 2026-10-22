@@ -185,10 +185,17 @@ function createJobs({ store, llm, config }) {
           set.finishedAt = new Date().toISOString();
           sctx.save();
         }
+        // A set not made, or a review one reviewer could not give, stops the repeat (the subscription's limit, a lost
+        // connection): on 2026-10-22 the limit left sets empty and Claude's review failed, and two repeats ran six
+        // rounds each on Gemini's 100 for nothing.
+        const unmade = set.status === 'failed' ? set.error : (set.items.find((it) => !it.problem)?.error || (set.items.some((it) => !it.problem) && '문제가 만들어지지 않음'));
+        if (unmade) throw new Error(`${r + 1}번째 세트를 만들지 못해 멈췄습니다: ${unmade}`);
         ctx.log(`${r + 1}번째 세트를 Claude·Gemini가 검수하는 중`);
         const save = (rec) => setCheck.writeCheck(config.dataDir, set.id, { ...rec, jobId: t.id, running: true });
         const record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
         setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
+        const lost = Object.entries(record.reviews || {}).find(([, v]) => v.error);
+        if (lost) throw new Error(`${r + 1}번째 세트의 ${setCheck.NAME[lost[0]] || lost[0]} 검수가 실패해 멈췄습니다: ${lost[1].error}`);
         const scores = setCheck.scores(record);
         const fails = setCheck.failing(record);
         const issues = setCheck.analysisIssues(record);
