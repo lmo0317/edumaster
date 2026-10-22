@@ -476,7 +476,14 @@ function checkSolutionTables(material, item) {
 /** All code checks for one generated problem. */
 /** The solution keeps the teacher's STEP titles; only the experiments or containers named ((Ⅰ~Ⅲ), (가)~(다)) follow the problem. */
 // X₂ and $\ce{X2}$ are one title (화학 C32, 2026-10-22: the check flagged the title the system had itself notated).
-const titleKey = (t) => subDigits(plain(t)).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/\([가-하]\)\s*(?:~|와|과|및|,)?\s*/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
+// The names a problem gives its parts follow the problem too: ㉠~㉥ and ⓐ~ⓒ (ㄹ~ㅂ as read), member numbers, t₁ and t₂.
+// Held to the teacher's letters, the title fought the final review over "구성원 ㉢ 추론" for five rewrites (L64, 2026-10-22).
+// The particle after a name changes with it (㉡과, 2와), so it is read as one.
+const PART_NAME = '㉠-㉿Ⓐ-ⓩㄱ-ㅎ\\dⅠ-Ⅴ)';
+const PARTICLES = [['과|와', '와'], ['은|는', '는'], ['이|가', '가', '(?![가-힣])'], ['을|를', '를']];
+const titleKey = (t) => PARTICLES.reduce((s, [any, one, end = '']) => s.replace(new RegExp(`([${PART_NAME}])(?:${any})${end}`, 'g'), '$1' + one), subDigits(plain(t)))
+  .replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/\([가-하]\)\s*(?:~|와|과|및|,)?\s*/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '')
+  .replace(/[㉠-㉿Ⓐ-ⓩㄱ-ㅎ\d]/g, '').replace(/\bt(?=[^A-Za-z]|$)/g, '').replace(/[\s~,.:·()_{}]/g, '');
 function checkStepTitles(material, item) {
   const out = [];
   for (const s of item.solution?.steps || []) {

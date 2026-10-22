@@ -16,6 +16,12 @@ test('a heading keeps a reference to another step and loses only its own marker'
 test('a solution title may name only the containers this problem has', () => {
   assert.equal(titleKey('(가)~(다)에 들어 있는 기체의 분자 수비를 구한다'), titleKey('(가)와 (나)에 들어 있는 기체의 분자 수비를 구한다'));
   assert.notEqual(titleKey('(가)~(다)에 들어 있는 기체의 분자 수비를 구한다'), titleKey('(가)~(다)에 들어 있는 기체의 질량비를 구한다'));
+  // The names of parts, members and moments follow the problem too (L64, E38 2026-10-22).
+  assert.equal(titleKey('구성원 ㉠ 추론 및 유전 형질 (나) 분석하기'), titleKey('구성원 ㉢ 추론 및 유전 형질 (나) 분석하기'));
+  assert.equal(titleKey('구성원 ㉡과 ㉢ 추론하기'), titleKey('구성원 ㉠과 ㉡ 추론하기'));
+  assert.equal(titleKey('ㄹ~ㅂ과 구성원 3, 4, 8 매칭하기'), titleKey('㉣~㉥과 구성원 4, 5, 2 매칭하기'));
+  assert.equal(titleKey('t₂일 때 X의 길이 구하기'), titleKey('$t_1$일 때 X의 길이 구하기'));
+  assert.notEqual(titleKey('t₂일 때 X의 길이 구하기'), titleKey('t₂일 때 A대의 길이 구하기'));
 });
 
 // Claude's review of the same set: the STEP 1~2 practice solution stopped at the mass ratio and never judged ㄱ, ㄴ, ㄷ.
