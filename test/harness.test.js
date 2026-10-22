@@ -157,3 +157,9 @@ test('a STEP title is the teacher\'s with the labels the problem has; anything e
   assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ에서 반응한 B의 질량'), 'Ⅰ에서 반응한 A의 질량을 구한다.');
   assert.equal(stepTitle('원소 X~Z의 원자량과 X₂의 분자량을 구한다.', '원자량'), '원소 X~Z의 원자량과 X₂의 분자량을 구한다.');
 });
+
+test('the particle after a Roman numeral follows how the numeral is read', () => {
+  const { notation } = require('../server/harness');
+  assert.equal(notation('Ⅳ이 d4이다. 나머지 Ⅰ와 Ⅲ는 Ⅱ과 Ⅲ가 Ⅲ로 Ⅰ로'), 'Ⅳ가 d4이다. 나머지 Ⅰ과 Ⅲ은 Ⅱ와 Ⅲ이 Ⅲ으로 Ⅰ로');
+  assert.equal(notation('Ⅱ이다, Ⅰ이고'), 'Ⅱ이다, Ⅰ이고', 'a particle running on (이다, 이고) is left');
+});

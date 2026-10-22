@@ -33,8 +33,19 @@ const isFormula = (f) => /[0-9₀-₉]|\((?:g|l|s|aq)\)$/.test(f) && (subDigits(
  * failed on it to the end (2026-10-21).
  */
 function notation(text) {
-  return String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? part
-    : part.replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join('');
+  return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? part
+    : part.replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join(''));
+}
+// The particle after a Roman numeral as it is read (Ⅰ 일, Ⅱ 이, Ⅲ 삼, Ⅳ 사, Ⅴ 오): the teacher's sentence frames take
+// another numeral in its place and kept the particle ("Ⅳ이 d₄이다", "Ⅰ와 Ⅲ는"), which both reviewers marked on 생명 D50.
+const FINAL = { 'Ⅰ': 'ㄹ', 'Ⅱ': '', 'Ⅲ': 'ㅁ', 'Ⅳ': '', 'Ⅴ': '' };
+const PAIRS = [['은', '는'], ['이', '가'], ['을', '를'], ['과', '와']];
+function josa(text) {
+  return text.replace(/([ⅠⅡⅢⅣⅤ])(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])/g, (all, n, p) => {
+    if (p === '으로' || p === '로') return n + (FINAL[n] && FINAL[n] !== 'ㄹ' ? '으로' : '로');
+    const pair = PAIRS.find((x) => x.includes(p));
+    return n + (FINAL[n] ? pair[0] : pair[1]);
+  });
 }
 /** notation() over all of a problem's text (mutates `item`). */
 function notateItem(item) {
