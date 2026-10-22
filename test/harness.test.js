@@ -163,3 +163,16 @@ test('the particle after a Roman numeral follows how the numeral is read', () =>
   assert.equal(notation('Ⅳ이 d4이다. 나머지 Ⅰ와 Ⅲ는 Ⅱ과 Ⅲ가 Ⅲ로 Ⅰ로'), 'Ⅳ가 d4이다. 나머지 Ⅰ과 Ⅲ은 Ⅱ와 Ⅲ이 Ⅲ으로 Ⅰ로');
   assert.equal(notation('Ⅱ이다, Ⅰ이고'), 'Ⅱ이다, Ⅰ이고', 'a particle running on (이다, 이고) is left');
 });
+
+test('inside $…$ a formula alone is \\ce and Korean is \\text; a formula the problem writes is \\ce where the solution leaves it bare', () => {
+  const { notation, notateItem } = require('../server/harness');
+  const r = String.raw;
+  assert.equal(notation('$Y2Z$ 분자 수와 $X2Y2$'), r`$\ce{Y2Z}$ 분자 수와 $\ce{X2Y2}$`);
+  assert.equal(notation(r`$\frac{질량}{양(mol)}$, $\frac{24g}{\frac{9L}{24L}/몰}$`), r`$\frac{\text{질량}}{\text{양}(mol)}$, $\frac{24g}{\frac{9L}{24L}/\text{몰}}$`);
+  assert.equal(notation(r`$\frac{\text{기체의 부피}}{\text{기체 1몰의 부피}}$`), r`$\frac{\text{기체의 부피}}{\text{기체 1몰의 부피}}$`, 'already in \\text');
+  assert.equal(notation('$a+b=8n$, $n$'), '$a+b=8n$, $n$');
+  const item = { problem: { text: r`| (다) | $\ce{XZ}$, $\ce{Y2Z}$ |`, choices: [] }, solution: { steps: [{ title: 'X₂의 분자량', work: r`$\ce{XZ}$ 1개, XZ 분자 수를 $n$이라 하면, XZY는 그대로` }] } };
+  notateItem(item);
+  assert.equal(item.solution.steps[0].work, r`$\ce{XZ}$ 1개, $\ce{XZ}$ 분자 수를 $n$이라 하면, XZY는 그대로`);
+  assert.equal(item.solution.steps[0].title, r`$\ce{X2}$의 분자량`);
+});

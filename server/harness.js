@@ -32,10 +32,29 @@ const isFormula = (f) => /[0-9₀-₉]|\((?:g|l|s|aq)\)$/.test(f) && (subDigits(
  * frames, 2026-10-16), the STEP titles the system copies from the analysis kept X₂ and the gas original's four sets
  * failed on it to the end (2026-10-21).
  */
-function notation(text) {
-  return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? part
-    : part.replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join(''));
+function notation(text, known = []) {
+  return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? mathPart(part)
+    : bareFormulas(part, Array.isArray(known) ? known : []).replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join(''));
 }
+// Inside $…$: a formula alone written as math ($Y2Z$, no subscript) is $\ce{…}$, and Korean is put in \text{} (as
+// $\frac{질량}{양(mol)}$ or 24g/몰 were left on 화학 C38 and C32, 2026-10-22, the reviewers' notes on every set).
+function mathPart(part) {
+  const [, open, body, close] = /^(\$\$?)([\s\S]*?)(\$\$?)$/.exec(part) || [];
+  if (body === undefined) return part;
+  const alone = body.trim();
+  if (/^(?:[A-Z][a-z]?[0-9₀-₉]*)+(?:\((?:g|l|s|aq)\))?$/.test(alone) && isFormula(alone)) return `${open}\\ce{${subDigits(alone)}}${close}`;
+  const fixed = body.split(/(\\(?:text|ce|mathrm|operatorname)\s*\{[^{}]*\})/).map((seg, k) => (k % 2 ? seg
+    : seg.replace(/[가-힣]+(?:\s+[가-힣]+)*/g, (ko) => `\\text{${ko}}`))).join('');
+  return open + fixed + close;
+}
+// Formulas without a count (XZ) cannot be told from other capitals, so only those the problem itself writes as \ce are
+// put in \ce where the solution leaves them bare ("XZ 분자 수를 n이라 하면", 화학 C38 2026-10-22).
+function bareFormulas(part, known) {
+  let out = part;
+  for (const f of known) out = out.replace(new RegExp(`(?<![A-Za-z0-9\\\\{}_^])${f.replace(/[()]/g, '\\$&')}(?![A-Za-z0-9{(])`, 'g'), `$\\ce{${f}}$`);
+  return out;
+}
+const knownFormulas = (text) => [...new Set([...String(text || '').matchAll(/\\ce\{([A-Za-z0-9()]+)\}/g)].map((m) => m[1]).filter((f) => /^[A-Z]/.test(f) && f.length >= 2))].sort((a, b) => b.length - a.length);
 // The particle after a Roman numeral as it is read (Ⅰ 일, Ⅱ 이, Ⅲ 삼, Ⅳ 사, Ⅴ 오): the teacher's sentence frames take
 // another numeral in its place and kept the particle ("Ⅳ이 d₄이다", "Ⅰ와 Ⅲ는"), which both reviewers marked on 생명 D50.
 const FINAL = { 'Ⅰ': 'ㄹ', 'Ⅱ': '', 'Ⅲ': 'ㅁ', 'Ⅳ': '', 'Ⅴ': '' };
@@ -54,8 +73,9 @@ function notateItem(item) {
     item.problem.choices = (item.problem.choices || []).map(notation);
     if (item.problem.figure) item.problem.figure = notation(item.problem.figure);
   }
-  for (const s of item.solution?.steps || []) { s.title = notation(s.title); s.work = notation(s.work); }
-  if (item.solution?.summary) item.solution.summary = notation(item.solution.summary);
+  const known = knownFormulas(item.problem?.text);
+  for (const s of item.solution?.steps || []) { s.title = notation(s.title, known); s.work = notation(s.work, known); }
+  if (item.solution?.summary) item.solution.summary = notation(item.solution.summary, known);
 }
 /** The original as the system shows it to writers and reviewers: the same notation (a copy). */
 function notateMaterial(material) {
@@ -441,7 +461,8 @@ function checkSolutionTables(material, item) {
 
 /** All code checks for one generated problem. */
 /** The solution keeps the teacher's STEP titles; only the experiments or containers named ((Ⅰ~Ⅲ), (가)~(다)) follow the problem. */
-const titleKey = (t) => plain(t).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/\([가-하]\)\s*(?:~|와|과|및|,)?\s*/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
+// X₂ and $\ce{X2}$ are one title (화학 C32, 2026-10-22: the check flagged the title the system had itself notated).
+const titleKey = (t) => subDigits(plain(t)).replace(/\((?:g|mol|L|mL|kg)\)/g, '').replace(/\([가-하]\)\s*(?:~|와|과|및|,)?\s*/g, '').replace(/Ⅰ|Ⅱ|Ⅲ|Ⅳ|\b(?:I{1,3}|IV)\b/g, '').replace(/[\s~,.:·()]/g, '');
 function checkStepTitles(material, item) {
   const out = [];
   for (const s of item.solution?.steps || []) {
