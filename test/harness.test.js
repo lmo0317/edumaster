@@ -163,6 +163,16 @@ test('a STEP title is the teacher\'s with the labels the problem has; anything e
   assert.equal(stepTitle('t₂일 때 X의 길이 구하기', 't₁일 때 A대의 길이 구하기'), 't₂일 때 X의 길이 구하기');
   assert.equal(stepTitle('$t_1$과 시냅스가 있는 부분 추론하기', '$t_2$과 시냅스가 있는 부분 추론하기'), '$t_2$과 시냅스가 있는 부분 추론하기');
   assert.equal(stepTitle('$t_1$과 시냅스가 있는 부분 추론하기', '$t_1$과 시냅스가 있는 부분 추론하기'), '$t_1$과 시냅스가 있는 부분 추론하기');
+  // A force's index is the problem's too, however it is written (E37 2026-10-23: the system put F₁ back over F₂).
+  assert.equal(stepTitle('ⓐ=F₁일 때 ㉠~㉢과 X의 길이 계산하기', 'ⓐ=$F_2$일 때 ㉠~㉢과 X의 길이 계산하기'), 'ⓐ=F₂일 때 ㉠~㉢과 X의 길이 계산하기');
+  // Outside chemistry a capital with a count is a quantity: F₂ is $F_2$, not $\ce{F2}$.
+  const { notateItem } = require('../server/harness');
+  const bio = { problem: { text: '힘 F₂일 때' }, solution: { steps: [{ step: 1, title: 'ⓐ=F₂일 때', work: 't₁에서 CO₂와 $F2$' }] } };
+  notateItem(bio, { subject: '생명과학' });
+  assert.deepEqual([bio.problem.text, bio.solution.steps[0].title, bio.solution.steps[0].work], ['힘 $F_2$일 때', 'ⓐ=$F_2$일 때', '$t_1$에서 CO₂와 $F2$']);
+  const chem = { problem: { text: 'X₂ 기체' }, solution: { steps: [] } };
+  notateItem(chem, { subject: '화학' });
+  assert.equal(chem.problem.text, String.raw`$\ce{X2}$ 기체`);
 });
 
 test('the particle after a Roman numeral follows how the numeral is read', () => {

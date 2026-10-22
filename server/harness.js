@@ -32,17 +32,21 @@ const isFormula = (f) => /[0-9₀-₉]|\((?:g|l|s|aq)\)$/.test(f) && (subDigits(
  * frames, 2026-10-16), the STEP titles the system copies from the analysis kept X₂ and the gas original's four sets
  * failed on it to the end (2026-10-21).
  */
-function notation(text, known = []) {
-  return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? mathPart(part)
-    : bareFormulas(part, Array.isArray(known) ? known : []).replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all)))).join(''));
+// Outside chemistry a capital with a count is a quantity, not a formula: 생명 E37's force F₂ became $\ce{F2}$ in a STEP
+// title (학습 반복, 2026-10-23, Gemini). There a letter with a subscript (F₁, t₂) is written as math, $F_1$.
+function notation(text, known = [], { formulas = true } = {}) {
+  return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? mathPart(part, formulas)
+    : formulas ? bareFormulas(part, Array.isArray(known) ? known : []).replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all))
+      : part.replace(/(?<![A-Za-z0-9\\{}_^$])([A-Za-z])([₀-₉]+)(?![A-Za-z0-9₀-₉])/g, (all, l, d) => `$${l}_${d.length > 1 ? `{${subDigits(d)}}` : subDigits(d)}$`))).join(''));
 }
+const formulasIn = (material) => !material?.subject || /화학/.test(material.subject);
 // Inside $…$: a formula alone written as math ($Y2Z$, no subscript) is $\ce{…}$, and Korean is put in \text{} (as
 // $\frac{질량}{양(mol)}$ or 24g/몰 were left on 화학 C38 and C32, 2026-10-22, the reviewers' notes on every set).
-function mathPart(part) {
+function mathPart(part, formulas = true) {
   const [, open, body, close] = /^(\$\$?)([\s\S]*?)(\$\$?)$/.exec(part) || [];
   if (body === undefined) return part;
   const alone = body.trim();
-  if (/^(?:[A-Z][a-z]?[0-9₀-₉]*)+(?:\((?:g|l|s|aq)\))?$/.test(alone) && isFormula(alone)) return `${open}\\ce{${subDigits(alone)}}${close}`;
+  if (formulas && /^(?:[A-Z][a-z]?[0-9₀-₉]*)+(?:\((?:g|l|s|aq)\))?$/.test(alone) && isFormula(alone)) return `${open}\\ce{${subDigits(alone)}}${close}`;
   const fixed = body.split(/(\\(?:text|ce|mathrm|operatorname)\s*\{[^{}]*\})/).map((seg, k) => (k % 2 ? seg
     : seg.replace(/[가-힣]+(?:\s+[가-힣]+)*/g, (ko) => `\\text{${ko}}`))).join('');
   return open + fixed + close;
@@ -82,24 +86,27 @@ function josa(text) {
       return d + close + fit((indexed ? INDEX_FINAL : DIGIT_FINAL)[digit], p);
     });
 }
-/** notation() over all of a problem's text (mutates `item`). */
-function notateItem(item) {
+/** notation() over all of a problem's text (mutates `item`); formulas only in a chemistry original's problems. */
+function notateItem(item, material) {
+  const opts = { formulas: formulasIn(material) };
+  const at = (t, known = []) => notation(t, known, opts);
   if (item.problem) {
-    item.problem.text = notation(item.problem.text);
-    item.problem.choices = (item.problem.choices || []).map(notation);
-    if (item.problem.figure) item.problem.figure = notation(item.problem.figure);
+    item.problem.text = at(item.problem.text);
+    item.problem.choices = (item.problem.choices || []).map((c) => at(c));
+    if (item.problem.figure) item.problem.figure = at(item.problem.figure);
   }
-  const known = knownFormulas(item.problem?.text);
-  for (const s of item.solution?.steps || []) { s.title = notation(s.title, known); s.work = notation(s.work, known); }
-  if (item.solution?.summary) item.solution.summary = notation(item.solution.summary, known);
+  const known = opts.formulas ? knownFormulas(item.problem?.text) : [];
+  for (const s of item.solution?.steps || []) { s.title = at(s.title, known); s.work = at(s.work, known); }
+  if (item.solution?.summary) item.solution.summary = at(item.solution.summary, known);
 }
 /** The original as the system shows it to writers and reviewers: the same notation (a copy). */
 function notateMaterial(material) {
   if (!material?.problem) return material;
+  const at = (t) => notation(t, [], { formulas: formulasIn(material) });
   return {
     ...material,
-    problem: { ...material.problem, text: notation(material.problem.text), choices: (material.problem.choices || []).map(notation), figure: material.problem.figure ? notation(material.problem.figure) : material.problem.figure },
-    steps: (material.steps || []).map((s) => ({ ...s, title: notation(s.title), work: notation(s.work), result: s.result ? notation(s.result) : s.result })),
+    problem: { ...material.problem, text: at(material.problem.text), choices: (material.problem.choices || []).map((c) => at(c)), figure: material.problem.figure ? at(material.problem.figure) : material.problem.figure },
+    steps: (material.steps || []).map((s) => ({ ...s, title: at(s.title), work: at(s.work), result: s.result ? at(s.result) : s.result })),
   };
 }
 
@@ -292,7 +299,7 @@ function renderFrames(material, item) {
   }
   answerLine(item);
   teacherChoiceHeading(material, item);
-  notateItem(item);
+  notateItem(item, material);
   return missing;
 }
 
@@ -302,7 +309,7 @@ const LABEL = '(?:[ⅠⅡⅢⅣⅤ]|\\([가-하]\\)|[㉠-㉭])';
 const LABEL_RUN = new RegExp(`${LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${LABEL})*`, 'g');
 // A title also names the problem's members, parts and moments: "구성원 3, 4, 8", ⓐ~ⓒ, ㄹ~ㅂ as read, t₁. Without the
 // numbers the system put L64's "3, 4, 8" back over the writer's "3, 4, 7" in two runs (2026-10-22).
-const TITLE_LABEL = `(?:${LABEL}|[㉮-㉻ⓐ-ⓩⒶ-Ⓩㄱ-ㅎ]|t(?:[₀-₉]+|_?\\{?\\d+\\}?)|\\d+)`;
+const TITLE_LABEL = `(?:${LABEL}|[㉮-㉻ⓐ-ⓩⒶ-Ⓩㄱ-ㅎ]|t(?:[₀-₉]+|_?\\{?\\d+\\}?)|\\d+|[₀-₉]+)`;
 const TITLE_RUN = new RegExp(`${TITLE_LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${TITLE_LABEL})*`, 'g');
 /**
  * A solution STEP's title: the teacher's words to the letter, with the labels the problem has. The writer's title is
@@ -313,7 +320,8 @@ const TITLE_RUN = new RegExp(`${TITLE_LABEL}(?:\\s*(?:~|,|와|과|및)\\s*${TITL
  */
 function stepTitle(original, mine) {
   const o = String(original);
-  const plainTitle = (s) => frameLine(s).replace(/\s*\.$/, '');
+  // F₁, $F_1$ and F1 are one name.
+  const plainTitle = (s) => frameLine(s).replace(/\s*\.$/, '').replace(/\$([A-Za-z]_?\{?\d*\}?)\$/g, '$1').replace(/([A-Za-z])_\{?(\d+)\}?/g, '$1$2');
   const parts = plainTitle(o).split(TITLE_RUN);
   if (parts.length < 2) return o;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*');
@@ -321,8 +329,10 @@ function stepTitle(original, mine) {
   if (!m || (o.match(TITLE_RUN) || []).length !== parts.length - 1) return o;
   let k = 1;
   // The plain form reads t₁ and $t_1$ as t1; the title writes it as the teacher's title does.
-  const asTeacher = (mineRun, teacherRun) => mineRun.replace(/t_?\{?(\d+)\}?/g, (x, d) => (/t_/.test(teacherRun) ? `t_${d}`
-    : /t[₀-₉]/.test(teacherRun) ? 't' + [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[c]).join('') : 't' + d));
+  // An index alone (F₁'s ₁, read F1) is written the teacher's way too (생명 E37, 2026-10-23).
+  const sub = (d) => [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[c]).join('');
+  const asTeacher = (mineRun, teacherRun) => (/^[₀-₉]+$/.test(teacherRun) && /^\d+$/.test(mineRun) ? sub(mineRun)
+    : mineRun.replace(/t_?\{?(\d+)\}?/g, (x, d) => (/t_/.test(teacherRun) ? `t_${d}` : /t[₀-₉]/.test(teacherRun) ? 't' + sub(d) : 't' + d)));
   return o.replace(TITLE_RUN, (run) => asTeacher(m[k++].trim(), run));
 }
 
