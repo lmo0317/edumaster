@@ -1,6 +1,7 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
+const { Budget } = require('./llm');
 const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, updateRule, grams, overlap } = require('./learning');
 const crypto = require('node:crypto');
 const harness = require('./harness');
@@ -642,12 +643,35 @@ async function finalGate(ctx, item, material, prior, hints = []) {
       images: originalImages(ctx.store, material),
     });
     const review = (data?.items || [])[0] || null;
-    const faults = finalReview.itemFaults(data);
+    let faults = finalReview.itemFaults(data);
     ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+    // What one review passes, a second reviewer looks at too, as the finished set is reviewed by Claude and Gemini: on
+    // the eight new originals (2026-10-21) the review here passed 24 of 25 problems and the set's review failed 7 of
+    // them — Claude's own review 6, Gemini's 2. The second look is on its own subscription, outside the set's budget; if
+    // it cannot be had (not connected, its limit) the first review stands.
+    let second = null;
+    if (!faults.length && ctx.secondReviewer) {
+      try {
+        ctx.log(`${item.label}: 두 번째 검수자(${ctx.secondReviewer})가 같은 기준으로 검토 중`);
+        ({ data: second } = await ctx.llm.json({
+          purpose: 'final-review-second', provider: ctx.secondReviewer, jobId: ctx.job.id, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }), signal: ctx.signal, maxTokens: 24000, vision: true,
+          system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+          text: finalReview.itemReviewText(material, item, prior, hints),
+          images: originalImages(ctx.store, material),
+        }));
+        faults = finalReview.itemFaults(second).map((f) => `[두 번째 검수] ${f}`);
+        ctx.log(`${item.label}: 두 번째 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+      } catch (e) {
+        if (ctx.signal?.aborted) throw e;
+        ctx.log(`${item.label}: 두 번째 검수를 하지 못해 첫 검수로 판정합니다 (${e.message})`);
+        second = null;
+      }
+    }
     // Every round is kept for the set page: what each review found, and that the next one passed.
     (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
     ctx.save();
-    return { faults, notes: faults.length ? [] : finalReview.itemNotes(data), review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(data) };
+    const judged = faults.length && second ? second : data;
+    return { faults, notes: faults.length ? [] : [...finalReview.itemNotes(data), ...(second ? finalReview.itemNotes(second) : [])], review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(judged) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
@@ -759,12 +783,14 @@ function tableRows(text, hidden = {}) {
   const rows = [];
   for (const line of String(text || '').split('\n')) {
     if (!/^\s*\|/.test(line) || /^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').slice(1)
+    // cols: every cell in its column (null where it holds no amount), so rows can be compared column by column.
+    const cols = line.trim().replace(/^\||\|$/g, '').split('|').slice(1)
       .map((c) => c.replace(/\\ce\{[^}]*\}|\$|\s|\\,/g, '').replace(/\\(d?frac)\{(\d+)\}\{(\d+)\}/g, '$2/$3'))
       .map((c) => hidden[c] ?? c)
       // A formula (\mathrm{ZX_2}) names the row, it is not an amount: with it the row's amounts were never compared.
-      .filter((c) => /\d/.test(c) && c.length <= 24 && !/(mathrm|text)\{/.test(c));
-    if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(','), cells });
+      .map((c) => (/\d/.test(c) && c.length <= 24 && !/(mathrm|text)\{/.test(c) ? c : null));
+    const cells = cols.filter((c) => c !== null);
+    if (cells.length >= 2) rows.push({ label: line.split('|')[1].trim().replace(/\$/g, ''), sig: cells.slice(0, 2).join(','), cells, cols });
   }
   return rows;
 }
@@ -795,8 +821,8 @@ function hiddenValues(text, steps) {
 function numbersReused(item, prior, material) {
   const vocab = readingVocabulary(material);
   const mine = designedRows(item.problem.text, vocab);
-  if (!mine.length) return [];
-  const notes = [];
+  const notes = scaledOrKept(item, prior, material, vocab);
+  if (!mine.length) return notes;
   // The value a hidden letter comes to is the answer the student works out: the same as the original's (a = 12 asked
   // again, chem-c32-molar-volume 2026-10-19: the final review found it in a third round, past the repairs) is a
   // remembered answer, not a worked one.
@@ -810,6 +836,76 @@ function numbersReused(item, prior, material) {
   compare(material.problem.text, material.steps, '원본');
   if (item.stage.kind === 'twin') for (const other of prior) if (other.problem && other.index !== item.index) compare(other.problem.text, other.solution?.steps, `앞 문제(${other.label})`);
   return [...new Set(notes)];
+}
+
+// An amount as a number with its unit letters ("8w" -> [8, 'w'], "3/4" -> [0.75, '']), or null.
+function amount(cell) {
+  const m = /^([+-]?)(\d+(?:\.\d+)?)(?:\/(\d+))?([a-zA-Z]*)$/.exec(String(cell || '').replace(/−/g, '-'));
+  if (!m) return null;
+  const v = Number(m[2]) / (m[3] ? Number(m[3]) : 1);
+  return [m[1] === '-' ? -v : v, m[4]];
+}
+// The ratio of two lists of amounts when every pair has the same one (zero to zero), else null.
+function commonRatio(mine, theirs) {
+  let k = null;
+  let pairs = 0;
+  for (let i = 0; i < mine.length; i++) {
+    const a = amount(mine[i]);
+    const b = amount(theirs[i]);
+    if (!a || !b) continue;
+    if (a[1] !== b[1]) return null;
+    if (a[0] === 0 || b[0] === 0) { if (a[0] !== b[0]) return null; continue; }
+    const r = a[0] / b[0];
+    if (k !== null && Math.abs(r - k) > 1e-9 * Math.abs(k)) return null;
+    k = r; pairs++;
+  }
+  return pairs >= 2 ? k : null;
+}
+const times = (k) => (Number.isInteger(k) ? `${k}배` : Number.isInteger(1 / k) ? `1/${1 / k}배` : `${+k.toFixed(3)}배`);
+// Named values in the problem and its figure ("d_2=6", "x = 1.5"): the setting the student reads, outside the tables.
+function namedValues(problem) {
+  const text = `${problem?.text || ''}\n${problem?.figure || ''}`.replace(/\$|\\[,;! ]|\{|\}/g, '').replace(/−/g, '-');
+  const out = {};
+  for (const m of text.matchAll(/(?<![A-Za-z0-9_])([A-Za-z](?:_?[0-9A-Za-z])?)\s*=\s*([+-]?\d+(?:\.\d+)?(?:\/\d+)?)(?![\d./])/g)) out[m[1].replace('_', '')] ??= m[2];
+  return out;
+}
+/**
+ * Numbers that keep the original's (or an earlier problem's) setting under another face: a row whose amounts are those of
+ * the same row times one factor, a row with most of its amounts the same in the same columns, and the named values of the
+ * figure (positions, lengths) all one factor of the original's. On 생명 D50 (2026-10-21) the final problem drew the
+ * positions 0, 6, 15, 21 cm for 0, 2, 5, 7 and the speeds three times as fast, so every time and answer was the
+ * original's; on 생명 E38 the final problem's t₁ row kept the original's 1.6 and 0.6 with a new first amount. Only the
+ * first two amounts of a row were compared, and the figure not at all.
+ */
+function scaledOrKept(item, prior, material, vocab) {
+  const notes = [];
+  const mine = designedRows(item.problem.text, vocab);
+  const against = [['원본', material.problem], ...(item.stage.kind === 'twin' ? prior.filter((o) => o.problem && o.index !== item.index).map((o) => [`앞 문제(${o.label})`, o.problem]) : [])];
+  for (const [whose, problem] of against) {
+    const theirs = designedRows(problem.text, vocab);
+    for (const r of mine) {
+      for (const t of theirs.filter((x) => x.label === r.label && x.cols.length === r.cols.length)) {
+        if (r.sig === t.sig) continue; // said already (numbersReused)
+        // A value the original repeats (a length that stays the same) counts with the others, but alone it is no reuse.
+        // 0 and 1 (a ratio's 1, an empty amount) match by themselves and say nothing.
+        const kept = r.cols.filter((c, i) => c !== null && c === t.cols[i] && !['0', '1'].includes(c));
+        const same = kept.some((c) => !vocab.has(c)) ? kept.length : 0;
+        const given = Math.min(r.cols.filter((c) => c !== null).length, t.cols.filter((c) => c !== null).length);
+        const k = commonRatio(r.cols, t.cols);
+        if (k !== null && k !== 1 && (Number.isInteger(k) || Number.isInteger(1 / k))) notes.push(`${whose}의 ${r.label} 행 수치를 모두 ${times(k)} 한 값입니다. 비가 같아 구하는 값과 판단이 그대로 같아지므로, 행마다 비가 달라지게 수치를 잡습니다.`);
+        else if (same >= 2 && same * 3 >= given * 2) notes.push(`${whose}의 ${r.label} 행과 같은 칸에 같은 수치가 ${same}개 있습니다 (${r.cols.filter((c) => c !== null).join(', ')}). 그 행의 수치를 새로 잡습니다.`);
+      }
+    }
+    // The figure's setting scaled whole is the final problem's (a practice problem may keep the original's setting).
+    const a = item.stage.kind === 'twin' ? namedValues(item.problem) : {};
+    const b = namedValues(problem);
+    const names = Object.keys(a).filter((n) => n in b);
+    if (names.length >= 3) {
+      const k = commonRatio(names.map((n) => a[n]), names.map((n) => b[n]));
+      if (k !== null) notes.push(`${whose}의 ${names.join(', ')} 값을 ${k === 1 ? '그대로 썼습니다' : `모두 ${times(k)} 했습니다`}. 비가 같아 구하는 값과 판단이 그대로 같아지므로, 값 사이의 비가 달라지게 잡습니다.`);
+    }
+  }
+  return notes;
 }
 
 /** Row signatures the new problem must avoid: the original's, and (for the final problem) earlier problems'. */
@@ -1593,7 +1689,8 @@ async function runGeneration(ctx) {
       const share = Number.isFinite(ctx.budget.maxCalls) ? ctx.budget.maxCalls / job.items.reduce((s, x) => s + weight(x), 0) : 0;
       ctx.reserveCalls = Math.floor(job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status))
         .reduce((s, x) => s + Math.max(3, share * weight(x)), 0));
-      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples });
+      // A problem a 학습 반복 carried over to remake: the reviewers' faults are its note, its last version what to fix.
+      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples, extraFeedback: item.remakeNote, previous: item.remakeNote ? item.history?.[0] : undefined });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
       ctx.log(`${item.label}: 실패 — ${e.message}`);
@@ -1638,7 +1735,8 @@ const SYSTEM_CHECKS = {
     { label: 'STEP 범위', how: '독립 풀이에 원본 STEP 기법 중 무엇이 꼭 필요했는지로, 목표 범위(STEP 1, STEP 1~2, 전체)와 맞는지, 기법 없이 풀리는 지름길이 없는지 본다.', onFail: 'repair', match: /^STEP 범위|로직 없이|핵심 기법 없이|목표 범위 밖/ },
     { label: '안 쓰인 조건', how: '독립 풀이가 문제의 조건을 하나씩 나열해 풀이에 썼는지 표시한다. 쓰이지 않은 조건·문자 계수가 있으면 설계 결함이다.', onFail: 'repair', match: /쓰이지 않는 조건|문자 계수/ },
     { label: '통합 변형 여부', how: '최종 문제를 원본과 비교해 숫자만 바꿨는지(독립 판정 + 표 구조 비교) 본다.', onFail: 'repair', match: /숫자만 바뀌|통합 변형/ },
-    { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지, 최종 문제의 질문·보기가 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair', match: /수치\(|질문이 같|선택지가 같/ },
+    { label: '숫자·질문 재사용', how: '표의 설계 수치가 원본·앞 문제와 같은지(같은 칸에 같은 값이 대부분이거나 행 전체를 정수배·1/정수배 한 것도), 최종 문제의 그림 수치(위치 눈금 등)를 원본·앞 문제의 한 배수로만 바꿨는지, 최종 문제의 질문·보기가 앞 문제와 같은지 본다. 그래프에서 읽는 값(막전위 등)은 제외.', onFail: 'repair', match: /수치\(|질문이 같|선택지가 같|배 한 값|배 했습니다|같은 칸에 같은 수치/ },
+    { label: '최종 검수 (두 검수자)', how: '각 문제를 검수 기준(review-criteria.md)으로 Claude가 검토하고, 통과하면 Gemini가 같은 기준으로 한 번 더 본다. 둘 다 통과해야 완성이다 (세트 검수와 같은 두 모델).', onFail: 'repair', match: /^최종 검수/ },
     { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 본다.', onFail: 'repair', match: /가정→모순 판정 유지|보조 문자 유지|풀이 순서/ },
     { label: '결론 노출·표기 형식', how: '추론할 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 본다.', onFail: 'repair', match: /결론을 표에|표기 형식/ },
     { label: '손계산 수치', how: '계산기 없이 풀 수 있는지 본다. 검산 프로그램의 값에 분모가 큰 분수가 나오거나, 문제·선택지에 간단한 분수가 아닌 소수(1.732, 0.333)가 있으면 수치를 다시 잡게 한다.', onFail: 'repair', match: /^손계산 수치/ },
@@ -1674,4 +1772,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, learnFromReview, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, finalGate, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, learnFromReview, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

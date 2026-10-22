@@ -681,6 +681,9 @@ test('학습 반복: a set is made and reviewed, the learning changed from what 
     const sets = (await s.call('GET', `/api/jobs?materialId=${materialId}`)).data.filter((j) => j.type === 'generate');
     assert.deepEqual(sets.map((j) => j.trainRound).sort(), [1, 2]);
     assert.equal((await s.call('GET', `/api/jobs/${train.rounds[1].setId}/check`)).data.check.done, true, 'each set keeps its review');
+    const [first, second] = await Promise.all(train.rounds.map(async (r) => (await s.call('GET', `/api/jobs/${r.setId}`)).data));
+    assert.deepEqual(second.items.slice(0, 2).map((it) => it.problem.text), first.items.slice(0, 2).map((it) => it.problem.text), 'the problems both passed are kept');
+    assert.match(second.items[2].history[0].feedback, /검수에서 이 문제에 걸린 점[\s\S]*원본과 구조가 같다/, 'the failed one is made again with the faults as its note');
   } finally { await s.close(); }
 });
 

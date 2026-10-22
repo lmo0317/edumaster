@@ -46,7 +46,9 @@ function createJobs({ store, llm, config }) {
       precheck: provider === 'claude-cli' && Boolean(claudeDesignModel(config) || job.options?.designWith),
       // A problem is made only once it passes the final review a finished set gets (pipeline.finalGate, 2026-10-19).
       finalGate: job.options?.finalGate !== false,
-      llm: { ...llm, json: (args) => llm.json({ ...args, provider: ctx.routes[args.purpose] || provider }) },
+      // Claude's final review of each problem is looked at again by Gemini, as the finished set is (pipeline.finalGate).
+      secondReviewer: job.options?.secondReviewer ?? (provider === 'claude-cli' ? 'agy-cli' : ''),
+      llm: { ...llm, json: (args) => llm.json({ ...args, provider: args.purpose === 'final-review-second' ? args.provider : ctx.routes[args.purpose] || provider }) },
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       direction: job.options?.direction || '',
       ...(({ maxRepairs, maxRewrites, maxDesigns }) => ({ maxRepairs, maxRewrites, maxDesigns }))(harnessSettings(config.dataDir)),
@@ -153,6 +155,10 @@ function createJobs({ store, llm, config }) {
     // 학습 반복: a set is made, Claude·Gemini review it (the 검수하기 review, kept with the set), and until both score it
     // at `target` with every problem passed, what they found changes the learning (pipeline.learnFromReview) — never the
     // code — and a new set is made with it, up to `maxRounds` sets. Each set is an ordinary set of the problem.
+    // After the first set, the next keeps every problem both reviewers passed and makes again only the ones they failed,
+    // each with their faults as its note (as 검수하고 고치기): making the whole set afresh drew new faults in problems that
+    // had passed — on the gas original (2026-10-21) the practice problems passed in most of seven sets and were made anew
+    // each time, and the scores went up and down instead of up.
     async train(ctx) {
       const t = ctx.job;
       const images = pipeline.originalImages(store, store.materials.get(t.materialId));
@@ -162,7 +168,7 @@ function createJobs({ store, llm, config }) {
         const material = store.materials.get(t.materialId);
         if (!material) throw new Error('문제를 찾지 못했습니다.');
         const { images: im, ...snapshot } = material;
-        const items = JSON.parse(JSON.stringify(t.items));
+        const items = carryOver(t.rounds[r - 1]) || JSON.parse(JSON.stringify(t.items));
         const set = {
           id: newId(), type: 'generate', createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
           materialId: t.materialId, title: material.title, material: { ...snapshot, images: im }, items,
@@ -200,7 +206,7 @@ function createJobs({ store, llm, config }) {
         const fails = setCheck.failing(record);
         const issues = setCheck.analysisIssues(record);
         const pass = setCheck.reaches(record, t.target);
-        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), analysisIssues: issues.length, pass };
+        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), faults: fails, analysisIssues: issues.length, pass };
         t.rounds.push(round);
         ctx.log(`${r + 1}번째 세트: ${Object.entries(scores).map(([p, s]) => `${setCheck.NAME[p] || p} ${s ?? '실패'}%`).join(' · ')}${fails.length ? ` — 걸린 문제 ${round.failing.join(', ')}` : ''}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);
         ctx.save();
@@ -217,6 +223,21 @@ function createJobs({ store, llm, config }) {
   };
 
   // 🔄 다시 만들기 of one problem of a set (a teacher's note, or what the review found), through the final review while made.
+  /** The next 학습 반복 set's problems from the last round's set: passed ones as they are, failed ones to be made again. */
+  function carryOver(round) {
+    const last = round && store.jobs.get(round.setId);
+    if (!last?.items?.length) return null;
+    const failed = new Map((round.faults || []).map((f) => [f.index, f]));
+    return last.items.map((it) => {
+      const copy = JSON.parse(JSON.stringify(it));
+      delete copy.adopted;
+      const f = failed.get(it.index);
+      if (!f) return copy;
+      const previous = { problem: it.problem, solution: it.solution, verification: it.verification, status: it.status, designNote: it.designNote, replacedAt: new Date().toISOString(), feedback: setCheck.remakeNote(f), problems: [...new Set(it.problems || [])], warnings: [...new Set(it.warnings || [])] };
+      return { index: it.index, stage: it.stage, variantNo: it.variantNo, label: it.label, status: 'pending', remakeNote: setCheck.remakeNote(f), history: [previous, ...(it.history || [])].slice(0, 3) };
+    });
+  }
+
   async function remake(ctx, itemIndex, feedback) {
     const parent = store.jobs.get(ctx.job.parentJobId);
     const item = parent?.items?.[itemIndex];

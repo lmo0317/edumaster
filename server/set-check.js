@@ -85,7 +85,7 @@ function analysisIssues(record) {
 const WORST = { no: 3, partial: 2, ok: 1, na: 0 };
 /**
  * The 모델 비교 checklist (final-review.js CHECKLIST) for each reviewer: a row is as good as its worst problem, with
- * which problem fell short; the score counts ✓ as 1 and △ as half (as on that page), – not at all.
+ * which problem fell short; the score counts each problem's ✓ on each row as 1 and △ as half, – not at all.
  */
 function checklist(record) {
   const rows = finalReview.CHECKLIST.flatMap((g) => g.items);
@@ -96,21 +96,29 @@ function checklist(record) {
     const analysis = finalReview.checklistOf(v.review.analysis, { analysis: true });
     const per = items.map((it, i) => finalReview.checklistOf(v.review.items?.[i], { final: it.kind === 'twin' }));
     const marks = {};
+    // The score counts every problem's own mark on each row (and the analysis'), not a row's worst: with the worst, one
+    // problem's one fault took a ninth of the score, and one reviewer seeing it where the other did not moved the set
+    // 11-33 points (gas original, 2026-10-21: 94 and 67 for the same set).
+    const cells = [];
     for (const r of rows) {
-      if (r.analysis) { marks[r.id] = analysis[r.id] || ['na', '']; continue; }
+      if (r.analysis) { marks[r.id] = analysis[r.id] || ['na', '']; cells.push(marks[r.id][0]); continue; }
       if (r.id === 'complete') {
         const left = items.filter((it) => !['passed', 'warning'].includes(it.status));
         marks[r.id] = left.length ? ['no', `${left.map((it) => it.label).join(', ')} 미완료`] : ['ok', `${items.length}문제 모두 완성`];
+        cells.push(marks[r.id][0]);
         continue;
       }
-      const cells = per.map((c, i) => [items[i].label, c[r.id] || ['na', '']]);
-      const worst = cells.reduce((w, [, c]) => (WORST[c[0]] > WORST[w] ? c[0] : w), 'na');
-      const notes = cells.filter(([, c]) => c[0] === 'no' || c[0] === 'partial').map(([label, c]) => `${label}: ${c[1]}`);
-      marks[r.id] = [worst, notes.join(' / ') || (r.id === 'correct' ? `정답 ${cells.filter(([, c]) => c[0] === 'ok').length}/${items.length}` : '')];
+      const mine = per.map((c, i) => [items[i].label, c[r.id] || ['na', '']]);
+      cells.push(...mine.map(([, c]) => c[0]));
+      const worst = mine.reduce((w, [, c]) => (WORST[c[0]] > WORST[w] ? c[0] : w), 'na');
+      const notes = mine.filter(([, c]) => c[0] === 'no' || c[0] === 'partial').map(([label, c]) => `${label}: ${c[1]}`);
+      marks[r.id] = [worst, notes.join(' / ') || (r.id === 'correct' ? `정답 ${mine.filter(([, c]) => c[0] === 'ok').length}/${items.length}` : '')];
     }
     const counted = Object.values(marks).filter((m) => m[0] !== 'na');
     const n = (g) => counted.filter((m) => m[0] === g).length;
-    models[p] = { marks, score: counted.length ? Math.round(((n('ok') + n('partial') / 2) / counted.length) * 100) : null, ok: n('ok'), partial: n('partial'), no: n('no') };
+    const scored = cells.filter((c) => c !== 'na');
+    const score = scored.length ? Math.round(((scored.filter((c) => c === 'ok').length + scored.filter((c) => c === 'partial').length / 2) / scored.length) * 100) : null;
+    models[p] = { marks, score, ok: n('ok'), partial: n('partial'), no: n('no') };
   }
   return { groups: finalReview.CHECKLIST.map((g) => ({ title: g.title, items: g.items.map(({ id, text }) => ({ id, text })) })), models };
 }

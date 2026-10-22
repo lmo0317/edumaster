@@ -468,3 +468,47 @@ test("the lessons a problem's own reviews taught reach its next set first, the c
   assert.equal(picked[2], '05c', 'then the closest');
   assert.ok(picked.length > 24, `more than 24 fit in the characters (${picked.length})`);
 });
+
+// The original's setting under another face (생명 D50 and E38, 2026-10-21): only a row's first two amounts were compared.
+test('a row or the figure scaled by one factor, or a row keeping most amounts in their columns, is reused numbers', () => {
+  const material = { problem: { text: table(['| Ⅰ | $5w$ | $5w$ | $2w$ |', '| Ⅱ | $4w$ | $6w$ | $3w$ |']), figure: '위치 눈금: $d_1=0$, $d_2=2$, $d_3=5$, $d_4=7$ (cm).' } };
+  const twin = (rows, figure = '') => ({ index: 2, stage: { kind: 'twin' }, problem: { text: table(rows), figure } });
+  assert.match(numbersReused(twin(['| Ⅱ | $8w$ | $12w$ | $6w$ |']), [], material).join(), /원본의 Ⅱ 행 수치를 모두 2배 한 값/);
+  assert.match(numbersReused(twin(['| Ⅱ | $7w$ | $6w$ | $3w$ |']), [], material).join(), /원본의 Ⅱ 행과 같은 칸에 같은 수치가 2개/);
+  assert.match(numbersReused(twin(['| Ⅱ | $7w$ | $9w$ | $5w$ |'], '$d_1=0$, $d_2=6$, $d_3=15$, $d_4=21$ (cm)'), [], material).join(), /원본의 d1, d2, d3, d4 값을 모두 3배 했습니다/);
+  // A ratio that is not a whole factor is a coincidence, 0 and 1 match by themselves, and a practice problem may keep the setting.
+  assert.deepEqual(numbersReused(twin(['| Ⅱ | $5w$ | $7.5w$ | $1w$ |', '| Ⅰ | $1$ | $5w$ | $9w$ |']), [], material), []);
+  assert.deepEqual(numbersReused({ ...twin(['| Ⅱ | $7w$ | $9w$ | $5w$ |'], '$d_1=0$, $d_2=4$, $d_3=10$, $d_4=14$'), stage: { kind: 'upto', upto: 1 } }, [], material), []);
+});
+
+test("a set's score counts each problem's mark on each row, so one problem's fault is not a ninth of it", () => {
+  const setCheck = require('../server/set-check');
+  const clean = { answerOk: true, verdict: 'use', checks: {}, issues: [] };
+  const fault = { ...clean, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바뀜' }] };
+  const record = (items) => ({ set: { items: [{ label: 'STEP 1 연습', status: 'passed' }, { label: 'STEP 1~2 연습', status: 'passed' }, { label: '최종 문제', status: 'passed', kind: 'twin' }] },
+    reviews: { 'claude-cli': { review: { analysis: { verdict: 'ok', issues: [], checks: { 판독: 'ok' } }, items } } } });
+  const all = setCheck.checklist(record([clean, clean, clean])).models['claude-cli'];
+  const one = setCheck.checklist(record([clean, clean, fault])).models['claude-cli'];
+  assert.equal(all.score, 100);
+  assert.equal(one.marks.final[0], 'no', 'the row still shows its worst problem');
+  assert.ok(one.score >= 90 && one.score < 100, `one fault in one of three problems: ${one.score}`);
+});
+
+test('a problem the final review passes is looked at by the second reviewer too, and its faults are repaired', async () => {
+  const { finalGate } = require('../server/pipeline');
+  const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'S', work: 'w' }] };
+  const item = { index: 0, label: '최종 문제', stage: { kind: 'twin' }, attempts: [], problem: { text: '변형', choices: [], answer: 1 }, solution: { steps: [] } };
+  const clean = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, verdict: 'use', issues: [] }] };
+  const fault = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '원본과 구조가 같다' }] }] };
+  const calls = [];
+  const ctx = (second, answers) => ({ job: { id: 'j', materialId: 'm', rules: [] }, budget: new Budget({ maxCalls: 10, maxTokens: 1000000 }), signal: new AbortController().signal, effort: {}, secondReviewer: second, log() {}, save() {},
+    llm: { json: async (args) => { calls.push(args.purpose); const a = answers[args.purpose]; if (a instanceof Error) throw a; return { data: a }; } } });
+  const failed = await finalGate(ctx('agy-cli', { 'final-review': clean, 'final-review-second': fault }), item, material, []);
+  assert.deepEqual(calls, ['final-review', 'final-review-second']);
+  assert.match(failed.faults.join(), /\[두 번째 검수\].*원본과 구조가 같다/);
+  assert.deepEqual((await finalGate(ctx('agy-cli', { 'final-review': clean, 'final-review-second': clean }), item, material, [])).faults, []);
+  assert.deepEqual((await finalGate(ctx('agy-cli', { 'final-review': clean, 'final-review-second': new Error('limit') }), item, material, [])).faults, [], 'a second look that cannot be had leaves the first');
+  calls.length = 0;
+  await finalGate(ctx('agy-cli', { 'final-review': fault }), item, material, []);
+  assert.deepEqual(calls, ['final-review'], 'what the first review fails is repaired without a second look');
+});
