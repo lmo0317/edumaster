@@ -127,10 +127,16 @@ async function reviewSet({ store, set, call, providers = REVIEWERS, images, save
   return record;
 }
 
-/** Problems a reviewer would not hand out as they are, with each reviewer's faults: [{index, label, faults}]. */
-function failing(record) {
+/**
+ * Problems a reviewer would not hand out as they are, with each reviewer's faults: [{index, label, faults}]. A problem
+ * in `settled` (both reviewers passed it in an earlier round and it was carried over unchanged) is not among them: the
+ * same final of bio-k61 passed the set review in one round and was failed in the next, by the same reviewer, over two
+ * lessons (2026-10-23) — a verdict that flips on unchanged content is noise, and acting on it remade a passed problem.
+ */
+function failing(record, settled = null) {
   const out = [];
   (record.set?.items || []).forEach((it, i) => {
+    if (settled?.has(it.index)) return;
     const faults = [];
     for (const [p, v] of Object.entries(record.reviews || {})) {
       if (v.error || !v.review) continue;
@@ -200,7 +206,7 @@ const scores = (record) => Object.fromEntries(REVIEWERS.map((p) => [p, record.ch
  * Whether a reviewed set reached the 학습 반복 target: every reviewer at the target, no problem failing, the analysis
  * unfaulted. A reviewer that failed leaves the set unjudged, so the other's score alone never reaches it.
  */
-const reaches = (record, target) => !record.stale && !record.interrupted && record.set?.items?.length > 0 && Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record).length && !analysisIssues(record).length;
+const reaches = (record, target, settled = null) => !record.stale && !record.interrupted && record.set?.items?.length > 0 && Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record, settled).length && !analysisIssues(record).length;
 
 /** The remake's note: what the reviewers found, for the writer to fix. */
 const remakeNote = (f) => `Claude·Gemini 검수에서 이 문제에 걸린 점입니다. 모두 고친 문제를 새로 만듭니다.\n${f.faults.map((x) => `- ${x}`).join('\n')}`;

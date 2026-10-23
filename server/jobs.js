@@ -186,7 +186,10 @@ function createJobs({ store, llm, config }) {
         const material = store.materials.get(t.materialId);
         if (!material) throw new Error('문제를 찾지 못했습니다.');
         const { images: im, ...snapshot } = material;
-        const items = carryOver(t.rounds[r - 1]) || JSON.parse(JSON.stringify(t.items));
+        const carried = carryOver(t.rounds[r - 1]);
+        const items = carried?.items || JSON.parse(JSON.stringify(t.items));
+        // Problems both reviewers passed last round, carried over unchanged: their verdict stands (set-check.failing).
+        const settled = carried?.settled || new Set();
         const set = {
           id: newId(), type: 'generate', createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
           materialId: t.materialId, title: material.title, material: { ...snapshot, images: im }, items,
@@ -221,12 +224,14 @@ function createJobs({ store, llm, config }) {
         const lost = Object.entries(record.reviews || {}).find(([, v]) => v.error);
         if (lost) throw new Error(`${r + 1}번째 세트의 ${setCheck.NAME[lost[0]] || lost[0]} 검수가 실패해 멈췄습니다: ${lost[1].error}`);
         const scores = setCheck.scores(record);
-        const fails = setCheck.failing(record);
+        const fails = setCheck.failing(record, settled);
+        const flipped = setCheck.failing(record).filter((f) => settled.has(f.index));
         const issues = setCheck.analysisIssues(record);
-        const pass = setCheck.reaches(record, t.target);
-        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), faults: fails, analysisIssues: issues.length, pass };
+        const pass = setCheck.reaches(record, t.target, settled);
+        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), faults: fails, analysisIssues: issues.length, pass, ...(flipped.length ? { flipped } : {}) };
         t.rounds.push(round);
         ctx.log(`${r + 1}번째 세트: ${Object.entries(scores).map(([p, s]) => `${setCheck.NAME[p] || p} ${s ?? '실패'}%`).join(' · ')}${fails.length ? ` — 걸린 문제 ${round.failing.join(', ')}` : ''}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);
+        if (flipped.length) ctx.log(`지난 세트에서 통과한 ${flipped.map((f) => f.label).join(', ')}에 이번 검수가 결함을 적었지만, 문제가 그대로라 지난 판정을 둡니다: ${flipped.flatMap((f) => f.faults).map((x) => x.slice(0, 120)).join(' / ').slice(0, 400)}`);
         ctx.save();
         if (pass) { t.reached = true; ctx.log(`목표(${t.target}점)에 도달했습니다`); return; }
         if (r + 1 >= t.maxRounds) break;
@@ -241,19 +246,24 @@ function createJobs({ store, llm, config }) {
   };
 
   // 🔄 다시 만들기 of one problem of a set (a teacher's note, or what the review found), through the final review while made.
-  /** The next 학습 반복 set's problems from the last round's set: passed ones as they are, failed ones to be made again. */
+  /**
+   * The next 학습 반복 set's problems from the last round's set: passed ones as they are (`settled`: their indices),
+   * failed ones to be made again. Null when the last round's set is gone.
+   */
   function carryOver(round) {
     const last = round && store.jobs.get(round.setId);
     if (!last?.items?.length) return null;
     const failed = new Map((round.faults || []).map((f) => [f.index, f]));
-    return last.items.map((it) => {
+    const settled = new Set();
+    const items = last.items.map((it) => {
       const copy = JSON.parse(JSON.stringify(it));
       delete copy.adopted;
       const f = failed.get(it.index);
-      if (!f) return copy;
+      if (!f) { if (it.problem) settled.add(it.index); return copy; }
       const previous = { problem: it.problem, solution: it.solution, verification: it.verification, status: it.status, designNote: it.designNote, replacedAt: new Date().toISOString(), feedback: setCheck.remakeNote(f), problems: [...new Set(it.problems || [])], warnings: [...new Set(it.warnings || [])] };
       return { index: it.index, stage: it.stage, variantNo: it.variantNo, label: it.label, status: 'pending', remakeNote: setCheck.remakeNote(f), history: [previous, ...(it.history || [])].slice(0, 3) };
     });
+    return { items, settled };
   }
 
   async function remake(ctx, itemIndex, feedback) {

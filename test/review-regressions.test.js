@@ -86,6 +86,16 @@ test('reversed review items target the matching problem for remake',()=>{
   const record={set:{items:[{index:0,label:'STEP 1 연습'},{index:1,label:'최종 문제'}]},reviews:{'claude-cli':{review:{items:[{label:'최종 문제',verdict:'fix',answerOk:false,issues:[{severity:'high',rule:'정답',detail:'최종 문제 정답 오류'}]},good('STEP 1 연습')]}}}};
   assert.equal(sets.failing(record)[0].index,1);assert.equal(sets.failing(record)[0].label,'최종 문제');
 });
+// bio-k61 (2026-10-23): the same final passed the set review in round 3 and was failed in round 4 by the same reviewer.
+test('a settled problem (passed earlier, carried over unchanged) is not failed by a later round\'s verdict',()=>{
+  const record={set:{items:[{index:0,label:'STEP 1 연습'},{index:1,label:'최종 문제'}]},checklist:{models:{'claude-cli':{score:94},'agy-cli':{score:100}}},
+    reviews:{'claude-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[{label:'최종 문제',verdict:'fix',answerOk:true,issues:[{severity:'mid',rule:'학습',detail:'숨긴 칸이 STEP 1에서 정해진다'}]},good('STEP 1 연습')]}},'agy-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[good('최종 문제'),good('STEP 1 연습')]}}}};
+  assert.equal(sets.failing(record).length,1);
+  assert.deepEqual(sets.failing(record,new Set([1])),[]);
+  assert.equal(sets.reaches(record,90),false);
+  assert.equal(sets.reaches(record,90,new Set([1])),true);
+  assert.equal(sets.reaches(record,95,new Set([1])),false,'the scores still count');
+});
 
 test('a review with wrong item identities is retried and both responses are retained', async () => {
   const s = await fixture();
