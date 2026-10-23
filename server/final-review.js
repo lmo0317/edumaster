@@ -134,7 +134,10 @@ function itemFaults(review) {
     return ['최종 검수의 정답 확인·판정·결함 목록이 누락되었거나 잘못되었습니다. 다시 검수해야 합니다.'];
   }
   const faults = (it.issues || []).map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
-  const unexplained = Object.entries(it.checks || {}).filter(([name, value]) => value === 'fix' && !it.issues.some((x) => x.rule === name));
+  // A check marked 'fix' is unexplained only when the item lists no fault at all: the reviewer names rules freely, so
+  // a fault filed under '학습' explains a '풀이 방식' check (the gas original's round 1, 2026-10-23: 100 points, one
+  // low note, held back as "no explanation").
+  const unexplained = Object.entries(it.checks || {}).filter(([name, value]) => value === 'fix' && !it.issues.length);
   faults.push(...unexplained.map(([name]) => `[${name}] 검수 체크가 수정 필요인데 구체적인 결함 설명이 없습니다.`));
   const invalidChecks = it.checks != null && (typeof it.checks !== 'object' || Array.isArray(it.checks) || Object.values(it.checks).some((v) => !['ok', 'fix', 'na'].includes(v)));
   if (invalidChecks) faults.push('검수 체크 항목의 판정 형식이 잘못되었습니다.');

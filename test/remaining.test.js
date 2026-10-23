@@ -300,6 +300,10 @@ test('a low note alone never holds a problem back: it passes with the note kept,
   assert.deepEqual(itemFaults(low), []);
   assert.equal(itemFaults({ items: [{ answerOk: true, verdict: 'use', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바꿈' }] }] }).length, 1, 'a mid fault holds it back even under use');
   assert.equal(itemFaults({ items: [{ answerOk: false, myAnswer: '②', verdict: 'use', issues: [] }] }).length, 1);
+  // Round 1 of 2026-10-23: the check '풀이 방식' marked fix, the only fault filed under '학습' — explained, not held back.
+  const named = { items: [{ answerOk: true, verdict: 'fix', checks: { '풀이 방식': 'fix' }, issues: [{ severity: 'low', rule: '학습', detail: 'STEP 2 첫 줄의 주어' }] }] };
+  assert.deepEqual(itemFaults(named), []);
+  assert.equal(itemFaults({ items: [{ answerOk: true, verdict: 'fix', checks: { '풀이 방식': 'fix' }, issues: [] }] }).length, 1, 'a fix check with no fault at all is still unexplained');
   const { item, purposes } = await gated([verdict('fix', [{ severity: 'low', rule: '표기', detail: '수식이 $ 밖에 있음' }])]);
   assert.equal(purposes.filter((p) => p === 'final-review').length, 1, 'no rewrite for a low note');
   assert.equal(item.status, 'passed');
