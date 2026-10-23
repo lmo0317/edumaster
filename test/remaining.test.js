@@ -571,19 +571,18 @@ test('the design context carries the review criteria (B~E) and a low analysis no
 });
 
 // bio-k61 (2026-10-23): the first set's final and the next set's final were the original's ○/× table with ㉠~㉣ renamed
-// and (가)~(다) reordered; the number checks saw no number in it.
-test('a table of marks that is the original\'s with rows renamed and columns reordered is reused; another layout is not', () => {
+// and (가)~(다) reordered; the number checks saw no number in it. A practice problem keeps the layout; a final that
+// hides a cell changes what is hidden inside the same table and is not the original's.
+test('a final whose table of marks is the original\'s with rows renamed and columns reordered, hiding nothing, is the original\'s problem', () => {
   const marks = (rows) => ['| 대립유전자 | (가) | (나) | (다) |', '|---|---|---|---|', ...rows.map(([l, ...c]) => `| ${l} | ${c.join(' | ')} |`)].join('\n');
   const original = { problem: { text: marks([['㉠', '×', '×', '○'], ['㉡', '○', '○', '×'], ['㉢', '×', '×', '×'], ['㉣', '×', '○', '○']]) } };
   // The first set's final: columns (나,다,가) of the original, rows renamed.
   const permuted = { index: 2, label: '최종 문제', stage: { kind: 'twin' }, problem: { text: marks([['㉠', '○', '×', '○'], ['㉡', '×', '○', '○'], ['㉢', '○', '×', '×'], ['㉣', '×', '×', '×']]) } };
-  assert.match(numbersReused(permuted, [], original).join('\n'), /원본의 표와 같은 표입니다/);
+  assert.match(numbersReused(permuted, [], original).join('\n'), /원본의 표와 같은 표이고 숨긴 칸이 없습니다/);
   const other = { ...permuted, problem: { text: marks([['㉠', '○', '×', '○'], ['㉡', '×', '○', '○'], ['㉢', '○', '○', '×'], ['㉣', '×', '×', '×']]) } };
-  assert.deepEqual(numbersReused(other, [], original), []);
-  const practice = { index: 0, label: 'STEP 1 연습', stage: { kind: 'practice' }, problem: { text: marks([['㉠', '×', '×', '×'], ['㉡', '○', '×', '×'], ['㉢', '×', '○', '○'], ['㉣', '○', '×', '○']]) } };
-  // The first set's STEP 1 연습, which the final review let through with a low note: the original's layout as well.
-  assert.match(numbersReused(practice, [], original).join('\n'), /원본의 표와 같은 표입니다/);
-  // An earlier problem's table, for the final.
-  const earlier = { ...practice, problem: other.problem };
-  assert.match(numbersReused({ ...other, index: 2 }, [earlier], original).join('\n'), /앞 문제\(STEP 1 연습\)의 표와 같은 표입니다/);
+  assert.deepEqual(numbersReused(other, [], original), [], 'another layout');
+  const hidden = { ...permuted, problem: { text: marks([['㉠', '○', '×', '?'], ['㉡', '×', '○', '○'], ['㉢', '○', '×', '×'], ['㉣', '×', '×', '×']]) } };
+  assert.deepEqual(numbersReused(hidden, [], original), [], 'the same layout with a cell hidden');
+  const practice = { index: 0, label: 'STEP 1 연습', stage: { kind: 'practice' }, problem: permuted.problem };
+  assert.deepEqual(numbersReused(practice, [], original), [], 'a practice problem keeps the layout');
 });

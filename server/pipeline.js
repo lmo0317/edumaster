@@ -850,26 +850,25 @@ function canonicalMarks(m) {
   return best;
 }
 const transposed = (m) => m[0].map((_, j) => m.map((r) => r[j]));
+const HIDDEN_MARK = /^(?:[?？]|[a-z]|[ⓐ-ⓩ])$/;
 /**
- * A table of marks that is the original's (or an earlier problem's) with its rows renamed and its columns reordered is the
- * same table: on bio-k61 (2026-10-23) the first set's final and the next set's final each mapped onto the original's
- * ○/× table (㉠~㉣ and (가)~(다) permuted), one past the final review, one failed by the set review as numbers-only;
- * the number checks above see no number in it.
+ * The final problem's table of marks that is the original's with its rows renamed and its columns reordered, and hides
+ * nothing, is the original's problem: on bio-k61 (2026-10-23) the first set's final and the next set's final each mapped
+ * onto the original's ○/× table (㉠~㉣ and (가)~(다) permuted), one past the final review, one failed by the set review as
+ * numbers-only; the number checks above see no number in it. A practice problem keeps the original's layout by design
+ * (the cells' roles are the teacher's STEP logic: asked for another layout, the writer spent seven repairs and two designs
+ * between this check and the final review's 용기·실험 구성 the same day), and so may a final that hides a cell — the
+ * variation criteria change what is hidden inside the same table, not the table.
  */
 function marksReused(item, prior, material) {
+  if (item.stage.kind !== 'twin') return [];
   const mine = markTable(item.problem.text);
-  if (!mine) return [];
+  if (!mine || mine.some((r) => r.some((c) => HIDDEN_MARK.test(c)))) return [];
   const key = canonicalMarks(mine);
-  if (key === null) return [];
-  const notes = [];
-  const against = [['원본', material.problem], ...(item.stage.kind === 'twin' ? prior.filter((o) => o.problem && o.index !== item.index).map((o) => [`앞 문제(${o.label})`, o.problem]) : [])];
-  for (const [whose, problem] of against) {
-    const theirs = markTable(problem.text);
-    if (!theirs) continue;
-    const same = canonicalMarks(theirs) === key || (theirs[0].length === mine.length && theirs.length === mine[0].length && canonicalMarks(transposed(theirs)) === key);
-    if (same) notes.push(`${whose}의 표와 같은 표입니다: 행의 이름표와 열의 순서만 바꾸면 ${whose}의 ○/× 배치가 그대로 나옵니다. 배치를 새로 잡아 ${whose}과 다른 판단이 나오게 합니다.`);
-  }
-  return notes;
+  const theirs = markTable(material.problem.text);
+  if (key === null || !theirs) return [];
+  const same = canonicalMarks(theirs) === key || (theirs[0].length === mine.length && theirs.length === mine[0].length && canonicalMarks(transposed(theirs)) === key);
+  return same ? ['원본의 표와 같은 표이고 숨긴 칸이 없습니다: 행의 이름표와 열의 순서만 바꾸면 원본의 ○/× 배치가 그대로 나와, 원본과 같은 판단을 같은 순서로 하는 문제입니다. 표의 배치는 원본 그대로 두고, 칸 일부를 문자나 ?로 숨겨 문제의 다른 조건으로 그 칸을 정하게 합니다 (구조 변형의 기준 (1)).'] : [];
 }
 
 /** Experiment rows whose given amounts match the original's or (for the final problem) an earlier problem's. */
