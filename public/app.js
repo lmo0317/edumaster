@@ -1537,8 +1537,12 @@
   const LM_BY = { teacher: '선생님', review: '학습 반복 검수', auto: '세트 자동', merge: '합침' };
   const lmDay = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
   const lmUi = { q: '', sel: new Set(), open: null, edit: null, group: null };
-  // A branch is a filter over the items. s:<subject> is one subject's every-problem items, s:<subject>:<category> one
-  // kind of them; nosubj the untagged ones (they reach every subject); p-<id> one problem's own.
+  // The subject tags in use (set on each paint): a subject's branch is s<index>, one kind of it s<index>-<category>, so
+  // the branch sits in the address as plain letters (the router reads #/learn/map/<branch>).
+  let lmSubjects = [];
+  const lmSubjectNode = (node) => { const m = /^s(d+)(?:-([a-z]+))?$/.exec(node); return m ? { subject: lmSubjects[Number(m[1])] || '', cat: m[2] || '' } : null; };
+  // A branch is a filter over the items. s<i> is one subject's every-problem items, s<i>-<category> one kind of them;
+  // nosubj the untagged ones (they reach every subject); p-<id> one problem's own.
   const lmFilter = (node) => {
     const gen = (x) => x.stage === 'generation';
     const f = {
@@ -1548,10 +1552,8 @@
     }[node];
     if (f) return f;
     if (node.startsWith('p-')) return (x) => x.layer === 'problem' && x.materialId === node.slice(2);
-    if (node.startsWith('s:')) {
-      const [, subject, cat] = node.split(':');
-      return (x) => x.layer === 'lesson' && x.subject === subject && (!cat || x.category === cat);
-    }
+    const sn = lmSubjectNode(node);
+    if (sn) return (x) => x.layer === 'lesson' && x.subject === sn.subject && (!sn.cat || x.category === sn.cat);
     return () => false;
   };
   async function learnMap(pane, node = 'todo') {
@@ -1566,7 +1568,8 @@
       const titleOf = new Map(d.problems.map((p) => [p.id, p.title]));
       const problemIds = [...new Set(items.filter((x) => x.layer === 'problem').map((x) => x.materialId))];
       if (node.startsWith('p-') && !problemIds.includes(node.slice(2))) node = 'problems';
-      const subjects = [...new Set([...M.subjects, ...items.map((x) => x.layer === 'lesson' && x.subject)].filter(Boolean))].sort();
+      const subjects = lmSubjects = [...new Set([...M.subjects, ...items.map((x) => x.layer === 'lesson' && x.subject)].filter(Boolean))].sort();
+      const sn = lmSubjectNode(node);
       const todoN = M.todo.groups + M.todo.untagged.length + M.todo.tagged.length + M.todo.format.length;
       const count = (n) => items.filter(lmFilter(n)).filter((x) => x.status === 'approved').length;
       const leaf = (id, label, depth, n = count(id)) => `<button type="button" class="lm-node d${depth}${node === id ? ' on' : ''}" data-node="${esc(id)}" title="${esc(label)}"><span class="lm-label">${esc(label)}</span><span class="n">${n || ''}</span></button>`;
@@ -1574,14 +1577,14 @@
         leaf('todo', '할 일', 0, todoN), leaf('all', '전체', 0, items.filter((x) => x.status === 'approved').length),
         '<div class="lm-group">지침</div>', leaf('persona', '페르소나', 1, d.persona ? 1 : 0), leaf('guide-a', '분석 지침', 1), leaf('guide-g', '생성 지침', 1),
         '<div class="lm-group">과목별 공통 학습</div>',
-        ...subjects.flatMap((s) => [leaf(`s:${s}`, s, 1), ...LM_CATS.filter((c) => count(`s:${s}:${c}`)).map((c) => leaf(`s:${s}:${c}`, LM_CAT[c], 2))]),
+        ...subjects.flatMap((s, i) => [leaf(`s${i}`, s, 1), ...LM_CATS.filter((c) => count(`s${i}-${c}`)).map((c) => leaf(`s${i}-${c}`, LM_CAT[c], 2))]),
         leaf('nosubj', '모든 과목', 1),
         '<div class="lm-group">문제별 학습</div>', ...problemIds.map((id) => leaf('p-' + id, titleOf.get(id) || '삭제된 문제', 1)),
         problemIds.length ? '' : '<p class="lm-none">아직 없습니다</p>',
         '<div class="lm-group">읽기</div>', leaf('corr', '읽기 교정', 1, d.corrections.length),
       ].join('');
       const label = { todo: '할 일', all: '전체', persona: '페르소나', 'guide-a': '분석 지침', 'guide-g': '생성 지침', nosubj: '모든 과목에 들어가는 공통 학습', problems: '문제별 학습', corr: '읽기 교정' }[node]
-        || (node.startsWith('p-') ? titleOf.get(node.slice(2)) || '문제별 학습' : node.startsWith('s:') ? node.split(':').slice(1).map((k, i) => (i ? LM_CAT[k] || k : k)).join(' › ') : '');
+        || (node.startsWith('p-') ? titleOf.get(node.slice(2)) || '문제별 학습' : sn ? [sn.subject, sn.cat && LM_CAT[sn.cat]].filter(Boolean).join(' › ') : '');
       const NOTE = {
         todo: '지금 정리하면 좋은 것입니다. 묶음은 한 번에 합치고, 목록은 여러 개 골라 한꺼번에 처리합니다.',
         all: '모든 학습입니다. 왼쪽에서 과목·종류를 고르면 그 분류만 봅니다. 부딪히면 지침 → 문제별 → 공통 학습 순서로 따릅니다.',
@@ -1591,7 +1594,7 @@
         nosubj: '과목 태그가 없어 모든 과목의 문제에 들어가는 공통 학습입니다. 한 과목의 내용이면 과목을 달아 주세요.',
         problems: '한 문제에만 들어가는 학습입니다. 새 학습은 문제 페이지에서 결과를 보며 넣습니다.',
         corr: '사진에서 잘못 읽은 단어입니다. 분석 결과를 고치면 자동으로 쌓이고, 다음 분석부터 그 단어를 주의해서 읽습니다.',
-      }[node] || (node.startsWith('s:') ? `${node.split(':')[1]} 문제에만 들어가는 공통 학습입니다.` : '');
+      }[node] || (sn ? `${sn.subject} 문제에만 들어가는 공통 학습입니다.` : '');
       const q = lmUi.q.trim().toLowerCase();
       const list = items.filter(lmFilter(node)).filter((x) => !q || x.text.toLowerCase().includes(q) || (x.topic || '').toLowerCase().includes(q))
         .sort((a, b) => LM_CATS.indexOf(a.category) - LM_CATS.indexOf(b.category) || b.createdAt.localeCompare(a.createdAt));
@@ -1663,7 +1666,7 @@
       const add = node === 'guide-a' ? { stage: 'analysis', layer: 'guide', hint: '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.' }
         : node === 'guide-g' ? { stage: 'generation', layer: 'guide', hint: '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.' }
         : node === 'nosubj' ? { stage: 'generation', layer: 'lesson', subject: '', hint: '예: 수는 계산기 없이 풀리게 작은 정수로 잡는다.' }
-        : node.startsWith('s:') ? { stage: node.split(':')[2] === 'reading' ? 'analysis' : 'generation', layer: 'lesson', subject: node.split(':')[1], category: node.split(':')[2] || 'design', hint: `예: ${node.split(':')[1]} 문제에서 지킬 점` } : null;
+        : sn ? { stage: sn.cat === 'reading' ? 'analysis' : 'generation', layer: 'lesson', subject: sn.subject, category: sn.cat || 'design', hint: `예: ${sn.subject} 문제에서 지킬 점` } : null;
       const selected = [...lmUi.sel].filter((id) => byId.has(id));
       const bulk = selected.length ? `<div class="lm-bulk"><b>${selected.length}개 선택</b>
           <select id="lm-bulk-subject" class="lm-move" aria-label="과목">${subjectOptions(null, '과목…')}</select><button class="small" data-bulk="subject">과목 달기</button>
