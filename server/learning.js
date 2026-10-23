@@ -33,7 +33,10 @@ const categoryOf = (r) => (CATEGORIES.includes(r.category) ? r.category : stageO
 // Notation, titles and particles are laid out by the system (harness.notation, stepTitle, josa), so a lesson about them
 // tells the writer to do what the system then undoes: the gas original's 학습 반복 (2026-10-21) learned "write X₂ in the
 // title as $\ce{X2}$ with its full stop" set after set and fell from 89 to 61. Such a sentence is not kept as learning.
-const FORMAT_LESSON = /\\ce\b|\\text\b|\$…\$|\$ ?(짝|밖|안)|마침표|띄어쓰기|유니코드|아래 첨자|수식 모드|'·'|·' 항목|항목 구분|조사(를|가) /;
+// The cues are the sentence talking about the notation itself (write it as \ce{…}, wrap it in \text{}, the full stop),
+// not a formula used in an example: "'실젯값이 $\frac{p}{q}$이므로'처럼 값만 쓰고 넘어간 문장은 같은 틀로 쓴다" is a lesson
+// on the solution, not on notation.
+const FORMAT_LESSON = /\\ce\{[^}]*\}\$? ?(꼴|표기|로 (쓴|써|바꾸))|\\text\{\} ?(으)?로|\\text 없이|\$…\$|\$ ?(짝|밖|안)|마침표|띄어쓰기|유니코드|아래 첨자|수식 모드|'·'|·' 항목|항목 구분|조사(를|가) /;
 const isFormatLesson = (text) => FORMAT_LESSON.test(String(text || ''));
 
 function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
