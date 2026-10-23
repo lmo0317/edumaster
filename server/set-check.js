@@ -8,6 +8,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const finalReview = require('./final-review');
+const crypto = require('node:crypto');
+const { materialKey } = require('./material-version');
 
 const REVIEWERS = ['claude-cli', 'agy-cli'];
 const NAME = { 'claude-cli': 'Claude', 'agy-cli': 'Gemini', 'codex-cli': 'GPT' };
@@ -18,7 +20,51 @@ function readCheck(dataDir, setId) {
 }
 function writeCheck(dataDir, setId, result) {
   fs.mkdirSync(path.dirname(checkPath(dataDir, setId)), { recursive: true });
-  fs.writeFileSync(checkPath(dataDir, setId), JSON.stringify(result, null, 1));
+  const file = checkPath(dataDir, setId);
+  const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(result, null, 1));
+  fs.renameSync(temp, file);
+}
+
+const contentKey = (set) => crypto.createHash('sha256').update(JSON.stringify([
+  set.material ? materialKey(set.material) : null,
+  (set.items || []).map((it) => [it.index, it.label, it.stage, it.problem, it.solution]),
+])).digest('hex');
+
+function matchesSet(record, set) {
+  if (record.contentKey) return record.contentKey === contentKey(set);
+  if (!set.material || !record.material || !record.set?.items) return false;
+  // Older persisted reviews predate content keys. Compare the source and question/solution text they actually saw.
+  const current = checkRecord(set.material, set);
+  const source = (m) => [m.problem, m.choices, m.answer, m.steps];
+  const items = (s) => s.items.map((it) => [it.index, it.label, it.problem, it.choices, it.answer, it.solution]);
+  return JSON.stringify(source(record.material)) === JSON.stringify(source(current.material))
+    && JSON.stringify(items(record.set)) === JSON.stringify(items(current.set));
+}
+
+function invalidateCheck(dataDir, setId) {
+  const old = readCheck(dataDir, setId);
+  if (!old) return;
+  writeCheck(dataDir, setId, { ...old, stale: true, done: false, running: false, checklist: null,
+    invalidatedAt: new Date().toISOString() });
+}
+
+function normalizeReview(review, items) {
+  return { ...review, items: items.map((it) => finalReview.matchItem(review, it, items) || {
+    index: it.index, label: it.label, answerOk: false, verdict: 'fix', checks: {},
+    issues: [{ severity: 'high', rule: '검수 응답', detail: '이 문항의 검수 결과가 누락되었거나 문항 식별자가 중복·불일치합니다. 다시 검수해야 합니다.' }],
+  }) };
+}
+
+// Recovery covers check jobs and training rounds, including a crash between writing the review and finishing its job.
+function recoverChecks(dataDir) {
+  const dir = path.join(dataDir, 'reviews');
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (!/^[a-f0-9]+\.json$/.test(name)) continue;
+    const id = name.slice(0, -5), rec = readCheck(dataDir, id);
+    if (rec?.running) writeCheck(dataDir, id, { ...rec, running: false, done: false, interrupted: true, error: '서버 재시작으로 검수가 중단되었습니다. 다시 검수해 주세요.' });
+  }
 }
 
 const range = (m, st) => (st?.kind === 'upto' ? `원본 STEP 1${st.upto > 1 ? '~' + st.upto : ''}만 쓰는 연습 문제` : st?.kind === 'twin' ? `원본 STEP 1~${m.steps.length}을 모두 쓰는 최종 통합 문제 (원본과 다른 구조여야 함)` : '');
@@ -29,7 +75,7 @@ function checkRecord(material, set) {
   return {
     material: { id: material.id, title: material.title, subject: material.subject, topic: material.topic, problem: material.problem.text, choices: material.problem.choices || [], answer: material.problem.answer, steps: material.steps.map((x) => ({ title: x.title, work: x.work })) },
     set: { id: set.id, createdAt: set.createdAt, provider: set.options?.provider, items: items.map((it) => ({ index: it.index, label: it.label, status: it.status, kind: it.stage?.kind || '', stage: range(material, it.stage), problem: it.problem.text, choices: it.problem.choices || [], answer: it.problem.answer, solution: (it.solution?.steps || []).map((x) => ({ step: x.step, title: x.title, work: x.work })) })) },
-    at: new Date().toISOString(), reviews: {}, done: false,
+    at: new Date().toISOString(), contentKey: contentKey(set), reviews: {}, done: false,
   };
 }
 
@@ -38,24 +84,43 @@ function checkRecord(material, set) {
  * own subscription, outside the set's budget); `save(record)` is called as each one finishes.
  */
 async function reviewSet({ store, set, call, providers = REVIEWERS, images, save = () => {} }) {
-  const material = store.materials.get(set.materialId);
+  const material = set.material || store.materials.get(set.materialId);
   if (!material) throw new Error('문제를 찾지 못했습니다.');
   const record = checkRecord(material, set);
   const items = (set.items || []).filter((it) => it.problem);
-  const system = finalReview.reviewSystem(material, store.rules.all());
+  // Judged with the learning the set was made with (its snapshot), not with what the store holds now: a 학습 반복's set
+  // was reviewed against lessons added after it was made, which its writer had never seen.
+  const system = finalReview.reviewSystem(material, store.rules.all(), set.rules?.length ? set.rules : null);
   const text = finalReview.setText(material, items);
+  if (material.images && store.files) images = require('./pipeline').originalImages(store, material);
   save(record);
-  await Promise.all(providers.map(async (p) => {
+  const completed = await Promise.allSettled(providers.map(async (p) => {
     const started = Date.now();
     try {
-      const r = await call(p, { purpose: 'review', system, text, images, vision: true, maxTokens: 32000, effort: 'high' });
-      record.reviews[p] = { seconds: Math.round((Date.now() - started) / 1000), usage: r.usage, review: r.data };
+      const responses = [];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const retry = attempt ? '\n[이전 응답의 문항 식별자가 불일치했습니다]\n아래 응답을 다시 확인하여 각 문항의 index와 label을 위 식별자 목록과 정확히 맞춘 완전한 JSON을 반환하세요. 다른 문항의 판정을 옮기지 말고 실제 문항 내용과 대응을 확인하세요.\n' + JSON.stringify(responses[0].review) : '';
+        const r = await call(p, { purpose: 'review', system, text: text + retry, images, vision: true, maxTokens: 32000, effort: 'high' });
+        responses.push({ usage: r.usage, review: r.data });
+        const usage = responses.reduce((sum, response) => {
+          for (const [key, value] of Object.entries(response.usage || {})) if (typeof value === 'number') sum[key] = (sum[key] || 0) + value;
+          return sum;
+        }, {});
+        const valid = Array.isArray(r.data?.items) && r.data.items.length === items.length
+          && items.every(it => finalReview.matchItem(r.data, it, items));
+        record.reviews[p] = { seconds: Math.round((Date.now() - started) / 1000), usage, responses,
+          ...(valid ? { review: normalizeReview(r.data, items) } : { error: '검수 응답의 문항 식별자가 누락·중복·불일치합니다. 정답 오류 판정이 아니며 다시 검수해야 합니다.' }) };
+        save(record);
+        if (valid) break;
+      }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      record.reviews[p] = { error: e.message, seconds: Math.round((Date.now() - started) / 1000) };
+      record.reviews[p] = { ...record.reviews[p], error: e.message, seconds: Math.round((Date.now() - started) / 1000) };
     }
     save(record);
   }));
+  const rejected = completed.find((r) => r.status === 'rejected');
+  if (rejected) throw rejected.reason;
   record.done = true;
   record.checklist = checklist(record);
   save(record);
@@ -69,7 +134,7 @@ function failing(record) {
     const faults = [];
     for (const [p, v] of Object.entries(record.reviews || {})) {
       if (v.error || !v.review) continue;
-      const mine = v.review.items?.[i];
+      const mine = finalReview.matchItem(v.review, it, record.set.items);
       faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }).map((f) => `[${NAME[p] || p}] ${f}`));
     }
     if (faults.length) out.push({ index: it.index, label: it.label, faults });
@@ -79,7 +144,7 @@ function failing(record) {
 
 /** What the reviewers found in the analysis (both of them, one list). */
 function analysisIssues(record) {
-  return Object.values(record.reviews || {}).flatMap((v) => (v.review?.analysis?.verdict === 'issues' ? v.review.analysis.issues || [] : []));
+  return Object.values(record.reviews || {}).filter((v) => !v.error).flatMap((v) => finalReview.analysisFaults(v.review?.analysis));
 }
 
 const WORST = { no: 3, partial: 2, ok: 1, na: 0 };
@@ -94,7 +159,11 @@ function checklist(record) {
   for (const [p, v] of Object.entries(record.reviews || {})) {
     if (v.error || !v.review) continue;
     const analysis = finalReview.checklistOf(v.review.analysis, { analysis: true });
-    const per = items.map((it, i) => finalReview.checklistOf(v.review.items?.[i], { final: it.kind === 'twin' }));
+    const per = items.map((it) => {
+      const mine = finalReview.matchItem(v.review, it, items);
+      if (!mine) return Object.fromEntries(rows.filter((r) => !r.analysis).map((r) => [r.id, ['no', '문항 검수 결과 누락·불일치']]));
+      return finalReview.checklistOf(mine, { final: it.kind === 'twin' });
+    });
     const marks = {};
     // The score counts every problem's own mark on each row (and the analysis'), not a row's worst: with the worst, one
     // problem's one fault took a ninth of the score, and one reviewer seeing it where the other did not moved the set
@@ -129,9 +198,9 @@ const scores = (record) => Object.fromEntries(REVIEWERS.map((p) => [p, record.ch
  * Whether a reviewed set reached the 학습 반복 target: every reviewer at the target, no problem failing, the analysis
  * unfaulted. A reviewer that failed leaves the set unjudged, so the other's score alone never reaches it.
  */
-const reaches = (record, target) => Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record).length && !analysisIssues(record).length;
+const reaches = (record, target) => !record.stale && !record.interrupted && record.set?.items?.length > 0 && Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record).length && !analysisIssues(record).length;
 
 /** The remake's note: what the reviewers found, for the writer to fix. */
 const remakeNote = (f) => `Claude·Gemini 검수에서 이 문제에 걸린 점입니다. 모두 고친 문제를 새로 만듭니다.\n${f.faults.map((x) => `- ${x}`).join('\n')}`;
 
-module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, reviewSet, failing, analysisIssues, checklist, scores, reaches, remakeNote };
+module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, invalidateCheck, recoverChecks, contentKey, matchesSet, normalizeReview, checkRecord, reviewSet, failing, analysisIssues, checklist, scores, reaches, remakeNote };

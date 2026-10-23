@@ -44,7 +44,7 @@ test('candidates are switched-on items of one stage that reach the same problems
   assert.equal(keeperOf(rules[4], rules[0])[0].id, 'a');
 });
 
-test('학습 지도 over the API: the map, a candidate the AI merged, merging and skipping', async () => {
+test('학습 지도 over the API: the map, a group the AI read as one, merging and skipping', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
   createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'mock' });
@@ -67,34 +67,44 @@ test('학습 지도 over the API: the map, a candidate the AI merged, merging an
     await add('오답도 같은 꼴로 만들고 수는 계산하기 쉬운 값으로 잡는다');
     let d = (await call('GET', '/api/learning')).data.map;
     assert.equal(d.items.length, 5);
-    assert.deepEqual(d.recent, { added: 5, auto: 0 });
-    assert.ok(d.items.every((x) => x.marks && x.uses === 0 && Array.isArray(x.evidence)));
+    assert.ok(d.items.every((x) => x.category === 'solution' && Array.isArray(x.history) && Array.isArray(x.evidence)));
+    assert.deepEqual(d.todo.untagged, [], 'teacher-made items are never asked for a subject');
     // The AI checks the overlapping pairs in the background.
     for (let i = 0; i < 100 && d.checking; i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; }
     assert.equal(d.checking, 0);
-    assert.equal(d.candidates.length, 1, JSON.stringify(d.candidates));
-    const cand = d.candidates[0];
-    assert.deepEqual([cand.a.id, cand.b.id].sort(), [a.id, b.id].sort());
+    assert.equal(d.groups.length, 1, JSON.stringify(d.groups));
+    const cand = d.groups[0];
+    assert.deepEqual(cand.items.map((x) => x.id).sort(), [a.id, b.id].sort());
+    assert.equal(cand.keeperId, a.id, 'the 지침 stays');
     assert.match(cand.text, /모의 합침/);
+    const ids = cand.items.map((x) => x.id);
     // Merging: the 지침 stays with the teacher's sentence and both originals; the other is gone.
-    assert.equal((await call('POST', '/api/learning/merge', { key: cand.key, text: '해설은 선생님 해설과 같은 구성으로 쓰고, 선생님 해설이 끝나는 자리에서 끝낸다' })).status, 200);
-    assert.equal((await call('POST', '/api/learning/merge', { key: cand.key, text: 'x x x' })).status, 409, 'already merged');
+    assert.equal((await call('POST', '/api/learning/merge', { ids, text: '해설은 선생님 해설과 같은 구성으로 쓰고, 선생님 해설이 끝나는 자리에서 끝낸다' })).status, 200);
+    assert.equal((await call('POST', '/api/learning/merge', { ids, text: 'x x x' })).status, 409, 'already merged');
     const rules = (await call('GET', '/api/rules')).data;
     const kept = rules.find((r) => r.id === a.id);
     assert.equal(kept.text, '해설은 선생님 해설과 같은 구성으로 쓰고, 선생님 해설이 끝나는 자리에서 끝낸다');
     assert.deepEqual(kept.mergedFrom.map((x) => x.text).sort(), [a.text, b.text].sort());
+    assert.deepEqual(kept.history.map((h) => [h.by, h.before]), [['merge', a.text]], 'the sentence it replaced is on the item');
     assert.ok(!rules.some((r) => r.id === b.id));
     d = (await call('GET', '/api/learning')).data.map;
     assert.ok(d.items.find((x) => x.id === a.id).evidence.some((e) => e.includes(b.text)), 'the merged original is its evidence');
-    assert.equal(d.candidates.length, 0);
+    assert.equal(d.groups.length, 0);
     assert.ok(d.items.some((x) => x.id === c.id));
     // Skipping: both stay and the pair is not offered again.
     await add('표는 모든 행의 칸 수를 머리 행과 같게 맞춘다');
-    for (let i = 0; i < 100 && !d.candidates.length; i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; }
-    assert.equal(d.candidates.length, 1);
-    await call('POST', '/api/learning/skip', { key: d.candidates[0].key });
+    for (let i = 0; i < 100 && !d.groups.length; i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; }
+    assert.equal(d.groups.length, 1);
+    await call('POST', '/api/learning/skip', { ids: d.groups[0].items.map((x) => x.id) });
     d = (await call('GET', '/api/learning')).data.map;
-    assert.deepEqual([d.candidates.length, d.checking, d.items.length], [0, 0, 5]);
+    assert.deepEqual([d.groups.length, d.checking, d.items.length], [0, 0, 5]);
+    // Several at once: a subject tag, off, and removal.
+    const two = d.items.slice(0, 2).map((x) => x.id);
+    assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, patch: { subject: '화학', status: 'pending' } })).data, { changed: 2 });
+    d = (await call('GET', '/api/learning')).data.map;
+    assert.ok(two.every((id) => { const x = d.items.find((i) => i.id === id); return x.subject === '화학' && x.status === 'pending'; }));
+    assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, remove: true })).data, { changed: 2 });
+    assert.equal((await call('GET', '/api/learning')).data.map.items.length, 3);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
 
@@ -111,4 +121,95 @@ test('a subject-tagged item reaches only that subject; promotion clears the tag'
   const own = { ...r('e', '문제 학습'), scope: 'material', subject: '화학', source: { materialId: 'm' } };
   assert.equal(updateRule(own, { scope: 'global' }).subject, '', 'moved up: reaches every subject until tagged');
   assert.equal(updateRule(r('f', 'x'), { subject: '화학' }).subject, '화학');
+});
+
+// Items that say the same thing are offered as one group, not as every pair among them: seven lessons about hidden
+// values were sixteen pairs on 2026-10-23.
+test('pairs the AI read as one are joined into groups with one suggested sentence', () => {
+  const { clustersOf } = require('../server/learning-map');
+  const r = (id, extra = {}) => ({ id, text: 't' + id, createdAt: id, scope: 'global', layer: 'lesson', ...extra });
+  const same = (a, b, sim, text) => ({ key: a.id + b.id, a, b, similarity: sim, decision: { decision: 'same', text, why: 'w' } });
+  const [a, b, c, d, e] = ['a', 'b', 'c', 'd', 'e'].map((id) => r(id, id === 'c' ? { layer: 'guide' } : {}));
+  const groups = clustersOf([same(a, b, 0.5, 'ab'), same(b, c, 0.9, 'bc'), same(d, e, 0.6, 'de'), { key: 'x', a, b: d, similarity: 0.4, decision: { decision: 'distinct' } }]);
+  assert.deepEqual(groups.map((g) => g.items.map((x) => x.id)), [['a', 'b', 'c'], ['d', 'e']], 'joined through b; the distinct pair does not join');
+  assert.equal(groups[0].text, 'bc', 'the most similar pair\'s sentence');
+  assert.equal(groups[0].keeper.id, 'c', 'the 지침 stays');
+  assert.deepEqual(groups[0].pairs.sort(), ['ab', 'bc']);
+});
+
+test('a lesson about notation or titles is not learning (the system lays those out); content lessons are', () => {
+  const { isFormatLesson } = require('../server/learning');
+  for (const t of ['화학식은 STEP 제목까지 $\\ce{X2}$ 꼴로 쓴다', '한글이 들어간 식은 $…$ 안에 넣지 않고 \\text{}로 감싼다', '제목 끝의 마침표까지 맞춰 쓴다', "해설의 '·' 항목 구분은 선생님 해설과 같은 자리에만 둔다"]) assert.ok(isFormatLesson(t), t);
+  for (const t of ['수치를 정한 뒤 양(mol)이 $\\frac{1}{4}$처럼 간단한 값이 되게 잡는다', '최종 문제의 행 수치는 앞 문제의 배수가 되지 않게 잡는다', 'STEP 제목이 가리키는 물질의 양을 묻는 보기를 하나 둔다']) assert.ok(!isFormatLesson(t), t);
+});
+
+test('a text change keeps the sentence it replaced on the item, with who changed it and why', () => {
+  const { updateRule, makeRule } = require('../server/learning');
+  const r = makeRule({ text: '처음 문장', scope: 'global', layer: 'lesson', category: 'numbers' });
+  assert.deepEqual([r.history, r.category], [[], 'numbers']);
+  const r2 = updateRule(r, { text: '둘째 문장' }, new Date('2026-10-23T00:00:00Z'), { by: 'review', why: '검수 지적', jobId: 'j1' });
+  assert.deepEqual(r2.history, [{ at: '2026-10-23T00:00:00.000Z', before: '처음 문장', by: 'review', why: '검수 지적', jobId: 'j1' }]);
+  assert.equal(updateRule(r2, { subject: '화학' }).history.length, 1, 'only a text change is history');
+  assert.equal(updateRule(r2, { text: '셋째 문장' }).history.at(-1).by, 'teacher');
+});
+
+// Filled in order and stopped at the first item that does not fit: a short item far down the list (another subject's)
+// must not take the room of this subject's longer one.
+test('the cap is filled in priority order without skipping ahead', () => {
+  const { selectRules } = require('../server/learning');
+  const r = (id, text, extra = {}) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: id, ...extra });
+  const rules = [r('a', 'x'.repeat(50), { subject: '생명과학' }), r('b', 'y'.repeat(50), { subject: '생명과학' }), r('c', 'z'.repeat(10))];
+  assert.deepEqual(selectRules(rules, { id: 'm', subject: '생명과학' }, { maxChars: 70 }).map((x) => x.id), ['b'], 'b is newer; a does not fit, and c is not pulled forward');
+});
+
+test('the second migration tags the system\'s untagged lessons with the subject they were learned on and switches notation lessons off, once', () => {
+  const { migrateLearningV2, makeRule } = require('../server/learning');
+  const { openStore } = require('../server/store');
+  const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em-mig-')));
+  store.materials.put({ id: 'a1'.padEnd(24, '0'), subject: '화학', topic: '기체', createdAt: '2026-10-01' });
+  const sys = store.rules.put(makeRule({ text: '기체 행 수를 유지한다', scope: 'global', layer: 'lesson', source: { materialId: 'a1'.padEnd(24, '0'), from: 'auto' } }));
+  const teacher = store.rules.put(makeRule({ text: '수는 작은 정수로 잡는다', scope: 'global', layer: 'lesson', target: 'solution' }));
+  const fmt = store.rules.put(makeRule({ text: '화학식은 $\\ce{X2}$ 꼴로 쓴다', scope: 'global', layer: 'lesson', source: { materialId: 'a1'.padEnd(24, '0'), from: 'review' } }));
+  assert.equal(migrateLearningV2(store), 3);
+  const after = Object.fromEntries(store.rules.all().map((r) => [r.id, r]));
+  assert.deepEqual([after[sys.id].subject, after[sys.id].topic, after[sys.id].tagged, after[sys.id].category], ['화학', '기체', 'migrated', 'design']);
+  assert.deepEqual([after[teacher.id].subject, after[teacher.id].category], ['', 'solution'], 'the teacher\'s untagged item reaches every subject as before');
+  assert.deepEqual([after[fmt.id].status, after[fmt.id].offReason], ['pending', 'format']);
+  store.rules.put({ ...after[fmt.id], status: 'approved' });
+  assert.equal(migrateLearningV2(store), 0, 'runs once per item: the teacher may switch it back on');
+});
+
+// A proposed lesson is folded into the item that already says the same (the AI compares it with the items whose wording
+// overlaps), stored as new otherwise, and never kept when it is about notation.
+test('keeping a lesson: merged into a same-meaning editable item with history, added when new, dropped when about notation', async () => {
+  const { keepLesson, draftLesson } = require('../server/pipeline');
+  const { makeRule } = require('../server/learning');
+  const { openStore } = require('../server/store');
+  const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em-keep-')));
+  const material = { id: 'a1'.padEnd(24, '0'), subject: '화학', topic: '기체' };
+  const existing = store.rules.put(makeRule({ text: '숨긴 값은 원본과 앞 연습 문제의 같은 칸 값과 다르게 잡는다', scope: 'global', layer: 'lesson', subject: '화학', source: { materialId: material.id, from: 'auto' } }));
+  const teacher = store.rules.put(makeRule({ text: '보기는 서로 다른 값으로 만든다', scope: 'global', layer: 'lesson', subject: '화학' }));
+  const calls = [];
+  const ctx = { budget: { affords: () => true }, log: () => {}, llm: { json: async ({ text }) => { calls.push(text); return { data: { same: /숨긴 값/.test(text), text: '숨긴 값(a, b)은 원본과 앞 연습 문제의 같은 칸 값과 모두 다르게 잡고, 정한 뒤 하나씩 대조한다', why: 'w' } }; } } };
+  const src = { materialId: material.id, jobId: 'b2'.padEnd(24, '0'), label: 't', from: 'review' };
+  const merged = await keepLesson(ctx, store, draftLesson({ scope: 'common', category: 'numbers' }, '숨긴 칸의 답은 원본과 앞 연습 문제에서 같은 자리의 값과 다르게 나오도록 수치를 잡는다', material, src), { why: '검수', jobId: src.jobId, by: 'review' });
+  assert.equal(merged.kind, 'revise');
+  assert.equal(merged.id, existing.id);
+  const after = store.rules.get(existing.id);
+  assert.match(after.text, /하나씩 대조/);
+  assert.deepEqual(after.history.map((h) => [h.by, h.before]), [['review', existing.text]]);
+  assert.equal(store.rules.all().length, 2, 'nothing added');
+  // Nothing near: stored as new, tagged with the subject it was learned on, in its category.
+  const added = await keepLesson(ctx, store, draftLesson({ scope: 'common', category: 'choices' }, '합답형 보기 하나를 빼도 정답이 정해지면 선택지 조합을 바꾼다', material, src), { why: '검수', jobId: src.jobId, by: 'review' });
+  assert.equal(added.kind, 'add');
+  assert.deepEqual([store.rules.get(added.id).subject, store.rules.get(added.id).topic, store.rules.get(added.id).category], ['화학', '기체', 'choices']);
+  assert.equal(store.rules.get(draftLesson({ scope: 'common', allSubjects: true }, 'x'.repeat(10), material, src).id), null);
+  assert.equal(draftLesson({ scope: 'common', allSubjects: true }, 'x'.repeat(10), material, src).subject, '', 'only when the learner says it holds for every subject');
+  // A notation lesson is not kept at all.
+  assert.equal(await keepLesson(ctx, store, draftLesson({ scope: 'common' }, '화학식은 제목까지 $\ce{X2}$ 꼴로 쓰고 마침표를 맞춘다', material, src), { why: 'w', jobId: '', by: 'review' }), null);
+  // The same meaning as a teacher's item: dropped, the teacher's item untouched.
+  const dup = await keepLesson({ ...ctx, llm: { json: async () => ({ data: { same: true, text: '보기는 서로 다른 값으로 만들고 모양만 보고 답이 가려지지 않게 한다' } }) } }, store, draftLesson({ scope: 'common' }, '보기는 서로 다른 값으로 만들어 모양만 보고 가려지지 않게 한다', material, src), { why: 'w', jobId: '', by: 'review' });
+  assert.equal(dup, null);
+  assert.equal(store.rules.get(teacher.id).text, teacher.text);
+  assert.equal(store.rules.all().length, 3);
 });

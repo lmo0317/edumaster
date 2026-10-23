@@ -26,9 +26,10 @@ const llm = createLlm({ config: cfg, store, apiKey: readSecret('deepseek-api-key
 
 const sets = store.jobs.all().filter((j) => j.type === 'generate');
 const asSet = sets.find((j) => j.id === id);
-const m = store.materials.get(asSet ? asSet.materialId : id);
+let m = store.materials.get(asSet ? asSet.materialId : id);
 if (!m) { console.error('문제를 찾지 못했습니다: ' + id); process.exit(1); }
 const set = asSet || sets.filter((j) => j.materialId === m.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+if (set?.material) m = { ...set.material, id: set.materialId };
 
 const fileUrl = (fid) => {
   for (const ext of ['jpg', 'png', 'webp']) {
@@ -44,14 +45,14 @@ const imgs = (label, original, views) => {
 // What the reviewers check: the recorded criteria (scripts/review-criteria.md, from past failures and the colleague's
 // review) and the learning that applies to this problem now (지침, this problem's own, 공통 학습) — the same review
 // every problem passes while it is made (server/final-review.js).
-const system = reviewSystem(m, store.rules.all());
+const system = reviewSystem(m, store.rules.all(), set?.rules?.length ? set.rules : null);
 const items = (set?.items || []).filter((it) => it.problem);
 const text = setText(m, items);
 const range = (st) => (st?.kind === 'upto' ? `원본 STEP 1${st.upto > 1 ? '~' + st.upto : ''}만 쓰는 연습 문제` : st?.kind === 'twin' ? `원본 STEP 1~${m.steps.length}을 모두 쓰는 최종 통합 문제 (원본과 다른 구조여야 함)` : '');
 const images = [...imgs('원본 문제', m.images.problem, m.images.views?.problem), ...imgs('원본 해설', m.images.solution, m.images.views?.solution)];
 
 const ready = { 'claude-cli': () => claudeCliReady(cfg), 'agy-cli': () => cli.cliReady(cfg, 'agy-cli'), 'codex-cli': () => cli.cliReady(cfg, 'codex-cli') };
-const result = {
+const result = set ? setCheck.checkRecord(m, set) : {
   material: { id: m.id, title: m.title, subject: m.subject, topic: m.topic, problem: m.problem.text, choices: m.problem.choices || [], answer: m.problem.answer, steps: m.steps.map((x) => ({ title: x.title, work: x.work })) },
   set: set ? { id: set.id, createdAt: set.createdAt, provider: set.options?.provider, items: items.map((it) => ({ index: it.index, label: it.label, status: it.status, kind: it.stage?.kind || '', stage: range(it.stage), problem: it.problem.text, choices: it.problem.choices || [], answer: it.problem.answer, solution: (it.solution?.steps || []).map((x) => ({ step: x.step, title: x.title, work: x.work })) })) } : null,
   at: new Date().toISOString(), reviews: {}, done: false,
@@ -59,7 +60,12 @@ const result = {
 // The set's page shows the review (#/j/<set id>/check), from data/reviews/<set id>.json.
 const kept = set ? path.join(cfg.dataDir, 'reviews', `${set.id}.json`) : '';
 if (kept) fs.mkdirSync(path.dirname(kept), { recursive: true });
-const save = () => { const s = JSON.stringify(result, null, 1); fs.writeFileSync(out, s); if (kept) fs.writeFileSync(kept, s); };
+const save = () => {
+  const current = set && store.jobs.get(set.id);
+  if (current && result.contentKey !== setCheck.contentKey(current)) { result.stale = true; result.done = false; }
+  fs.writeFileSync(out, JSON.stringify(result, null, 1));
+  if (kept && current) setCheck.writeCheck(cfg.dataDir, set.id, result);
+};
 save();
 (async () => {
   await Promise.all(providers.map(async (p) => {
@@ -68,7 +74,7 @@ save();
       if (ready[p] && !(await ready[p]())) throw new Error('서버에 연결되어 있지 않습니다 (LLM 탭에서 연결)');
       const budget = new Budget({ maxCalls: 2, maxTokens: 3000000 });
       const r = await llm.json({ provider: p, purpose: 'review', budget, system, text, images, vision: true, maxTokens: 32000, effort: 'high' });
-      result.reviews[p] = { seconds: Math.round((Date.now() - started) / 1000), usage: r.usage, review: r.data };
+      result.reviews[p] = { seconds: Math.round((Date.now() - started) / 1000), usage: r.usage, review: setCheck.normalizeReview(r.data, items) };
     } catch (e) {
       result.reviews[p] = { error: e.message, seconds: Math.round((Date.now() - started) / 1000) };
     }

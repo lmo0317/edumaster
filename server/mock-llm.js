@@ -159,7 +159,7 @@ function mock(messages) {
   else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system) && text.includes('[AI가 만든 변형 세트]')) {
     // A test can make the next set reviews fail, as a subscription at its limit does.
     if (failing.setReviews > 0) { failing.setReviews--; throw Object.assign(new Error("모의 한도: You've hit your session limit"), { status: 502 }); }
-    const labels = [...text.matchAll(/^### (.+?) — 목표/gm)].map((x) => x[1]);
+    const labels = [...text.matchAll(/^### (.+?) — 문항 index:/gm)].map((x) => x[1]);
     const seen = (setLooks.get(labels.join('|')) || 0) + 1;
     setLooks.set(labels.join('|'), seen);
     data = { analysis: { verdict: 'ok', issues: [] }, summary: '모의 검수', items: labels.map((label, i) => (seen <= 2 && i === labels.length - 1

@@ -7,6 +7,7 @@ const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
 const setCheck = require('./set-check');
+const { invalidateDerived, materialKey } = require('./material-version');
 
 const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
 
@@ -25,6 +26,20 @@ function createJobs({ store, llm, config }) {
         if (m && m.status === 'analyzing') store.materials.put({ ...m, status: 'failed', error: job.error });
       }
     }
+  }
+  setCheck.recoverChecks(config.dataDir);
+
+  // Teacher decisions may arrive while the worker is awaiting a model. Preserve decisions only on that exact item.
+  function saveJob(job) {
+    const latest = store.jobs.get(job.id);
+    for (const item of job.items || []) {
+      const saved = latest?.items?.find((x) => x.index === item.index);
+      if (saved?.reviewedAt && JSON.stringify([saved.problem, saved.solution]) === JSON.stringify([item.problem, item.solution])) {
+        item.adopted = saved.adopted;
+        item.reviewedAt = saved.reviewedAt;
+      }
+    }
+    store.jobs.put(job);
   }
 
   function context(job, controller, extraSave) {
@@ -54,7 +69,7 @@ function createJobs({ store, llm, config }) {
       effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
       direction: job.options?.direction || '',
       ...(({ maxRepairs, maxRewrites, maxDesigns }) => ({ maxRepairs, maxRewrites, maxDesigns }))(harnessSettings(config.dataDir)),
-      save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); store.jobs.put(job); extraSave?.(); },
+      save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); saveJob(job); extraSave?.(); },
       log(message) { job.log = [...(job.log || []), { t: new Date().toISOString(), message }].slice(-200); ctx.save(); },
     };
     return ctx;
@@ -89,7 +104,7 @@ function createJobs({ store, llm, config }) {
         const result = await pipeline.analyzeMaterial(ctx, material);
         const current = store.materials.get(material.id);
         // A title the teacher typed wins over the one the model suggests.
-        store.materials.put({ ...current, ...result, title: current.titleFromUser ? current.title : result.title, analyzedWith: ctx.provider, promptVersion: PROMPT_VERSION, status: 'ready', error: '', analyzedAt: new Date().toISOString() });
+        store.materials.put(invalidateDerived(current, { ...current, ...result, title: current.titleFromUser ? current.title : result.title, analyzedWith: ctx.provider, promptVersion: PROMPT_VERSION, status: 'ready', error: '', analyzedAt: new Date().toISOString() }));
         ctx.log('분석 완료');
       } catch (e) {
         store.materials.put({ ...store.materials.get(material.id), status: 'failed', error: e.message });
@@ -114,7 +129,7 @@ function createJobs({ store, llm, config }) {
     // is reviewed again, up to `rounds` times. Without `fix` it is the review alone.
     async check(ctx) {
       const parentId = ctx.job.parentJobId;
-      const material = store.materials.get(ctx.job.materialId);
+      const material = store.jobs.get(parentId)?.material || store.materials.get(ctx.job.materialId);
       if (!store.jobs.get(parentId) || !material) throw new Error('검수할 세트를 찾지 못했습니다.');
       const images = pipeline.originalImages(store, material);
       // Each reviewer on its own subscription, outside the set's budget (as scripts/review-problem.js).
@@ -138,7 +153,7 @@ function createJobs({ store, llm, config }) {
           if (issues.length) {
             const parent = store.jobs.get(parentId);
             const fixed = await pipeline.fixAnalysis(ctx, parent.material, issues);
-            if (fixed.length) { store.jobs.put(parent); step.analysisFixed = fixed; }
+            if (fixed.length) { setCheck.invalidateCheck(config.dataDir, parentId); store.jobs.put(parent); step.analysisFixed = fixed; }
           }
           step.remade = [];
           for (const f of fails) {
@@ -146,7 +161,7 @@ function createJobs({ store, llm, config }) {
             await remake(ctx, f.index, setCheck.remakeNote(f));
             step.remade.push(f.label);
           }
-          save(record);
+          // The old review describes the pre-repair set. Keep it stale until a fresh review replaces it.
           if (!step.remade.length && !step.analysisFixed) break;
         }
       } finally {
@@ -249,14 +264,29 @@ function createJobs({ store, llm, config }) {
     problems: [...new Set(item.problems || [])], warnings: [...new Set(item.warnings || [])] };
     item.history = [previous, ...(item.history || [])].slice(0, 3);
     item.adopted = false; // a new version is reviewed afresh
-    const saveParent = () => store.jobs.put(parent);
+    delete item.reviewedAt;
+    setCheck.invalidateCheck(config.dataDir, parent.id);
+    const saveParent = () => {
+      const latest = store.jobs.get(parent.id);
+      if (!latest) throw new Error('다시 만들 세트가 삭제되었습니다.');
+      latest.items[itemIndex] = item;
+      latest.material = parent.material;
+      store.jobs.put(latest);
+    };
     const sub = { ...ctx, save() { ctx.save(); saveParent(); }, log(m) { ctx.log(m); } };
     const prior = parent.items.filter((x) => x.index < item.index && x.problem);
     // The feedback as it is now (not as it was when the set was made — the teacher has usually just added some),
     // and the variants adopted so far, except this one.
     const rules = pipeline.pickRules(store, parent.material);
+    sub.generationRules = rules;
+    ctx.job.rules = rules;
     const examples = pipeline.adoptedExamples(store, parent.materialId, { jobId: parent.id, index: item.index });
     try {
+      if (sub.finalGate) {
+        const reviewed = await pipeline.reviewAnalysis(sub, parent.material);
+        if (reviewed?.verdict !== 'ok' || reviewed.key !== materialKey(parent.material)) throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인해 주세요.');
+      }
+      await pipeline.ensureFrames(sub, parent.material);
       await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: feedback, previous, examples });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; saveParent(); throw e;
@@ -323,11 +353,14 @@ function createJobs({ store, llm, config }) {
   }
 
   function busyGuard(parent) {
+    const training = parent.trainJobId && store.jobs.get(parent.trainJobId);
+    if (training && !FINISHED.has(training.status)) throw Object.assign(new Error('이 세트의 학습 반복이 진행 중입니다.'), { status: 409 });
     const busy = [...running.keys(), ...queue].map((id) => store.jobs.get(id)).find((j) => ['regenerate', 'check'].includes(j?.type) && j.parentJobId === parent.id);
     if (busy) throw Object.assign(new Error(busy.type === 'check' ? '이 세트를 검수하는 중입니다.' : '이 세트의 다른 문제를 다시 만드는 중입니다.'), { status: 409 });
   }
 
   return {
+    busyGuard,
     analyze(material, provider = 'deepseek') { return create('analyze', { materialId: material.id, title: material.title, options: { provider } }, 'analyze'); },
     generate({ material, items, rules, options }) {
       return create('generate', { materialId: material.id, title: material.title, material, items, rules, options }, 'generate');
@@ -337,18 +370,29 @@ function createJobs({ store, llm, config }) {
       return create('train', { materialId: material.id, title: material.title, items, options, target, maxRounds, rounds: [] }, 'analyze');
     },
     regenerate(parent, itemIndex, feedback) {
+      parent = store.jobs.get(parent.id);
+      if (!parent) throw Object.assign(new Error('세트를 찾지 못했습니다.'), { status: 404 });
       if (!FINISHED.has(parent.status)) throw Object.assign(new Error('세트 생성이 끝난 뒤에 다시 만들 수 있습니다.'), { status: 409 });
       busyGuard(parent);
       return create('regenerate', { parentJobId: parent.id, itemIndex, feedback, materialId: parent.materialId, title: parent.title, options: { provider: parent.options?.provider || 'deepseek', effort: parent.options?.effort, direction: parent.options?.direction } }, 'regenerate');
     },
     // One review at a time per set (each reviewer is a subscription), and no remake while it runs.
     check(parent, { fix = false, rounds = 2 } = {}) {
+      parent = store.jobs.get(parent.id);
+      if (!parent) throw Object.assign(new Error('세트를 찾지 못했습니다.'), { status: 404 });
       if (parent.type !== 'generate' || !FINISHED.has(parent.status)) throw Object.assign(new Error('세트 생성이 끝난 뒤에 검수할 수 있습니다.'), { status: 409 });
       busyGuard(parent);
       return create('check', { parentJobId: parent.id, materialId: parent.materialId, title: parent.title, options: { provider: parent.options?.provider || 'deepseek', effort: parent.options?.effort, direction: parent.options?.direction, fix, rounds } }, 'generate');
     },
     resume(job) {
       if (!['interrupted', 'failed', 'cancelled'].includes(job.status) || job.type !== 'generate') throw Object.assign(new Error('이어서 진행할 수 없는 작업입니다.'), { status: 409 });
+      busyGuard(job);
+      const latest = store.materials.get(job.materialId);
+      if (latest && job.material && materialKey(latest) !== materialKey(job.material) && !job.items.some((it) => it.problem)) {
+        job.material = latest;
+        job.rules = pipeline.pickRules(store, latest);
+        delete job.analysisReview;
+      }
       for (const item of job.items) if (!['passed', 'warning', 'needs_review'].includes(item.status)) item.status = 'pending';
       // A resumed job gets a fresh allowance on top of what it already spent.
       job.budget = { maxCalls: (job.usage?.calls || 0) + callCap(job.items.filter((it) => it.status === 'pending').length, job.options?.provider), maxTokens: (job.usage?.total || 0) + tokenCap(job.options?.provider, 'generate') };

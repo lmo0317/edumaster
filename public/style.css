@@ -734,14 +734,6 @@ a.btn.set-open:hover { border-color: var(--accent); }
 /* 학습 › 학습 지도: summary tiles, the tree of where items apply beside the items of the chosen branch, then 정리 후보. */
 .lt.lm { max-width: 1080px; gap: 18px; }
 .lm-pane { display: grid; gap: 16px; min-width: 0; }
-.lm-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.lm-tile { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
-.lm-tile b { font-size: 22px; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.lm-tile span { font-size: 12.5px; color: var(--muted); }
-.lm-tile.warn b { color: var(--warn); }
-.lm-meter { height: 6px; border-radius: 3px; background: #eef0f4; overflow: hidden; margin-top: 6px; }
-.lm-meter i { display: block; height: 100%; background: var(--accent); }
-.lm-tile.warn .lm-meter i { background: #d99a1e; }
 .lm-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
 .lm-tree { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr); overflow-x: hidden; gap: 1px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; }
 .lm-group { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 8px 4px; letter-spacing: .02em; }
@@ -752,36 +744,29 @@ a.btn.set-open:hover { border-color: var(--accent); }
 .lm-node.d1 { padding-left: 18px; }
 .lm-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-node .n { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.lm-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: #c3c9d4; }
-.lm-dot.ok { background: var(--ok); } .lm-dot.warn { background: #d99a1e; }
 .lm-main { display: grid; gap: 12px; min-width: 0; }
 .lm-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .lm-head > div:first-child { flex: 1 1 320px; min-width: 0; }
 .lm-head h2 { margin: 0; font-size: 18px; }
 .lm-head p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
-.lm-legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
-.lm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 3px; background: #eef0f4; }
 .lm-count { margin: 0; font-size: 13px; color: var(--muted); }
 .lm-list { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.lm-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); }
 .lm-item + .lm-item { border-top: 1px solid var(--line); }
+.lm-pick { display: flex; align-items: flex-start; justify-content: center; padding: 14px 0 0 10px; }
+.lm-pick input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); }
+.lm-item .lm-detail { grid-column: 2; }
+.lm-item.open .lm-row { padding-bottom: 6px; }
 .lm-item.off .lm-txt strong { color: var(--muted); }
-.lm-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 92px; gap: 12px; align-items: center; padding: 11px 14px; width: 100%; border: 0; border-radius: 0; background: none; text-align: left; }
+.lm-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: center; padding: 11px 14px; width: 100%; border: 0; border-radius: 0; background: none; text-align: left; }
 .lm-row:hover:not(:disabled) { background: var(--bg); }
 .lm-row.lm-static:hover { background: none; }
 .lm-txt { min-width: 0; display: grid; gap: 4px; }
-.lm-txt strong { font-weight: 500; font-size: 14.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lm-txt strong { font-weight: 500; font-size: 14.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .lm-item.open .lm-txt strong { display: block; }
 .lm-chips { display: flex; gap: 5px; flex-wrap: wrap; }
 .lm-chip { font-size: 11.5px; padding: 0 7px; border-radius: 999px; background: #eef0f4; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-chip.auto { background: var(--accent-soft); color: var(--accent); }
-.lm-cells { display: flex; gap: 3px; }
-.lm-cells i, .lm-legend i { flex: 0 0 auto; }
-.lm-cells i { width: 11px; height: 11px; border-radius: 3px; display: block; background: #eef0f4; }
-.lm-cells .k, .lm-legend .k { background: var(--ok); }
-.lm-cells .b, .lm-legend .b { background: #d99a1e; }
-.lm-cells .u, .lm-legend .u { background: #b9c6ea; }
-.lm-state { font-size: 12px; font-weight: 600; text-align: right; }
-.lm-state.ok { color: var(--ok); } .lm-state.warn { color: var(--warn); } .lm-state.bad { color: var(--bad); } .lm-state.idle { color: var(--muted); }
 .lm-detail { display: grid; gap: 10px; padding: 2px 14px 14px; }
 .lm-kv { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 13px; }
 .lm-kv dt { color: var(--muted); } .lm-kv dd { margin: 0; min-width: 0; }
@@ -890,21 +875,6 @@ a.btn.set-open:hover { border-color: var(--accent); }
 
 /* 학습 지도 › 히트맵: items of a branch against every recent set; the subject tag chip. */
 .lm-chip.subj { background: var(--ok-soft); color: var(--ok); }
-.lm-legend button { margin-left: 4px; }
-.lm-heat-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.lm-heat { overflow-x: auto; }
-.lm-heat table { border-collapse: separate; border-spacing: 3px; font-size: 12.5px; min-width: 100%; }
-.lm-heat thead th { font-weight: 600; color: var(--muted); padding: 4px 2px; text-align: center; white-space: nowrap; }
-.lm-heat thead th span, .lm-heat thead th small { display: block; line-height: 1.25; }
-.lm-heat thead th small { font-size: 10.5px; font-weight: 400; }
-.lm-heat thead th:first-child { text-align: left; padding-left: 8px; }
-.lm-heat tbody tr { cursor: pointer; }
-.lm-heat tbody tr:hover th { color: var(--accent); }
-.lm-heat tbody th { text-align: left; font-weight: 500; padding: 2px 8px; max-width: 360px; min-width: 200px; position: sticky; left: 0; background: var(--panel); }
-.lm-heat tbody th span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.lm-heat td { width: 26px; min-width: 26px; height: 22px; border-radius: 4px; background: #eef0f4; }
-.lm-heat td.k { background: var(--ok); } .lm-heat td.b { background: #d99a1e; } .lm-heat td.u { background: #b9c6ea; }
-.lm-heat td.lm-heat-n { background: none; width: auto; white-space: nowrap; color: var(--muted); padding: 0 8px; font-variant-numeric: tabular-nums; }
 
 /* 진행 상황 page (progress-view.js): the token-saving work, its rounds and what was kept or reverted. */
 .pg-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
@@ -995,3 +965,29 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .ck-tabs { display: flex; gap: 4px; margin: 12px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .ck-tabs button { border: 0; background: none; padding: 8px 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; white-space: nowrap; }
 .ck-tabs button.on { color: inherit; border-bottom-color: currentColor; }
+
+/* 학습 지도: 할 일, 선택해서 한꺼번에, 분류 머리, 이력 */
+.lm-node.d2 { padding-left: 30px; font-size: 13.5px; }
+.lm-q { width: 220px; max-width: 100%; padding: 6px 10px; font-size: 14px; }
+.lm-count .linklike { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 0 2px; cursor: pointer; }
+.lm-cat { padding: 10px 14px 4px; font-size: 12.5px; font-weight: 600; color: var(--muted); background: var(--bg); border-top: 1px solid var(--line); grid-column: 1 / -1; }
+.lm-cat .n { font-weight: 500; }
+.lm-cat:first-child { border-top: 0; }
+.lm-list { display: grid; grid-template-columns: minmax(0, 1fr); }
+.lm-chip.off { background: #f3e5e5; color: var(--bad); }
+.lm-chip.ask { background: #fbf1dc; color: #8a5a00; }
+.lm-hist + .lm-hist { margin-top: 6px; }
+.lm-hist .lm-quote { margin-top: 2px; }
+.lm-bulk { position: sticky; top: 8px; z-index: 2; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 13px; }
+.lm-bulk b { margin-right: 4px; }
+.lm-todos { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.lm-todo { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; }
+.lm-todo + .lm-todo { border-top: 1px solid var(--line); }
+.lm-todo > b { font-size: 22px; font-variant-numeric: tabular-nums; text-align: center; }
+.lm-todo strong { display: block; font-size: 14.5px; }
+.lm-todo span { display: block; }
+.lm-todo-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.lm-cand-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.lm-originals summary { font-size: 13px; color: var(--muted); cursor: pointer; padding: 2px 0; }
+.lm-originals .lm-quote small { display: block; font-size: 11.5px; margin-bottom: 2px; }
+@media (max-width: 720px) { .lm-todo { grid-template-columns: 40px minmax(0, 1fr); } .lm-todo-acts { grid-column: 2; justify-content: flex-start; } .lm-q { width: 100%; } }

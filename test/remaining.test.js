@@ -460,7 +460,7 @@ test('the reviewers read a STEP that ends in a table as its own block, not one m
 
 test('학습 반복 reaches its target only when every reviewer scored the set', () => {
   const setCheck = require('../server/set-check');
-  const record = (models, reviews) => ({ set: { items: [] }, reviews, checklist: { models } });
+  const record = (models, reviews) => ({ set: { items: [{ index: 0, label: '최종 문제' }] }, reviews: Object.fromEntries(Object.entries(reviews).map(([p, v]) => [p, v.error ? v : { review: { analysis: { verdict: 'ok', issues: [] }, items: [{ index: 0, label: '최종 문제', answerOk: true, verdict: 'use', issues: [] }] } }])), checklist: { models } });
   const both = record({ 'claude-cli': { score: 94 }, 'agy-cli': { score: 100 } }, { 'claude-cli': {}, 'agy-cli': {} });
   assert.equal(setCheck.reaches(both, 90), true);
   assert.equal(setCheck.reaches(both, 95), false);
@@ -503,7 +503,7 @@ test("a set's score counts each problem's mark on each row, so one problem's fau
   const clean = { answerOk: true, verdict: 'use', checks: {}, issues: [] };
   const fault = { ...clean, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바뀜' }] };
   const record = (items) => ({ set: { items: [{ label: 'STEP 1 연습', status: 'passed' }, { label: 'STEP 1~2 연습', status: 'passed' }, { label: '최종 문제', status: 'passed', kind: 'twin' }] },
-    reviews: { 'claude-cli': { review: { analysis: { verdict: 'ok', issues: [], checks: { 판독: 'ok' } }, items } } } });
+    reviews: { 'claude-cli': { review: { analysis: { verdict: 'ok', issues: [], checks: { 판독: 'ok' } }, items: items.map((it, i) => ({ ...it, label: ['STEP 1 연습', 'STEP 1~2 연습', '최종 문제'][i] })) } } } });
   const all = setCheck.checklist(record([clean, clean, clean])).models['claude-cli'];
   const one = setCheck.checklist(record([clean, clean, fault])).models['claude-cli'];
   assert.equal(all.score, 100);

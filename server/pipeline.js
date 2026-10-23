@@ -1,9 +1,9 @@
 'use strict';
 const prompts = require('./prompts');
 const { codeCheck } = require('./verify');
-const { Budget } = require('./llm');
-const { selectRules, analysisLearning, layerOf, readingHint, readingPairs, makeRule, updateRule, grams, overlap } = require('./learning');
-const crypto = require('node:crypto');
+const { Budget, BudgetExceeded } = require('./llm');
+const { selectRules, analysisLearning, layerOf, stageOf, readingHint, readingPairs, makeRule, updateRule, grams, overlap, isFormatLesson, CATEGORIES } = require('./learning');
+const { materialKey: analysisKey } = require('./material-version');
 const harness = require('./harness');
 const finalReview = require('./final-review');
 
@@ -639,7 +639,7 @@ async function finalGate(ctx, item, material, prior, hints = []) {
   try {
     const { data } = await ctx.llm.json({
       purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000, vision: true,
-      system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+      system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
       text: finalReview.itemReviewText(material, item, prior, hints),
       images: originalImages(ctx.store, material),
     });
@@ -656,7 +656,7 @@ async function finalGate(ctx, item, material, prior, hints = []) {
         ctx.log(`${item.label}: 두 번째 검수자(${ctx.secondReviewer})가 같은 기준으로 검토 중`);
         ({ data: second } = await ctx.llm.json({
           purpose: 'final-review-second', provider: ctx.secondReviewer, jobId: ctx.job.id, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }), signal: ctx.signal, maxTokens: 24000, vision: true,
-          system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+          system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
           text: finalReview.itemReviewText(material, item, prior, hints),
           images: originalImages(ctx.store, material),
         }));
@@ -681,7 +681,6 @@ async function finalGate(ctx, item, material, prior, hints = []) {
 
 /** The analysis (the original read and its STEPs) under the same criteria, once per original as it now reads: kept with
  *  the original, so the set page shows the rows 원본을 정확히 읽는다 and 선생님 STEP을 그대로 쓴다 of the checklist. */
-const analysisKey = (material) => crypto.createHash('sha1').update(JSON.stringify([material.problem?.text, material.problem?.choices, material.problem?.answer, (material.steps || []).map((s) => [s.title, s.work])])).digest('hex');
 // What the analysis review finds is fixed against the original before any problem is made from the analysis, and the
 // fixed analysis is reviewed once more: on chem-c32-molar-volume (2026-10-19) the review found the analysis had moved
 // the teacher's '/몰' and dropped "분자량=질량/양(mol)이고 …", every problem's solution followed the analysis, and Claude
@@ -701,16 +700,18 @@ async function reviewAnalysis(ctx, material, rounds = 2) {
     if (!again) break;
     review = again;
   }
-  if (!fixed.length || !review) return;
+  if (!fixed.length || !review) return review;
   Object.assign(review, { fixed, before });
   ctx.job.analysisReview = review;
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
-  if (stored) ctx.store.materials.put({ ...stored, analysisReview: review });
+  if (stored && analysisKey(stored) === analysisKey(material)) ctx.store.materials.put({ ...stored, analysisReview: review });
   ctx.save();
+  return review;
 }
 
 /** The review's findings → fixes of the analysis fields against the images (applyFixes), on the job's copy and the original. */
 async function fixAnalysis(ctx, material, issues) {
+  const beforeKey = analysisKey(material);
   if (ctx.budget.affords && !ctx.budget.affords(5)) return [];
   ctx.log(`원본 분석 검토에서 걸린 ${issues.length}건을 원본과 대조해 고치는 중`);
   const fields = { 'problem.text': material.problem.text, 'problem.figure': material.problem.figure || '' };
@@ -732,11 +733,13 @@ async function fixAnalysis(ctx, material, issues) {
   if (!applied.length) { ctx.log('원본 분석: 고칠 곳을 찾지 못했습니다'); return []; }
   // The teacher's frames were cut from the analysis as it read; they are cut again from the fixed one.
   delete material.frames;
+  delete material.framesKey;
+  delete material.analysisReview;
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
-  if (stored) {
+  if (stored && analysisKey(stored) === beforeKey) {
     const copy = JSON.parse(JSON.stringify({ problem: stored.problem, steps: stored.steps }));
     applyFixes(copy, fixes);
-    const { frames, ...rest } = stored;
+    const { frames, framesKey, analysisReview, ...rest } = stored;
     ctx.store.materials.put({ ...rest, problem: copy.problem, steps: copy.steps, analysisFixes: [...(stored.analysisFixes || []), { at: new Date().toISOString(), jobId: ctx.job.id, applied }] });
   }
   ctx.log(`원본 분석 ${applied.length}곳을 고쳤습니다`);
@@ -746,19 +749,23 @@ async function fixAnalysis(ctx, material, issues) {
 async function reviewAnalysisOnce(ctx, material) {
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
   const key = analysisKey(material);
-  if (stored?.analysisReview?.key === key) { ctx.job.analysisReview = stored.analysisReview; ctx.save(); return null; }
-  if (ctx.budget.affords && !ctx.budget.affords(4)) return null;
+  if (stored?.analysisReview?.key === key && stored.analysisReview.verdict === 'ok' && !stored.analysisReview.issues?.length) {
+    ctx.job.analysisReview = stored.analysisReview; ctx.save(); return stored.analysisReview;
+  }
+  if (ctx.budget.affords && !ctx.budget.affords(4)) throw new BudgetExceeded('원본 분석 검수·수리에 필요한 모델 호출·토큰 상한이 부족합니다.');
   ctx.log('원본 분석을 최종 검수 기준으로 검토 중');
   try {
     const { data } = await ctx.llm.json({
       purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 16000, vision: true,
-      system: finalReview.reviewSystem({ ...material, id: ctx.job.materialId }, ctx.store?.rules?.all() || [], ctx.job.rules || []),
+      system: finalReview.reviewSystem({ ...material, id: ctx.job.materialId }, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
       text: finalReview.analysisText(material), images: originalImages(ctx.store, material),
     });
     const a = data?.analysis || {};
-    const review = { key, at: new Date().toISOString(), verdict: a.verdict === 'issues' ? 'issues' : 'ok', issues: arr(a.issues).slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
+    const issues = finalReview.analysisFaults(a);
+    const review = { key, at: new Date().toISOString(), verdict: issues.length ? 'issues' : 'ok', issues: issues.slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
     ctx.job.analysisReview = review;
-    if (stored) ctx.store.materials.put({ ...stored, analysisReview: review });
+    const latest = ctx.store?.materials?.get(ctx.job.materialId);
+    if (latest && analysisKey(latest) === key) ctx.store.materials.put({ ...latest, analysisReview: review });
     ctx.log(`원본 분석 검토: ${review.issues.length ? `${review.issues.length}건` : '이상 없음'}`);
     ctx.save();
     return review;
@@ -1083,8 +1090,9 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const invalid = [];
   let adjudication = keep?.adjudication || null;
   if (code.status === 'fail') invalid.push(...code.reasons.map((r) => '코드 검산: ' + r));
-  // A value the program computes that a student could not do by hand is a design fault (요구서 1), not just a note.
-  const handNotes = (code.warnings || []).filter((w) => /손으로 계산/.test(w)).map((w) => `손계산 수치: ${w}. 수치를 손으로 계산하기 쉽게 다시 잡아야 합니다.`);
+  // A verifier's intermediate reciprocal (1/92 for comparing atoms per gram) can cancel into a simple ratio.
+  // Let the final reviewer judge the student's actual calculation, rather than repairing on the denominator alone.
+  const handNotes = (code.warnings || []).filter((w) => /손으로 계산/.test(w)).map((w) => `손계산 수치 확인: ${w}. 검산 보조값일 수 있으므로, 약분·비교 후 학생이 실제로 다루는 값과 풀이가 어려운지 확인하고 어려운 경우에만 수치 수정을 요구합니다.`);
   soft.push(...(code.warnings || []).filter((w) => !/손으로 계산/.test(w)));
   const mismatch = !item.problem.choices.length ? ''
     : !blind.answer ? '독립 풀이가 정답을 고르지 못했습니다: ' + blind.solution.slice(0, 300)
@@ -1141,9 +1149,9 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     ...(gated ? [] : judgement),
     ...numbersReused(item, prior, material),
     ...failed.filter((c) => c.severity === 'design' && !solutionOnly(c)).map((c) => `${c.label}: ${c.evidence}`),
-    ...handNotes,
+    ...(gated ? [] : handNotes),
   ];
-  const hints = gated ? [...judgement, ...(lean ? [] : cov.notes.map((n) => 'STEP 범위: ' + n))] : [];
+  const hints = gated ? [...judgement, ...handNotes, ...(lean ? [] : cov.notes.map((n) => 'STEP 범위: ' + n))] : [];
   const coverageNotes = gated ? [] : cov.notes;
   // The solution review only feeds a rewrite of the solution, which a repair or a fresh design makes moot: it runs when
   // the problem itself needs no repair (the version the teacher gets is reviewed in the end: addSolutionReview). 42% of the reviews of
@@ -1193,7 +1201,7 @@ async function codeFaults(item, material, mode, prior, ctx) {
       ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
       ...numbersReused(item, prior, material),
       ...failed.filter((c) => c.severity === 'design').map((c) => `${c.label}: ${c.evidence}`),
-      ...(code.warnings || []).filter((w) => /손으로 계산/.test(w)).map((w) => `손계산 수치: ${w}. 수치를 손으로 계산하기 쉽게 다시 잡아야 합니다.`),
+      ...(ctx?.finalGate ? [] : (code.warnings || []).filter((w) => /손으로 계산/.test(w)).map((w) => `손계산 수치: ${w}. 수치를 손으로 계산하기 쉽게 다시 잡아야 합니다.`)),
     ].map((n) => '문제 설계: ' + n),
   ];
 }
@@ -1437,6 +1445,8 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
  *  best one kept. What was found and fixed along the way is in item.attempts (the report); what is still left is in
  *  item.problems (the answer cannot be trusted) or item.warnings (the problem is usable). Mutates `item`. */
 async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
+  // A remake/check job has a different job object; its writer and final reviewers still use the same rule snapshot.
+  ctx = { ...ctx, generationRules: rules };
   const examples = examplesFor(item, allExamples);
   item.examplesUsed = examples.length;
   item.attempts = [];
@@ -1556,20 +1566,63 @@ async function learnFromSet(ctx) {
   for (const x of arr(data?.items).slice(0, 3)) {
     const text = str(x?.text, 600);
     if (text.length < 8 || existing.includes(text)) continue;
-    const common = x?.scope === 'common';
-    const rule = makeRule({
-      text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
-      scope: common ? 'global' : 'material', layer: 'lesson',
-      // A common item about this subject's content reaches only this subject's problems.
-      subject: common && x?.subjectOnly === true ? material.subject || '' : common ? '' : material.subject || '',
-      source: { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto' },
-    });
-    store.rules.put(rule);
-    learned.push({ id: rule.id, text, scope: common ? 'common' : 'problem', target: rule.target, why: str(x?.why, 300) });
+    const change = await keepLesson(ctx, store, draftLesson(x, text, material, { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto' }), { why: str(x?.why, 300), jobId: job.id, by: 'auto' });
+    if (change) learned.push(change);
   }
   job.learned = learned;
-  ctx.log(learned.length ? `학습 ${learned.length}개를 추가했습니다` : '새로 추가할 학습은 없습니다');
+  ctx.log(learned.length ? `학습 ${learned.length}곳을 고쳤습니다 (${summary(learned)})` : '새로 추가할 학습은 없습니다');
   ctx.save();
+}
+
+const summary = (changed) => `더함 ${changed.filter((c) => c.kind === 'add').length} · 고침 ${changed.filter((c) => c.kind === 'revise').length} · 뺌 ${changed.filter((c) => c.kind === 'remove').length}`;
+
+/**
+ * A lesson as the learner proposed it, as an item. A common lesson is tagged with this original's subject and topic
+ * unless the learner says it holds for every subject: untagged, it reached every subject, and the learner called most
+ * chemistry lessons subject-free — 28 of them went into a 생명과학 set on 2026-10-22.
+ */
+function draftLesson(x, text, material, source) {
+  const common = x?.scope === 'common';
+  return makeRule({
+    text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
+    category: CATEGORIES.includes(x?.category) ? x.category : undefined,
+    scope: common ? 'global' : 'material', layer: 'lesson',
+    subject: common && x?.allSubjects === true ? '' : material.subject || '',
+    topic: common && x?.allSubjects === true ? '' : material.topic || '',
+    source,
+  });
+}
+
+/**
+ * Keeps a proposed lesson: not at all when it is about notation or titles (the system lays those out); folded into an
+ * item that already says the same (the AI compares it with the items whose wording overlaps, as 학습 › 정리 후보 does);
+ * otherwise stored as new. Seven lessons saying "hidden values differ from the original's" piled up on 2026-10-21/22
+ * because only an identical sentence counted as already there. Returns what changed, for the set's record.
+ */
+async function keepLesson(ctx, store, draft, { why, jobId, by }) {
+  if (isFormatLesson(draft.text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${draft.text.slice(0, 60)}…`); return null; }
+  const reach = (r) => r.status === 'approved' && stageOf(r) === 'generation' && (r.scope === 'material' ? draft.scope === 'material' && r.source?.materialId === draft.source?.materialId : (r.subject || '') === (draft.subject || '') || !r.subject);
+  const mine = grams(draft.text);
+  const near = store.rules.all().filter(reach).map((r) => ({ r, s: overlap(grams(r.text), mine) })).filter((x) => x.s >= 0.3).sort((a, b) => b.s - a.s).slice(0, 2);
+  const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review', 'eval'].includes(r.source?.from);
+  for (const { r } of near) {
+    if (ctx.budget.affords && !ctx.budget.affords(1)) break;
+    let data;
+    try {
+      ({ data } = await ctx.llm.json({ purpose: 'merge', jobId, budget: ctx.budget, signal: ctx.signal, effort: 'low', maxTokens: 3000, system: prompts.MERGE_SYSTEM, text: prompts.mergeText({ a: r.text, b: draft.text }) }));
+    } catch (e) {
+      if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) return null;
+      break;
+    }
+    const merged = str(data?.text, 600);
+    if (data?.same !== true || merged.length < 8) continue;
+    if (!editable(r)) { ctx.log(`이미 있는 학습과 같아 두지 않습니다: ${r.text.slice(0, 60)}…`); return null; }
+    if (merged === r.text) return null;
+    store.rules.put(updateRule(r, { text: merged }, new Date(), { why, jobId, by }));
+    return { kind: 'revise', id: r.id, before: r.text, text: merged, why: `같은 뜻의 학습에 합침 — ${why}` };
+  }
+  store.rules.put(draft);
+  return { kind: 'add', id: draft.id, text: draft.text, scope: draft.scope === 'global' ? 'common' : 'problem', target: draft.target, why };
 }
 
 /**
@@ -1593,7 +1646,8 @@ async function learnFromReview(ctx, material, set, all) {
     const r = own(x?.id);
     const text = str(x?.text, 600);
     if (!r || text.length < 8 || text === r.text) continue;
-    ctx.store.rules.put(updateRule(r, { text }));
+    if (isFormatLesson(text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${text.slice(0, 60)}…`); continue; }
+    ctx.store.rules.put(updateRule(r, { text }, new Date(), { why: str(x?.why, 300), jobId: set.id, by: 'review' }));
     changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 300) });
   }
   for (const x of arr(data?.remove).slice(0, 5)) {
@@ -1606,17 +1660,10 @@ async function learnFromReview(ctx, material, set, all) {
   for (const x of arr(data?.add).slice(0, 3)) {
     const text = str(x?.text, 600);
     if (text.length < 8 || existing.has(text)) continue;
-    const common = x?.scope === 'common';
-    const rule = makeRule({
-      text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
-      scope: common ? 'global' : 'material', layer: 'lesson',
-      subject: common && x?.subjectOnly === true ? material.subject || '' : common ? '' : material.subject || '',
-      source: { materialId: material.id, jobId: set.id, label: material.title, from: 'review' },
-    });
-    ctx.store.rules.put(rule);
-    changed.push({ kind: 'add', id: rule.id, text, scope: common ? 'common' : 'problem', why: str(x?.why, 300) });
+    const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review' }), { why: str(x?.why, 300), jobId: set.id, by: 'review' });
+    if (change) changed.push(change);
   }
-  ctx.log(changed.length ? `학습 ${changed.length}곳을 고쳤습니다 (고침 ${changed.filter((c) => c.kind === 'revise').length} · 뺌 ${changed.filter((c) => c.kind === 'remove').length} · 더함 ${changed.filter((c) => c.kind === 'add').length})` : '고칠 학습이 없습니다');
+  ctx.log(changed.length ? `학습 ${changed.length}곳을 고쳤습니다 (${summary(changed)})` : '고칠 학습이 없습니다');
   return changed;
 }
 
@@ -1625,11 +1672,16 @@ async function learnFromReview(ctx, material, set, all) {
  * harness.validateFrames): only frames that match the teacher's own lines stay. A failure leaves the set without them.
  */
 async function ensureFrames(ctx, material) {
-  // Frames kept with a STEP in two entries (before validateFrames merged them) are merged, without asking again.
-  if (material.frames && new Set(material.frames.map((f) => f.step)).size < material.frames.length) {
+  const key = analysisKey(material);
+  if (material.framesKey === key && Array.isArray(material.frames) && !material.frames.length) return;
+  if (material.framesKey && material.framesKey !== key) delete material.frames;
+  // Validate legacy caches too: old single-entry frames may refer to a teacher's previous analysis.
+  if (material.frames) {
     material.frames = harness.validateFrames(material, { steps: material.frames });
+    if (!material.frames.length) delete material.frames;
+    material.framesKey = key;
     const stored = ctx.store?.materials?.get(ctx.job.materialId);
-    if (stored) ctx.store.materials.put({ ...stored, frames: material.frames });
+    if (stored && analysisKey(stored) === key) ctx.store.materials.put({ ...stored, frames: material.frames, framesKey: key });
     ctx.save();
   }
   if (material.frames || !material.steps?.length) return;
@@ -1679,7 +1731,8 @@ async function ensureFrames(ctx, material) {
     const covered = material.frames.reduce((n, f) => n + f.covered, 0);
     ctx.log(`문장 틀 ${material.frames.reduce((n, f) => n + f.frames.length, 0)}개 — 선생님 해설 ${lines}줄 중 ${covered}줄과 맞음`);
     const stored = ctx.store?.materials?.get(ctx.job.materialId);
-    if (stored) ctx.store.materials.put({ ...stored, frames: material.frames });
+    material.framesKey = key;
+    if (stored && analysisKey(stored) === key) ctx.store.materials.put({ ...stored, frames: material.frames, framesKey: key });
     ctx.save();
   } catch (e) {
     if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) throw e;
@@ -1693,7 +1746,12 @@ async function runGeneration(ctx) {
   const rules = job.rules;
   // What the teacher adopted from earlier sets of this original (examples for the same stages).
   const examples = adoptedExamples(store, job.materialId, {});
-  if (ctx.finalGate && !job.analysisReview) await reviewAnalysis(ctx, material);
+  if (ctx.finalGate) {
+    if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') await reviewAnalysis(ctx, material);
+    if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') {
+      throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인한 뒤 이어서 진행해 주세요.');
+    }
+  }
   await ensureFrames(ctx, material);
   for (const item of job.items) {
     if (ctx.signal.aborted) throw new Error('작업이 취소되었습니다.');
@@ -1757,7 +1815,7 @@ const SYSTEM_CHECKS = {
     { label: '최종 검수', how: '각 문제를 검수 기준(review-criteria.md)으로 생성 모델이 한 번 검토한다 (세트에 두 번째 검수자를 지정하면 그 모델도 본다).', onFail: 'repair', match: /^최종 검수/ },
     { label: '교사 풀이 방법', how: '원본 해설의 보조 문자·STEP별 도입 순서·가정→모순 판정이 변형 해설에 그대로 있는지 코드로 본다.', onFail: 'repair', match: /가정→모순 판정 유지|보조 문자 유지|풀이 순서/ },
     { label: '결론 노출·표기 형식', how: '추론할 결론을 표에 미리 준 경우, 표 칸 수·수식 표기 오류를 코드로 본다.', onFail: 'repair', match: /결론을 표에|표기 형식/ },
-    { label: '손계산 수치', how: '계산기 없이 풀 수 있는지 본다. 검산 프로그램의 값에 분모가 큰 분수가 나오거나, 문제·선택지에 간단한 분수가 아닌 소수(1.732, 0.333)가 있으면 수치를 다시 잡게 한다.', onFail: 'repair', match: /^손계산 수치/ },
+    { label: '손계산 수치', how: '문제·선택지의 어려운 소수(1.732, 0.333)는 수정을 요구한다. 검산 보조값의 큰 분모는 최종 검수에서 약분·비교 후 학생의 실제 계산 난도를 판단한다. 최종 검수가 꺼진 경우에는 기존 수치 검사를 적용한다.', onFail: 'repair', match: /^손계산 수치/ },
     { label: '가정 방향', how: '세트에서 가정 방향(원본과 같게 / 반대로)을 정했으면, 해설 STEP 1이 가정해 모순을 보이는 쪽이 원본과 같은지·바뀌었는지 본다.', onFail: 'repair', match: /^가정 방향/ },
     { label: '해설 대조', how: '별도 검토자가 변형 해설을 선생님 해설과 이 문제의 STEP 범위 안에서 STEP별로 비교해, 다른 논리·문장 틀·표 구성을 찾는다. 범위 밖 STEP으로 쓴 정답 계산은 서버가 마지막 STEP에 합친다.', onFail: 'rewrite', match: /해설이 선생님 해설과 다름|STEP 제목/ },
     { label: '지침·학습 준수', how: '생성 모델이 지침·학습마다 적용 방법을 적고, 문제에 관한 것은 독립 풀이가, 해설에 관한 것은 해설 검토자가 다시 판정한다.', onFail: 'repair', match: /교사 지침 미준수/ },
@@ -1790,4 +1848,4 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
-  harnessStats, ON_FAIL, cleanHeading, finalGate, reviewAnalysis, fixAnalysis, originalImages, learnFromSet, learnFromReview, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };
+  harnessStats, ON_FAIL, cleanHeading, finalGate, reviewAnalysis, fixAnalysis, ensureFrames, originalImages, learnFromSet, learnFromReview, keepLesson, draftLesson, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

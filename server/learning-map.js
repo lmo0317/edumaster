@@ -67,7 +67,8 @@ const pairKey = (a, b) => {
 };
 // Two items can become one when they reach the same problems: two every-problem items, one problem's items, or a
 // problem's item and an every-problem item (the merged one is every-problem).
-const sameReach = (a, b) => a.scope !== 'material' || b.scope !== 'material' || a.source?.materialId === b.source?.materialId;
+const sameReach = (a, b) => (a.subject || '') === (b.subject || '')
+  && (a.scope !== 'material' || b.scope !== 'material' || a.source?.materialId === b.source?.materialId);
 
 /** Pairs of switched-on items of one stage whose wording overlaps, most similar first; a pair already decided is skipped. */
 function mergePairs(rules, decided = {}) {
@@ -89,5 +90,32 @@ function keeperOf(a, b) {
   const rank = (r) => (r.scope === 'material' ? 2 : r.layer === 'guide' ? 0 : 1);
   return rank(a) !== rank(b) ? (rank(a) < rank(b) ? [a, b] : [b, a]) : (a.createdAt <= b.createdAt ? [a, b] : [b, a]);
 }
+/** The one item of several that stays: keeperOf over the list. */
+function keeperOfAll(items) { return items.reduce((keep, r) => keeperOf(keep, r)[0]); }
 
-module.exports = { SET_COLUMNS, SIMILAR, setMarks, evidenceOf, mergePairs, pairKey, keeperOf, aliasesOf };
+/**
+ * Items that say the same thing, as groups: the pairs the AI judged the same, joined — seven lessons about hidden values
+ * showed as sixteen pairs on 2026-10-23, each to be merged by hand. A group carries one suggested sentence (the AI's
+ * merged sentence of its most similar pair) and the pairs it was built from.
+ */
+function clustersOf(pairs) {
+  const same = pairs.filter((p) => p.decision?.decision === 'same');
+  const parent = new Map();
+  const find = (id) => { while (parent.get(id) !== id) { parent.set(id, parent.get(parent.get(id))); id = parent.get(id); } return id; };
+  for (const p of same) for (const r of [p.a, p.b]) if (!parent.has(r.id)) parent.set(r.id, r.id);
+  for (const p of same) parent.set(find(p.a.id), find(p.b.id));
+  const groups = new Map();
+  for (const p of same) {
+    const root = find(p.a.id);
+    const g = groups.get(root) || { items: new Map(), pairs: [] };
+    g.items.set(p.a.id, p.a); g.items.set(p.b.id, p.b); g.pairs.push(p);
+    groups.set(root, g);
+  }
+  return [...groups.values()].map((g) => {
+    const items = [...g.items.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const best = [...g.pairs].sort((p, q) => q.similarity - p.similarity)[0];
+    return { key: items.map((r) => r.id).sort().join('+'), items, keeper: keeperOfAll(items), text: best.decision.text, why: best.decision.why, pairs: g.pairs.map((p) => p.key) };
+  }).sort((a, b) => b.items.length - a.items.length);
+}
+
+module.exports = { SET_COLUMNS, SIMILAR, setMarks, evidenceOf, mergePairs, pairKey, keeperOf, keeperOfAll, clustersOf, aliasesOf };

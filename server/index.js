@@ -11,10 +11,11 @@ const { REVIEW_VERSION, DIMENSIONS, problemResults, problemScore, wilson, timeSu
 const { mock } = require('./mock-llm');
 const { createJobs, FINISHED } = require('./jobs');
 const { createUsers } = require('./users');
-const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, analysisLearning, selectRules, layerOf, stageOf } = require('./learning');
+const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, migrateLearningV2, analysisLearning, selectRules, layerOf, stageOf, categoryOf, bySystem, isFormatLesson } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const learningMap = require('./learning-map');
 const pipeline = require('./pipeline');
+const { invalidateDerived } = require('./material-version');
 const setCheck = require('./set-check');
 const prompts = require('./prompts');
 const harness = require('./harness');
@@ -34,6 +35,10 @@ function createApp(options = {}) {
   // Learning lives in one store (docs/learning.md): bring older analysis feedback and settings over, once.
   const migrated = migrateLearning(store, llmSettings(cfg.dataDir), (patch) => saveLlmSettings(cfg.dataDir, patch));
   if (migrated) console.log(`[learning] ${migrated}개 항목을 하나의 학습 저장소로 옮겼습니다.`);
+  // Second pass (docs/learning.md §5): a history and a category on every item, the system's untagged lessons tagged
+  // with the subject they were learned on, lessons about notation switched off.
+  const migrated2 = migrateLearningV2(store);
+  if (migrated2) console.log(`[learning] ${migrated2}개 항목에 과목·종류·이력을 더했습니다.`);
   let apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
   const claudeKey = readSecret(path.join(cfg.dataDir, 'anthropic-api-key.txt'));
   // Accounts (server/users.js). The first one is made on the server: node scripts/user.js add <name>.
@@ -96,9 +101,13 @@ function createApp(options = {}) {
   const checkFile = (id) => setCheck.checkPath(cfg.dataDir, id);
   const readCheck = (id) => {
     const r = setCheck.readCheck(cfg.dataDir, id);
+    const set = store.jobs.get(id);
+    if (r && set && !setCheck.matchesSet(r, set)) r.stale = true;
+    if (r?.stale) return { ...r, done: false, running: jobs.list().some((j) => j.parentJobId === id), checklist: null, reviews: {} };
+    if (r) for (const v of Object.values(r.reviews || {})) if (v.review) v.review = setCheck.normalizeReview(v.review, r.set?.items || []);
     // A review from before the checklist was kept with it (scripts/review-problem.js, 2026-10-20) gets it worked out,
     // each problem's kind (the final one is held to a new structure) from the set.
-    if (r?.done && !r.checklist) {
+    if (r?.done) {
       const job = store.jobs.get(id);
       for (const it of r.set?.items || []) it.kind = it.kind || job?.items?.find((x) => x.label === it.label)?.stage?.kind || '';
       r.checklist = setCheck.checklist(r);
@@ -106,12 +115,12 @@ function createApp(options = {}) {
     return r;
   };
   const checkSummary = (r) => r && {
-    at: r.at, done: Boolean(r.done), running: Boolean(r.running), fix: Boolean(r.fix), rounds: (r.rounds || []).length,
+    at: r.at, done: Boolean(r.done), running: Boolean(r.running), stale: Boolean(r.stale), interrupted: Boolean(r.interrupted), fix: Boolean(r.fix), rounds: (r.rounds || []).length,
     scores: Object.fromEntries(Object.entries(r.checklist?.models || {}).map(([p, m]) => [p, m.score])),
     models: Object.fromEntries(Object.entries(r.reviews || {}).map(([p, v]) => {
       const items = v.review?.items || [];
-      return [p, v.error ? { error: true } : { analysis: v.review?.analysis?.verdict || '', use: items.filter((x) => x.verdict === 'use').length,
-        answersOk: items.filter((x) => x.answerOk !== false).length, total: items.length }];
+      return [p, v.error ? { error: true } : { analysis: v.review?.analysis?.verdict || '', use: items.filter((x) => !require('./final-review').itemFaults({ items: [x] }).length).length,
+        answersOk: items.filter((x) => x.answerOk === true).length, total: items.length }];
     })),
   };
   const jobSummary = (j) => ({
@@ -456,7 +465,7 @@ function createApp(options = {}) {
     if (m.status === 'ready' && m.problem) recordCorrections(store, readingCorrections(m, merged), m);
     // A title the teacher changed is theirs from then on: a later analysis does not rename the problem.
     const titleFromUser = m.titleFromUser || (body.title !== undefined && merged.title !== m.title);
-    return store.materials.put(pipeline.refreshStepCountNote({ ...m, ...merged, titleFromUser, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() }));
+    return store.materials.put(invalidateDerived(m, pipeline.refreshStepCountNote({ ...m, ...merged, titleFromUser, status: 'ready', error: '', teacherEditedAt: new Date().toISOString() })));
   });
   // The name of the problem (title, subject, topic), changed from the problem page's head without touching the analysis.
   route('PUT', /^\/api\/materials\/([a-f0-9]+)\/name$/, async (req, res, [id]) => {
@@ -464,7 +473,7 @@ function createApp(options = {}) {
     const body = await readBody(req, 8192);
     const title = String(body.title ?? m.title).trim().slice(0, 120);
     if (!title) throw fail(400, '제목을 입력해 주세요.');
-    return store.materials.put({ ...m, title, subject: String(body.subject ?? m.subject ?? '').trim().slice(0, 40), topic: String(body.topic ?? m.topic ?? '').trim().slice(0, 120), titleFromUser: m.titleFromUser || title !== m.title });
+    return store.materials.put(invalidateDerived(m, { ...m, title, subject: String(body.subject ?? m.subject ?? '').trim().slice(0, 40), topic: String(body.topic ?? m.topic ?? '').trim().slice(0, 120), titleFromUser: m.titleFromUser || title !== m.title }));
   });
   route('DELETE', /^\/api\/materials\/([a-f0-9]+)$/, (req, res, [id]) => {
     getMaterial(id);
@@ -499,7 +508,7 @@ function createApp(options = {}) {
     const proposal = await pipeline.proposeStepAlignment({ llm: { json: (args) => llm.json({ ...args, provider }) }, budget, jobId: 'align-' + id }, m);
     if (!proposal) return m;
     const saved = pipeline.refreshStepCountNote({ ...m, steps: proposal.steps, proofread: [...(m.proofread || []), `해설의 단계 표시에 맞춰 STEP을 합쳤습니다: ${proposal.summary}`] });
-    return store.materials.put(saved);
+    return store.materials.put(invalidateDerived(m, saved));
   });
   route('GET', /^\/api\/files\/([a-f0-9]+)$/, (req, res, [id]) => {
     const found = store.files.find(id);
@@ -568,6 +577,8 @@ function createApp(options = {}) {
   route('DELETE', /^\/api\/jobs\/([a-f0-9]+)$/, (req, res, [id]) => {
     const job = getJob(id);
     if (!FINISHED.has(job.status)) throw fail(409, '진행 중인 작업은 먼저 취소해 주세요.');
+    jobs.busyGuard(job);
+    if (job.trainJobId && !FINISHED.has(store.jobs.get(job.trainJobId)?.status)) throw fail(409, '학습 반복이 끝난 뒤에 삭제할 수 있습니다.');
     store.jobs.remove(id);
     fs.rmSync(checkFile(id), { force: true });
     return { ok: true };
@@ -582,10 +593,12 @@ function createApp(options = {}) {
   // The teacher's verdict on one variant: 채택 (a good problem — it goes on the worksheet and is kept as an example
   // for this original), or not. A regenerated problem starts unreviewed again.
   route('PUT', /^\/api\/jobs\/([a-f0-9]+)\/items\/(\d+)\/review$/, async (req, res, [id, index]) => {
+    const body = await readBody(req, 1024);
     const job = getJob(id);
+    jobs.busyGuard(job);
     const item = job.items?.[Number(index)];
     if (job.type !== 'generate' || !item?.problem) throw fail(404, '문제를 찾지 못했습니다.');
-    const body = await readBody(req, 1024);
+    if (!['passed', 'warning', 'needs_review'].includes(item.status)) throw fail(409, '이 문제가 완성된 뒤에 채택할 수 있습니다.');
     item.adopted = body.adopted === true;
     item.reviewedAt = new Date().toISOString();
     store.jobs.put(job);
@@ -934,46 +947,78 @@ function createApp(options = {}) {
     const materials = store.materials.all();
     const analysisUses = (id) => materials.filter((m) => (m.learningUsed || []).some((x) => x.id === id)).length;
     const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
-      ...itemView(r, kept), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
-      uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
-      marks: stageOf(r) === 'analysis' ? null : marks.marks(r.id), evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
+      ...itemView(r, kept), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
+      materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
+      category: categoryOf(r), system: bySystem(r), tagged: r.tagged || '', offReason: r.offReason || '', format: isFormatLesson(r.text),
+      history: (r.history || []).slice().reverse(), uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
+      evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
     }));
     const pairs = learningMap.mergePairs(all, readMerges());
     if (pairs.some((p) => !p.decision)) checkMergePairs();
-    // What the next set of the problem worked on last gets, against the cap (learning.selectRules).
-    const lastSet = jobsAll.filter((j) => j.type === 'generate').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    const last = (lastSet && store.materials.get(lastSet.materialId)) || materials.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
-    const picked = last ? selectRules(all, last) : [];
-    const week = new Date(Date.now() - 7 * 864e5).toISOString();
-    const lately = all.filter((r) => r.createdAt >= week);
+    // Items that say the same thing, as groups (seven lessons were sixteen pairs on 2026-10-23): one merge each.
+    const groups = learningMap.clustersOf(pairs).map((g) => ({
+      key: g.key, text: g.text, why: g.why, keeperId: g.keeper.id,
+      items: g.items.map((r) => ({ id: r.id, text: r.text, layer: layerOf(r), from: r.source?.from || 'input', createdAt: r.createdAt })),
+    }));
+    const on = all.filter((r) => r.status === 'approved');
     return {
-      items, sets: marks.sets,
+      items,
       // The subjects an every-problem item can be tagged with: those of the problems, and any already used.
       subjects: [...new Set([...materials.map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort(),
-      recent: { added: lately.length, auto: lately.filter((r) => r.source?.from === 'auto').length },
-      load: last ? { materialId: last.id, title: last.title, items: picked.length, chars: picked.reduce((n, r) => n + r.text.length, 0), limit: 40, maxChars: 6000 } : null,
-      candidates: pairs.filter((p) => p.decision?.decision === 'same').map((p) => ({ key: p.key, a: { id: p.a.id, text: p.a.text, layer: layerOf(p.a) }, b: { id: p.b.id, text: p.b.text, layer: layerOf(p.b) }, text: p.decision.text, why: p.decision.why })),
-      checking: pairs.filter((p) => !p.decision).length,
+      groups, checking: pairs.filter((p) => !p.decision).length,
+      // What the teacher can tidy now, each a list of ids the page opens as a selection.
+      todo: {
+        groups: groups.length,
+        untagged: on.filter((r) => r.scope === 'global' && r.layer !== 'guide' && bySystem(r) && !r.subject).map((r) => r.id),
+        tagged: on.filter((r) => r.tagged === 'migrated').map((r) => r.id),
+        format: all.filter((r) => stageOf(r) === 'generation' && isFormatLesson(r.text) && (r.status === 'approved' || r.offReason === 'format')).map((r) => r.id),
+      },
     };
   }
-  // Merging a candidate: the item that stays (지침 over 공통 학습 over a problem's, then the older) takes the merged
-  // sentence and keeps both originals; the other is removed. Skipping keeps both and does not ask again.
-  const pairOf = (key) => learningMap.mergePairs(store.rules.all()).find((p) => p.key === key) || (() => { throw fail(409, '두 학습 중 하나가 그새 바뀌었습니다. 새로 고쳐 주세요.'); })();
+  // Merging a group: the item that stays (지침 over 공통 학습 over a problem's, then the older) takes the merged sentence
+  // and keeps every original; the others are removed. Skipping keeps them all and does not ask again about those pairs.
+  const rulesOf = (ids) => {
+    const list = [...new Set((Array.isArray(ids) ? ids : []).map(String))].map((id) => store.rules.get(id));
+    if (list.length < 2 || list.some((r) => !r)) throw fail(409, '합칠 학습 중 하나가 그새 바뀌었습니다. 새로 고쳐 주세요.');
+    return list;
+  };
+  const pairsAmong = (list) => learningMap.mergePairs(list).filter((p) => list.includes(p.a) && list.includes(p.b));
   route('POST', /^\/api\/learning\/merge$/, async (req) => {
     const body = await readBody(req, 16 * 1024);
-    const p = pairOf(String(body.key || ''));
-    const [keep, drop] = learningMap.keeperOf(p.a, p.b);
-    const next = updateRule(keep, { text: body.text });
-    next.mergedFrom = [...(keep.mergedFrom || []), ...(drop.mergedFrom || []), ...[keep, drop].map((r) => ({ id: r.id, text: r.text, from: r.source?.from || 'input', createdAt: r.createdAt }))];
+    const list = rulesOf(body.ids);
+    const keep = learningMap.keeperOfAll(list);
+    const drop = list.filter((r) => r !== keep);
+    const next = updateRule(keep, { text: body.text }, new Date(), { by: 'merge', why: `${list.length}개를 합침` });
+    next.mergedFrom = [...list.flatMap((r) => r.mergedFrom || []), ...list.map((r) => ({ id: r.id, text: r.text, from: r.source?.from || 'input', createdAt: r.createdAt }))];
+    delete next.tagged;
     store.rules.put(next);
-    store.rules.remove(drop.id);
-    saveMerge(p.key, { decision: 'merged', text: next.text, by: 'teacher' });
-    return { id: next.id };
+    for (const r of drop) store.rules.remove(r.id);
+    for (const p of pairsAmong(list)) saveMerge(p.key, { decision: 'merged', text: next.text, by: 'teacher' });
+    return { id: next.id, removed: drop.length };
   });
   route('POST', /^\/api\/learning\/skip$/, async (req) => {
-    const p = pairOf(String((await readBody(req, 4096)).key || ''));
-    saveMerge(p.key, { decision: 'distinct', by: 'teacher' });
+    const list = rulesOf((await readBody(req, 4096)).ids);
+    for (const p of pairsAmong(list)) saveMerge(p.key, { decision: 'distinct', by: 'teacher' });
     return { ok: true };
+  });
+  // Several items at once (학습 지도's selection): a subject tag, on/off, a category, confirming the tag the migration
+  // gave, or removal.
+  route('POST', /^\/api\/learning\/bulk$/, async (req) => {
+    const body = await readBody(req, 64 * 1024);
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(String))].slice(0, 500);
+    let n = 0;
+    for (const id of ids) {
+      const r = store.rules.get(id);
+      if (!r) continue;
+      if (body.remove === true) { store.rules.remove(id); n++; continue; }
+      const patch = {};
+      for (const k of ['subject', 'status', 'category', 'topic']) if (body.patch?.[k] !== undefined) patch[k] = body.patch[k];
+      const next = updateRule(r, patch);
+      if (body.confirm === true || patch.subject !== undefined) delete next.tagged;
+      if (patch.status === 'approved') delete next.offReason;
+      store.rules.put(next); n++;
+    }
+    return { changed: n };
   });
   // 하네스 (학습 › 하네스): how results are checked and fixed, how that went on the recent sets, and the counts the teacher
   // can change. A change applies to sets started after it.
@@ -1021,24 +1066,25 @@ function createApp(options = {}) {
     let base = cfg.publicDir; let rel = pathname;
     if (pathname.startsWith('/vendor/katex/')) { base = katexDir; rel = pathname.slice('/vendor/katex'.length); }
     if (rel === '/' || rel === '') rel = '/index.html';
-    const file = path.normalize(path.join(base, decodeURIComponent(rel)));
+    try { rel = decodeURIComponent(rel); } catch { throw fail(400, '잘못된 URL입니다.'); }
+    const file = path.normalize(path.join(base, rel));
     if (!file.startsWith(base + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...security }); res.end('Not found'); return;
     }
     const ext = path.extname(file);
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : base === katexDir ? 'public, max-age=604800' : 'no-cache', ...security });
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(file).pipe(res);
+    fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
   }
 
   async function handle(req, res) {
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400).end(); return; }
-    if (!url.pathname.startsWith('/api/')) {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
-      return serveStatic(req, res, url.pathname);
-    }
     try {
+      if (!url.pathname.startsWith('/api/')) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
+        return serveStatic(req, res, url.pathname);
+      }
       for (const r of routes) {
         if (r.method !== req.method) continue;
         const match = r.pattern.exec(url.pathname);
@@ -1063,7 +1109,11 @@ function createApp(options = {}) {
     }
   }
 
-  const server = http.createServer((req, res) => { handle(req, res); });
+  const server = http.createServer((req, res) => { handle(req, res).catch((e) => {
+    console.error('request failed', e);
+    if (!res.headersSent) send(res, 500, { error: '서버 오류가 발생했습니다.' });
+    else res.destroy();
+  }); });
   server.requestTimeout = 120000;
   return { server, store, jobs, config: cfg };
 }

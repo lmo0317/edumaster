@@ -44,6 +44,7 @@ function reviewSystem(material, allRules, generationRules = null) {
 - checks에는 기준 항목마다 판정을 적는다: 지켰으면 "ok", 결함이 있으면 "fix", 이 문제에 해당하지 않으면 "na" (예: 연습 문제의 '구조'·'STEP 전부 필요', ㄱ·ㄴ·ㄷ 문제가 아닌데 '보기 분석'). analysis.checks는 A의 항목(${ANALYSIS_NAMES.join(', ')}), items[].checks는 B~D의 항목(${ITEM_NAMES.join(', ')}).
 - 최종 문제의 '구조'는 독립 풀이와 같은 기준으로 센다: ${VARIATION_CRITERIA} 원본과 다른 항목이 둘 이상일 때만 "ok"이고, 하나 이하이면 "fix"로 하고 issues에 달라진 항목 번호와 근거를 적는다.
 - 한국어로 쓴다. JSON만 출력한다.
+- items에는 검토할 문항을 빠짐없이 한 번씩 넣고, 각 문항의 index와 label을 입력 그대로 반환한다. 배열 순서로 문항을 식별하지 않는다.
 
 [검수 기준]
 ${criteria()}
@@ -58,7 +59,7 @@ ${ruleLines([...analysisRules, ...learnedG].filter(system))}
 
 반환 형식:
 {"analysis":{"verdict":"ok|issues","checks":{"판독":"ok"},"issues":[{"severity":"high|mid|low","rule":"...","where":"문제/STEP n","detail":"..."}]},
- "items":[{"label":"...","myAnswer":"내가 푼 정답 번호와 핵심 값","markedAnswer":3,"answerOk":true,"verdict":"use|fix|reject","checks":{"정답":"ok","구조":"na"},"issues":[{"severity":"high|mid|low","rule":"...","detail":"..."}]}],
+ "items":[{"index":0,"label":"입력 문항의 label 그대로","myAnswer":"내가 푼 정답 번호와 핵심 값","markedAnswer":3,"answerOk":true,"verdict":"use|fix|reject","checks":{"정답":"ok","구조":"na"},"issues":[{"severity":"high|mid|low","rule":"...","detail":"..."}]}],
  "summary":"전체 평가 두세 문장"}`;
 }
 
@@ -69,11 +70,13 @@ const choices = (p) => (p.choices || []).map((c, i) => `${'①②③④⑤'[i]} 
 // failed problems for distances they did give (bio D50, 2026-10-20: the final review's "거리가 없다" every round).
 const figure = (p) => (p.figure ? `[그림 — 학습지에 문제와 함께 실리는 이 문제의 그림]\n${p.figure}` : '');
 const itemText = (material, it) => [
-  `### ${it.label} — 목표: ${range(material, it.stage)}`, it.problem.text, figure(it.problem), choices(it.problem), `표시된 정답: ${it.problem.answer}번`,
+  `### ${it.label} — 문항 index: ${it.index} — 목표: ${range(material, it.stage)}`, it.problem.text, figure(it.problem), choices(it.problem), `표시된 정답: ${it.problem.answer}번`,
   // Each STEP is its own block on the worksheet (app.js .step), so a blank line keeps a STEP ending in a table from
   // reading as one more row of it: joined by '\n' the reviewers failed E37's final three sets running for "표 뒤 빈 줄 없음".
   '해설:', ...(it.solution?.steps || []).map((s) => `\nSTEP ${s.step}. ${s.title}\n${s.work}`), it.solution?.summary ? `\n정리: ${it.solution.summary}` : '',
 ].filter(Boolean).join('\n');
+const identities = (items) => '\n[반환할 문항 식별자 — index와 label을 아래 JSON에서 그대로 복사한다. 목표·제목 설명을 label에 붙이지 않는다]\n'
+  + JSON.stringify(items.map(({ index, label }) => ({ index, label })));
 // The original in the system's notation, as its problems are (harness.notation).
 const materialText = (original) => {
   const m = notateMaterial(original);
@@ -88,6 +91,7 @@ function setText(material, items) {
   return [
     ...materialText(material),
     items.length ? `\n[AI가 만든 변형 세트]\n${items.map((it) => itemText(material, it)).join('\n\n')}` : '\n[변형 세트 없음 — 분석 결과만 검토한다]',
+    identities(items),
     '\n위 원본 이미지와 대조해 분석 결과를 검토하고, 변형 문제를 하나씩 직접 풀어 검토하라.',
   ].join('\n');
 }
@@ -98,6 +102,7 @@ function itemReviewText(material, item, prior = [], hints = []) {
     ...materialText(material),
     prior.length ? `\n[같은 세트의 앞 문제 — 검토하지 않는다. 수치·구성이 겹치는지 볼 때만 쓴다]\n${prior.map((it) => itemText(material, it)).join('\n\n')}` : '',
     `\n[검토할 변형 문제]\n${itemText(material, item)}`,
+    identities([item]),
     // What the earlier checks noted is weighed here, not taken as it is: a note that goes against the criteria (keeping
     // the original's cylinders, its table, 'E. 결함이 아닌 것') is not a fault.
     hints.length ? `\n[앞선 자동 검토가 짚은 점 — 참고만 한다]\n아래는 독립 풀이와 코드 검사가 짚은 점이다. [검수 기준]에 비추어 실제 결함인 것만 네 판정으로 적는다. 기준과 부딪히면(예: 원본의 용기·실험 구성이나 표 구조를 지키느라 연습 문제에서 쓰이지 않는 값, 합답형이라 같은 선택지) 결함이 아니다.\n${hints.map((h) => `- ${h}`).join('\n')}` : '',
@@ -110,7 +115,8 @@ const SOLUTION_NAMES = ['STEP 제목', '범위', '풀이 방식', '보기 분석
 /** Whether a reviewer's faults on one problem are all in its solution (the answer right, the problem itself fine). */
 function solutionOnly(review) {
   const it = (review?.items || [])[0];
-  return Boolean(it && it.answerOk !== false && it.issues?.length && it.issues.every((x) => SOLUTION_NAMES.includes(x.rule)));
+  return Boolean(it && it.answerOk === true && it.verdict !== 'reject' && Array.isArray(it.issues) && it.issues.length && it.issues.every((x) => SOLUTION_NAMES.includes(x?.rule))
+    && Object.entries(it.checks || {}).every(([name, value]) => value !== 'fix' || SOLUTION_NAMES.includes(name)));
 }
 
 /**
@@ -121,13 +127,42 @@ function solutionOnly(review) {
  * (2026-10-21).
  */
 function itemFaults(review) {
-  const it = (review?.items || [])[0];
+  const it = Array.isArray(review?.items) && review.items.length === 1 ? review.items[0] : null;
   if (!it) return ['최종 검수가 결과를 내지 못했습니다.'];
+  if (typeof it.answerOk !== 'boolean' || !['use', 'fix', 'reject'].includes(it.verdict) || !Array.isArray(it.issues)
+      || it.issues.some((x) => !x || !['high', 'mid', 'low'].includes(x.severity) || typeof x.detail !== 'string' || !x.detail.trim())) {
+    return ['최종 검수의 정답 확인·판정·결함 목록이 누락되었거나 잘못되었습니다. 다시 검수해야 합니다.'];
+  }
   const faults = (it.issues || []).map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
-  const blocking = it.answerOk === false || (it.issues || []).some((x) => x.severity !== 'low');
+  const unexplained = Object.entries(it.checks || {}).filter(([name, value]) => value === 'fix' && !it.issues.some((x) => x.rule === name));
+  faults.push(...unexplained.map(([name]) => `[${name}] 검수 체크가 수정 필요인데 구체적인 결함 설명이 없습니다.`));
+  const invalidChecks = it.checks != null && (typeof it.checks !== 'object' || Array.isArray(it.checks) || Object.values(it.checks).some((v) => !['ok', 'fix', 'na'].includes(v)));
+  if (invalidChecks) faults.push('검수 체크 항목의 판정 형식이 잘못되었습니다.');
+  const blocking = it.answerOk === false || it.verdict === 'reject' || unexplained.length || invalidChecks || it.issues.some((x) => x.severity !== 'low');
   if (it.answerOk === false) faults.unshift(`검수자가 직접 푼 정답은 ${it.myAnswer || '?'}로 표시된 정답 ${it.markedAnswer ?? ''}번과 다릅니다.`);
   if (!blocking && (it.verdict === 'use' || it.issues?.length)) return [];
   return faults.length ? faults : [`검수 판정이 '${it.verdict || '없음'}'입니다.`];
+}
+
+// Models may reorder their output. Match an explicit index or an unambiguous label, never an array position.
+function matchItem(review, expected, items = [expected]) {
+  const matches = (Array.isArray(review?.items) ? review.items : []).filter((x) => x && (
+    Number.isInteger(x.index) ? x.index === expected.index : x.label === expected.label && items.filter((it) => it.label === expected.label).length === 1
+  ));
+  if (matches.length !== 1) return null;
+  const found = matches[0];
+  if (found.label && found.label !== expected.label) return null;
+  return found;
+}
+
+function analysisFaults(a) {
+  if (!a || !['ok', 'issues'].includes(a.verdict) || !Array.isArray(a.issues)) return [{ severity: 'high', rule: '검수 응답', detail: '원본 분석 검수 결과가 누락되었거나 잘못되었습니다.' }];
+  const issues = a.issues.filter((x) => x && ['high', 'mid', 'low'].includes(x.severity) && typeof x.detail === 'string' && x.detail.trim());
+  if (issues.length !== a.issues.length) issues.push({ severity: 'high', rule: '검수 응답', detail: '원본 분석 결함 목록의 형식이 잘못되었습니다.' });
+  for (const [name, value] of Object.entries(a.checks || {})) if (value === 'fix' && !issues.some((x) => x.rule === name)) issues.push({ severity: 'high', rule: name, detail: '수정 필요 판정의 구체적인 설명이 없습니다.' });
+  if (a.checks != null && (typeof a.checks !== 'object' || Array.isArray(a.checks) || Object.values(a.checks).some((v) => !['ok', 'fix', 'na'].includes(v)))) issues.push({ severity: 'high', rule: '검수 응답', detail: '원본 분석 체크 항목의 판정 형식이 잘못되었습니다.' });
+  if (a.verdict === 'issues' && !issues.length) issues.push({ severity: 'high', rule: '검수 응답', detail: '원본 분석 수정 필요 판정의 설명이 없습니다.' });
+  return issues;
 }
 /** The low notes a reviewer left on a problem it passed. */
 function itemNotes(review) {
@@ -162,7 +197,7 @@ const CHECKLIST = [
 function checklistOf(part, { analysis = false, final = false } = {}) {
   if (!part) return {};
   const checks = part.checks || {};
-  const issues = part.issues || [];
+  const issues = Array.isArray(part.issues) ? part.issues.filter((x) => x && typeof x === 'object') : [];
   const out = {};
   for (const row of CHECKLIST.flatMap((g) => g.items)) {
     if (Boolean(row.analysis) !== analysis || row.id === 'complete') continue;
@@ -181,4 +216,4 @@ function checklistOf(part, { analysis = false, final = false } = {}) {
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, checklistOf, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, CHECKLIST, CRITERIA_FILE };

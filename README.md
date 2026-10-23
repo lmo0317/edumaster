@@ -86,3 +86,7 @@ bash deploy/deploy.sh        # Git Bash에서. 서버 data/는 보존
 - 해설 관련 지침의 준수 여부는 생성 모델의 자기 보고다 (독립 검토는 문제 관련 지침만 판정).
 - PC 모델(Qwen 3.6-35B)은 무료지만 느리고 품질이 DeepSeek·Claude보다 낮다 (모델 비교 페이지 참고).
 - PDF는 브라우저 인쇄(PDF로 저장)로 만든다.
+
+## 같은 저장소의 다른 도구
+
+- [`cobb-angle/`](cobb-angle/) — 브라우저에서만 동작하는 Cobb angle 및 apex 척추 측정 보조 도구 — https://minohlee.mooo.com/cobb/

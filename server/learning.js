@@ -17,9 +17,24 @@ const LAYERS = new Set(['guide', 'lesson']);
 // merge: two items the teacher merged on 학습 › 정리 후보 (the originals are kept in mergedFrom).
 // eval: written from the faults of a harness evaluation run (e.g. a PC model candidate).
 const FROM = new Set(['input', 'check', 'fix', 'promote', 'migrated', 'auto', 'merge', 'eval', 'review']);
+// What an item is about, for the page and the choice of what one set gets (docs/learning.md §1): reading the original,
+// designing the problem, its numbers, its choices, or writing the solution.
+const CATEGORIES = ['reading', 'design', 'numbers', 'choices', 'solution'];
+const CATEGORY_LABEL = { reading: '원본 읽기', design: '문제 설계', numbers: '수치', choices: '보기·선택지', solution: '해설 쓰기' };
+// Learning the system wrote itself (not the teacher): from a set's report, a 학습 반복's review, a harness evaluation.
+const BY_SYSTEM = new Set(['auto', 'review', 'eval']);
+const bySystem = (r) => BY_SYSTEM.has(r.source?.from);
 /** 지침 / 문제 / 전체 — which of the three an item is, for prompts and the page. */
 const layerOf = (r) => (r.scope === 'material' ? 'problem' : r.layer === 'guide' ? 'guide' : 'lesson');
 const stageOf = (r) => r.stage || 'generation';
+/** The category an item has, or the one its stage and target imply. */
+const categoryOf = (r) => (CATEGORIES.includes(r.category) ? r.category : stageOf(r) === 'analysis' ? 'reading' : r.target === 'solution' ? 'solution' : 'design');
+
+// Notation, titles and particles are laid out by the system (harness.notation, stepTitle, josa), so a lesson about them
+// tells the writer to do what the system then undoes: the gas original's 학습 반복 (2026-10-21) learned "write X₂ in the
+// title as $\ce{X2}$ with its full stop" set after set and fell from 89 to 61. Such a sentence is not kept as learning.
+const FORMAT_LESSON = /\\ce\b|\\text\b|\$…\$|\$ ?(짝|밖|안)|마침표|띄어쓰기|유니코드|아래 첨자|수식 모드|'·'|·' 항목|항목 구분|조사(를|가) /;
+const isFormatLesson = (text) => FORMAT_LESSON.test(String(text || ''));
 
 function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
 
@@ -38,9 +53,11 @@ function makeRule(input, now = new Date()) {
     ...(scope === 'global' ? { layer: LAYERS.has(input.layer) ? input.layer : 'lesson' } : {}),
     kind: KINDS.has(input.kind) ? input.kind : 'feedback',
     target: TARGETS.has(input.target) ? input.target : 'all',
+    ...(CATEGORIES.includes(input.category) ? { category: input.category } : {}),
     text,
     subject: clean(input.subject, 40),
     topic: clean(input.topic, 120),
+    history: [],
     source: input.source && typeof input.source === 'object' ? {
       jobId: clean(input.source.jobId, 40), itemIndex: Number.isInteger(input.source.itemIndex) ? input.source.itemIndex : undefined,
       materialId: clean(input.source.materialId, 40), label: clean(input.source.label, 120), excerpt: clean(input.source.excerpt, 600),
@@ -50,9 +67,22 @@ function makeRule(input, now = new Date()) {
   };
 }
 
-function updateRule(rule, patch, now = new Date()) {
+/**
+ * A change to an item. When the text changes, the sentence it replaces is kept on the item (history: when, by whom —
+ * teacher, review, auto, merge — and why), so a 학습 반복 that rewrites a lesson round after round leaves a record the
+ * teacher can read: the gas original's 8dffe10d was rewritten six times on 2026-10-21 and no version survived.
+ */
+function updateRule(rule, patch, now = new Date(), change = {}) {
   const next = { ...rule, updatedAt: now.toISOString() };
-  if (patch.text !== undefined) { next.text = clean(patch.text, 1500); if (next.text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 }); }
+  if (patch.text !== undefined) {
+    next.text = clean(patch.text, 1500);
+    if (next.text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
+    if (next.text !== rule.text) {
+      next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: change.by || 'teacher', why: clean(change.why, 300), jobId: clean(change.jobId, 40) }].slice(-20);
+    }
+  }
+  if (CATEGORIES.includes(patch.category)) next.category = patch.category;
+  if (patch.topic !== undefined) next.topic = clean(patch.topic, 120);
   if (['approved', 'pending', 'rejected'].includes(patch.status)) next.status = patch.status;
   // Moving up and down: 문제 학습 → 공통 학습 → 지침, and back (to a problem only if it came from one).
   if (SCOPES.has(patch.scope) && (patch.scope !== 'material' || next.source?.materialId)) next.scope = patch.scope;
@@ -89,7 +119,7 @@ function overlap(a, b) {
  * first, see below), then approved topic rules whose source problem looks like this one. At most `limit` rules and
  * ~`maxChars` characters in total; this problem's own feedback always comes first.
  */
-function selectRules(allRules, material, { limit = 40, maxChars = 6000, stage = 'generation' } = {}) {
+function selectRules(allRules, material, { limit = 40, maxChars = 9000, stage = 'generation' } = {}) {
   const approved = allRules.filter((r) => r.status === 'approved' && stageOf(r) === stage);
   const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const byTime = (a, b) => a.createdAt.localeCompare(b.createdAt);
@@ -104,8 +134,9 @@ function selectRules(allRules, material, { limit = 40, maxChars = 6000, stage = 
   const near = new Map();
   const closeness = (r) => near.get(r) ?? near.set(r, overlap(grams([r.text, r.source?.label, r.source?.excerpt].join(' ')), target)).get(r);
   const fromHere = (r) => Number(r.source?.materialId === material.id);
+  const sameTopic = (r) => Number(Boolean(r.topic && material.topic && r.topic === material.topic));
   const lessons = approved.filter((r) => r.scope === 'global' && r.layer !== 'guide' && reaches(r))
-    .sort((a, b) => fromHere(b) - fromHere(a) || Number(!a.subject) - Number(!b.subject) || closeness(b) - closeness(a) || -byTime(a, b));
+    .sort((a, b) => fromHere(b) - fromHere(a) || Number(!a.subject) - Number(!b.subject) || sameTopic(b) - sameTopic(a) || closeness(b) - closeness(a) || -byTime(a, b));
   // A topic feedback belongs to its subject: shared exam wording ("조건", "자료") must not carry a 화학 note to 생명과학.
   const topical = approved.filter((r) => r.scope === 'topic' && !(r.subject && material.subject && r.subject !== material.subject)).map((r) => {
     let score = overlap(grams([r.subject, r.topic, r.source?.excerpt, r.text].join(' ')), target);
@@ -113,13 +144,40 @@ function selectRules(allRules, material, { limit = 40, maxChars = 6000, stage = 
     if (r.source?.materialId && r.source.materialId === material.id) score += 1;
     return { r, score };
   }).filter((x) => x.score >= 0.3).sort((a, b) => b.score - a.score).map((x) => x.r);
+  // Filled in that order and stopped at the first item that does not fit: skipping ahead let short items from far down
+  // the list (another subject's) take the room of this subject's longer ones — on 생명 L64 (2026-10-22) 8 of its 19
+  // 생명과학 lessons were left out while 28 untagged chemistry ones went in.
   const picked = [];
   let chars = 0;
   for (const r of [...guides, ...own, ...lessons, ...topical]) {
-    if (picked.length >= limit || chars + r.text.length > maxChars) continue;
+    if (picked.length >= limit || chars + r.text.length > maxChars) break;
     picked.push(r); chars += r.text.length;
   }
   return picked;
+}
+
+/**
+ * The second pass over older items (once, at start-up): every item gets a history and a category; a lesson the system
+ * wrote on one original and left untagged is tagged with that original's subject and topic, since an untagged lesson
+ * reaches every subject — 28 chemistry lessons went into a 생명과학 set on 2026-10-22. A lesson about notation or
+ * titles, which the system lays out itself, is switched off. Returns how many items changed.
+ */
+function migrateLearningV2(store) {
+  let moved = 0;
+  const materials = new Map(store.materials.all().map((m) => [m.id, m]));
+  for (const r of store.rules.all()) {
+    if (r.v2) continue;
+    const next = { ...r, v2: true };
+    if (!Array.isArray(next.history)) next.history = [];
+    if (!CATEGORIES.includes(next.category)) next.category = categoryOf(next);
+    if (next.scope === 'global' && next.layer !== 'guide' && bySystem(next) && !next.subject) {
+      const m = materials.get(next.source?.materialId);
+      if (m?.subject) { next.subject = m.subject; next.topic = next.topic || m.topic || ''; next.tagged = 'migrated'; }
+    }
+    if (next.status === 'approved' && stageOf(next) === 'generation' && isFormatLesson(next.text)) { next.status = 'pending'; next.offReason = 'format'; }
+    store.rules.put(next); moved++;
+  }
+  return moved;
 }
 
 /** What one analysis gets: the analysis 지침, this problem's analysis feedback, the analysis lessons. */
@@ -218,4 +276,4 @@ function readingHint(corrections, limit = 12) {
     + top.map((c) => `- "${c.wrong}"로 잘못 읽음 → 원본은 "${c.right}" (${c.count}회)`).join('\n');
 }
 
-module.exports = { makeRule, updateRule, selectRules, analysisLearning, migrateLearning, layerOf, stageOf, grams, overlap, readingCorrections, recordCorrections, readingPairs, readingHint };
+module.exports = { makeRule, updateRule, selectRules, analysisLearning, migrateLearning, migrateLearningV2, layerOf, stageOf, categoryOf, bySystem, isFormatLesson, CATEGORIES, CATEGORY_LABEL, grams, overlap, readingCorrections, recordCorrections, readingPairs, readingHint };

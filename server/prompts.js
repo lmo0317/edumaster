@@ -157,7 +157,7 @@ function analyzeText({ hasSolution, sameImage, note, guides = [], feedback = [],
 // 모델 비교 verdicts.
 const VARIATION_CRITERIA = '다음 다섯 항목 중 둘 이상이 원본과 달라야 구조 변형이고, 하나 이하이면 숫자만 바꾼 문제(numbers-only)다. '
   + '(1) 자료의 구성: 실험·대상(표의 행, 그림의 지점·용기)의 수, 또는 자료가 주는 양의 종류(표의 열, 그래프의 축). '
-  + '(2) 숨긴 값의 종류나 풀이에서의 역할: 숨긴 값을 구하려면 다른 값을 먼저 구해야 하게 되는 등 풀이 순서가 달라지면 해당한다. 같은 종류의 값을 다른 행·대상으로 옮겼을 뿐 같은 방법으로 구하면 해당하지 않는다. '
+  + '(2) 숨긴 값의 종류나 풀이에서의 역할: 발문·보기에서 실제로 묻는 미지량의 종류가 달라지거나, 숨긴 값을 구하려면 다른 값을 먼저 구해야 하게 되는 등 풀이 순서가 달라지면 해당한다. 예를 들어 묻는 a가 부피에서 분자량으로 바뀌면 종류 변경이다. 원본에서도 그 분자량을 중간 계산했다는 이유만으로 종류 변경을 무시하지 않는다. 같은 종류의 값을 다른 행·대상으로 옮겼을 뿐 같은 방법으로 구하면 해당하지 않는다. '
   + '(3) 판정의 기준이나 방향: 원본 풀이가 기준으로 삼는 대상(기준 실험·기준 기체·기준 지점·기준 구성원), 가정하는 쪽, 또는 주어진 값과 구하는 값의 방향(원본이 A로 B를 구했으면 B를 주고 A를 구하기). 판정하는 방법이 같아도 기준이 되는 대상이 원본과 다른 자리(다른 실험, 다른 세대의 구성원, 다른 지점)이면 해당한다. '
   + '(4) 원본 자료 밖의 새 실험·대상·조건이 풀이에 꼭 필요함. '
   + '(5) 묻는 대상이 원본에서 구하지 않던 새로운 양: 원본에서 구하던 값들을 다르게 곱하거나 나눈 식, 같은 값의 다른 대상은 해당하지 않는다.';
@@ -505,15 +505,16 @@ const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같�
 - [이미 있는 학습·지침]과 같은 뜻이면 만들지 않는다.
 - 만들지 않는 것: 검토자의 지적이 틀렸거나 문제 설계상 당연한 차이, 한 번 생긴 단순 계산 실수, 표·수식 표기 오류(서버가 고친다).
 - 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common".
-- common이면 subjectOnly: 이 과목의 내용(예: 화학의 기체 양적 관계, 생명과학의 흥분 전도)에 관한 것이면 true, 과목과 관계없는 출제·해설 원칙이면 false.
+- common이면 allSubjects: 문장에 과목 고유 개념(기체·분자량·반응식·몰, 가계도·유전자형·흥분 전도·근육 등)이 하나도 없고 어느 과목의 문제에도 그대로 쓸 수 있을 때만 true. 하나라도 있으면 false(이 과목에만 들어간다).
 - target: 문제 설계에 관한 것이면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
+- category: 무엇에 관한 것인지 하나 — 문제 설계 "design", 수치 잡기 "numbers", 보기·선택지 "choices", 해설 쓰기 "solution".
 - text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓰고, 필요하면 괄호에 짧은 예를 든다. 이번 문제의 수치를 그대로 옮기지 않는다.
 - 변형 문제마다 바뀌는 것(실험 번호 Ⅰ·Ⅱ, 지점 이름, 가정하는 실험, 시냅스 위치)을 지침에 박지 않는다. 역할로 쓴다(예: 'Ⅰ에서 가정하고 Ⅱ로 모순' 대신 '한 실험에서 가정하고 다른 실험으로 모순'). 원본 그대로 박으면 구조를 바꾼 최종 문제가 그 지침을 어기게 된다. 원본 판독의 글자 표기(I와 Ⅰ 같은)도 학습으로 만들지 않는다.
 - 원본 문제와 선생님 해설이 하는 것을 금지하는 항목은 만들지 않는다 (예: 원본이 자극 지점을 문제에 적는데 '자극 지점을 적지 않는다', 선생님 STEP이 같은 값 두 개로 속도를 구하는데 '같은 값을 두지 않는다'). 그런 실수는 원본과 다르게 만든 데서 온 것이니 원본처럼 하라고 쓴다.
 - why에는 이 항목이 막는 실수를 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
-{"items":[{"text":"...","scope":"problem","target":"problem","subjectOnly":false,"why":"..."}]}`;
+{"items":[{"text":"...","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"..."}]}`;
 
 // 학습 반복 (jobs.js 'train'): what Claude·Gemini found in a finished set becomes learning, and the lessons the set
 // was made with may be rewritten or dropped — a lesson that led the writer into the fault is fixed, not added to.
@@ -526,13 +527,13 @@ const LEARN_REVIEW_SYSTEM = `너는 변형 문제 출제를 돕는 AI의 학습 
 - revise·remove는 [쓰인 학습]에서 고칠 수 있다고 표시된 항목만 할 수 있다.
 - 검수자의 지적이 원본 문제와 선생님 해설이 하는 것을 금지하는 것이면 학습으로 만들지 않는다.
 - 표기(화학식의 \\ce, 수식의 $…$, 표의 칸 수), STEP 제목의 글자, 문장 끝 마침표처럼 서버가 맞추는 형식은 학습으로 만들지 않는다. 학습은 문제 설계와 풀이 내용만 다룬다.
-- 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common". common이면 subjectOnly(이 과목 내용에 관한 것이면 true).
-- target: 문제 설계면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
+- 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common". common이면 allSubjects: 문장에 과목 고유 개념(기체·분자량·반응식·몰, 가계도·유전자형·흥분 전도·근육 등)이 하나도 없고 어느 과목의 문제에도 그대로 쓸 수 있을 때만 true.
+- target: 문제 설계면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all". category: 문제 설계 "design", 수치 "numbers", 보기·선택지 "choices", 해설 쓰기 "solution" 중 하나.
 - text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 무엇을 어떻게 하는지 구체적으로 쓰고, 이번 문제의 수치나 변형마다 바뀌는 것(실험 번호, 지점 이름)을 박지 않는다.
 - why에는 이 변경이 막는 결함을 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
-{"revise":[{"id":"...","text":"...","why":"..."}],"remove":[{"id":"...","why":"..."}],"add":[{"text":"...","scope":"problem","target":"problem","subjectOnly":false,"why":"..."}]}`;
+{"revise":[{"id":"...","text":"...","why":"..."}],"remove":[{"id":"...","why":"..."}],"add":[{"text":"...","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"..."}]}`;
 
 function learnReviewText({ material, faults, rules }) {
   return [
