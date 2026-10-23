@@ -585,4 +585,12 @@ test('a final whose table of marks is the original\'s with rows renamed and colu
   assert.deepEqual(numbersReused(hidden, [], original), [], 'the same layout with a cell hidden');
   const practice = { index: 0, label: 'STEP 1 연습', stage: { kind: 'practice' }, problem: permuted.problem };
   assert.deepEqual(numbersReused(practice, [], original), [], 'a practice problem keeps the layout');
+  // The set review failed STEP 1~2 연습 (2026-10-23): STEP 1 연습's table with its cells (가)(나)(다) in another order.
+  const first = { index: 0, label: 'STEP 1 연습', stage: { kind: 'practice' }, problem: { text: marks([['㉠', '×', '×', '×'], ['㉡', '×', '×', '○'], ['㉢', '○', '×', '○'], ['㉣', '○', '○', '×']]) } };
+  const reordered = { index: 1, label: 'STEP 1~2 연습', stage: { kind: 'practice' }, problem: { text: marks([['㉠', '×', '×', '×'], ['㉡', '×', '○', '×'], ['㉢', '○', '○', '×'], ['㉣', '○', '×', '○']]) } };
+  assert.match(numbersReused(reordered, [first], original).join('\n'), /앞 문제\(STEP 1 연습\)의 표와 같은 표입니다: 열\(3개\)의 순서만/);
+  // The same layout under other labels (㉡ and ㉢ swapped) is another practice problem.
+  const relabelled = { ...reordered, problem: { text: marks([['㉠', '×', '×', '×'], ['㉢', '×', '○', '×'], ['㉡', '○', '○', '×'], ['㉣', '○', '×', '○']]) } };
+  assert.deepEqual(numbersReused(relabelled, [first], original), []);
+  assert.deepEqual(numbersReused(first, [first, reordered], original), [], 'a problem is compared with the earlier ones only');
 });

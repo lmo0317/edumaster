@@ -833,10 +833,17 @@ function markTable(text) {
   for (const line of String(text || '').split('\n')) {
     if (!/^\s*\|/.test(line)) continue;
     if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) { rows = []; continue; } // the line above was the header
-    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.replace(/\$|\s/g, '')).slice(1);
-    if (cells.length >= 2 && cells.every((c) => c.length > 0 && c.length <= 2 && !/\d/.test(c))) rows.push(cells);
+    const all = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.replace(/\$|\s/g, ''));
+    const cells = all.slice(1);
+    if (cells.length >= 2 && cells.every((c) => c.length > 0 && c.length <= 2 && !/\d/.test(c))) { cells.label = all[0]; rows.push(cells); }
   }
   return rows.length >= 2 && rows.every((r) => r.length === rows[0].length) ? rows : null;
+}
+// The table under its own row labels with its columns in one order: equal for two tables that differ only in the
+// order of their columns.
+function labelledMarks(m) {
+  const rows = [...m].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  return rows.map((r) => r.label).join(',') + ' ' + rows[0].map((_, j) => rows.map((r) => r[j]).join('')).sort().join('|');
 }
 // The matrix's one form under any order of its rows and of its columns: the smallest column list over the row orders.
 function canonicalMarks(m) {
@@ -861,12 +868,21 @@ const HIDDEN_MARK = /^(?:[?？]|[a-z]|[ⓐ-ⓩ])$/;
  * variation criteria change what is hidden inside the same table, not the table.
  */
 function marksReused(item, prior, material) {
-  if (item.stage.kind !== 'twin') return [];
   const mine = markTable(item.problem.text);
-  if (!mine || mine.some((r) => r.some((c) => HIDDEN_MARK.test(c)))) return [];
+  if (!mine) return [];
+  const notes = [];
+  // The same table with its columns reordered, under the same row labels, is the same problem again: the set's STEP 1~2
+  // 연습 put STEP 1 연습's three cells in another order and the set review failed it (bio-k61, 2026-10-23).
+  const mineLabelled = labelledMarks(mine);
+  const earlier = [['원본', material.problem], ...prior.filter((o) => o.problem && o.index < item.index).map((o) => [`앞 문제(${o.label})`, o.problem])];
+  for (const [whose, problem] of earlier) {
+    const theirs = markTable(problem.text);
+    if (theirs && labelledMarks(theirs) === mineLabelled) notes.push(`${whose}의 표와 같은 표입니다: 열(${mine[0].length}개)의 순서만 바꾼 것이라 같은 값 조합에서 같은 판단이 나옵니다. 행마다 ○/×를 새로 잡습니다.`);
+  }
+  if (notes.length || item.stage.kind !== 'twin' || mine.some((r) => r.some((c) => HIDDEN_MARK.test(c)))) return notes;
   const key = canonicalMarks(mine);
   const theirs = markTable(material.problem.text);
-  if (key === null || !theirs) return [];
+  if (key === null || !theirs) return notes;
   const same = canonicalMarks(theirs) === key || (theirs[0].length === mine.length && theirs.length === mine[0].length && canonicalMarks(transposed(theirs)) === key);
   return same ? ['원본의 표와 같은 표이고 숨긴 칸이 없습니다: 행의 이름표와 열의 순서만 바꾸면 원본의 ○/× 배치가 그대로 나와, 원본과 같은 판단을 같은 순서로 하는 문제입니다. 표의 배치는 원본 그대로 두고, 칸 일부를 문자나 ?로 숨겨 문제의 다른 조건으로 그 칸을 정하게 합니다 (구조 변형의 기준 (1)).'] : [];
 }
