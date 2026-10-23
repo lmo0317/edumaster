@@ -577,11 +577,10 @@ function shapeOptions(text) {
   }
   const next = nextLabel(rows[rows.length - 1]);
   return [
-    `원본 표: 행 ${rows.join(', ')} ${rows.length}개, 숨긴 값 ${hiddenAt.map(([r, i]) => `${rows[r]}의 ${col(i)}`).join(', ')}. 다음 중 둘 이상을 함께 바꾼다:`,
-    moves.length ? `(1) 숨긴 값을 다른 칸으로 옮긴다 — 예: ${moves.join(', ')}. 원래 숨긴 칸에는 수치를 준다.` : '',
-    `(2) 행(실험·대상) 수를 바꾼다 — ${next}를 더해 ${rows.length + 1}개로 하거나, 풀이에 꼭 필요한 ${rows.length - 1}개만 둔다.`,
-    '(3) 원본 풀이가 기준으로 삼는 행이나 판정·계산의 방향(무엇을 주고 무엇을 구하는지)을 원본과 다르게 잡는다 (원본 STEP의 기법은 그대로 필요해야 한다).',
-    '(4) 원본에서 수치로 준 칸 하나를 숨기고 그 값을 묻는 식에 쓴다.',
+    `원본 표: 행 ${rows.join(', ')} ${rows.length}개, 숨긴 값 ${hiddenAt.map(([r, i]) => `${rows[r]}의 ${col(i)}`).join(', ')}. 행 ${rows.length}개와 열은 그대로 두고(${next} 같은 행을 더하면 검수의 '용기·실험 구성' 결함이다), 다음 중 둘 이상을 함께 바꾼다:`,
+    moves.length ? `(1) 숨긴 값을 다른 종류의 칸으로 옮긴다 — 예: ${moves.join(', ')}. 원래 숨긴 칸에는 수치를 준다.` : '',
+    '(2) 원본 풀이가 기준으로 삼는 행이나 판정·계산의 방향(무엇을 주고 무엇을 구하는지)을 원본과 다르게 잡는다. 방향이 바뀐 STEP은 선생님의 같은 관계식을 같은 문장 틀로 반대쪽 값을 구하는 데 쓴다 (원본 STEP의 기법은 그대로 필요해야 한다).',
+    '(3) 선생님 해설의 STEP 결과들을 그대로 써서 나오는, 원본에서 묻지 않던 양을 묻는다 (새 계산 단계가 필요하면 안 된다).',
   ].filter(Boolean).join('\n');
 }
 
@@ -594,7 +593,7 @@ function checkSameShape(material, item, mode) {
   if (!a || !b || !a.hidden.length) return [];
   const same = a.rows === b.rows && a.cols === b.cols && a.hidden.join() === b.hidden.join();
   return [result('variant-shape', '통합 변형: 표 구조와 숨긴 값 위치를 바꿨는지', !same,
-    same ? `행 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 행 수·주는 값과 숨기는 값·판정 방향을 바꾸거나 표 밖의 새 실험·대상을 넣어 구조를 바꿔야 합니다.\n${shapeOptions(material.problem.text)}` : '')];
+    same ? `행 ${a.rows}개, 열 ${a.cols}개, 숨긴 값의 위치까지 원본 표와 같습니다. 묻는 식만 바꾸면 숫자 변형입니다 — 행 수와 열은 그대로 두고, 주는 값과 숨기는 값의 종류나 판정 방향을 바꾸어 구조를 바꿔야 합니다.\n${shapeOptions(material.problem.text)}` : '')];
 }
 
 /** A reaction equation printed in the problem keeps the original's coefficients (DeepSeek set b to 1 so the

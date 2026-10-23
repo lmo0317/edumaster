@@ -143,8 +143,10 @@ function failing(record) {
 }
 
 /** What the reviewers found in the analysis (both of them, one list). */
+// A low note (wording, a title) on the analysis is kept out, as it is on the problems: one blocked the target while the
+// same note on a problem cost nothing.
 function analysisIssues(record) {
-  return Object.values(record.reviews || {}).filter((v) => !v.error).flatMap((v) => finalReview.analysisFaults(v.review?.analysis));
+  return Object.values(record.reviews || {}).filter((v) => !v.error).flatMap((v) => finalReview.analysisFaults(v.review?.analysis)).filter((x) => x.severity !== 'low');
 }
 
 const WORST = { no: 3, partial: 2, ok: 1, na: 0 };

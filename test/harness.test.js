@@ -128,11 +128,13 @@ test('a final in the original table shape is told which cells and rows it can ch
   const hint = harness.shapeOptions(text);
   assert.match(hint, /행 Ⅰ, Ⅱ, Ⅲ 3개, 숨긴 값 Ⅰ의 '상댓값'/);
   assert.match(hint, /Ⅱ의 '상댓값'/, 'the hidden value can move to another row');
-  assert.match(hint, /Ⅳ를 더해 4개/);
+  assert.match(hint, /행 3개와 열은 그대로 두고\(Ⅳ 같은 행을 더하면 검수의 '용기·실험 구성' 결함이다\)/, 'a row added is not a change but a fault');
+  assert.match(hint, /\(2\) 원본 풀이가 기준으로 삼는 행이나 판정·계산의 방향[\s\S]*같은 관계식을 같은 문장 틀로 반대쪽 값/);
   // Rows named (가)~(다) are rows too (the gas original, 2026-10-21: its table had no shape and the check never ran).
   const gas = '| 기체 | 질량(g) | 부피(L) | 전체 원자 수 |\n|---|---|---|---|\n| (가) | 17 | 12 | 3 |\n| (나) | 6 | a | 1 |\n| (다) | 14 | 6 | b |';
   assert.match(harness.shapeOptions(gas), /행 \(가\), \(나\), \(다\) 3개, 숨긴 값 \(나\)의 '부피\(L\)', \(다\)의 '전체 원자 수'/);
-  assert.match(harness.shapeOptions(gas), /\(라\)를 더해 4개/);
+  assert.match(harness.shapeOptions(gas), /행 3개와 열은 그대로 두고\(\(라\) 같은 행을 더하면/);
+  assert.doesNotMatch(harness.shapeOptions(gas), /4개로/);
 });
 
 

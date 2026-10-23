@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 // All model instructions live here so the teacher can read them on the 지침 page.
 // Principle: the model designs problems; code checks arithmetic; an independent solver checks solvability.
 
@@ -155,12 +157,16 @@ function analyzeText({ hasSolution, sameImage, note, guides = [], feedback = [],
 // read the old lists differently (a hidden value moved to another row, an assumption flipped) and finals went round the
 // repair loop as numbers-only (D76's final: 3 designs, 6 repairs, 2026-10-05). The examples follow the hand-checked
 // 모델 비교 verdicts.
-const VARIATION_CRITERIA = '다음 다섯 항목 중 둘 이상이 원본과 달라야 구조 변형이고, 하나 이하이면 숫자만 바꾼 문제(numbers-only)다. '
-  + '(1) 자료의 구성: 실험·대상(표의 행, 그림의 지점·용기)의 수, 또는 자료가 주는 양의 종류(표의 열, 그래프의 축). '
-  + '(2) 숨긴 값의 종류나 풀이에서의 역할: 발문·보기에서 실제로 묻는 미지량의 종류가 달라지거나, 숨긴 값을 구하려면 다른 값을 먼저 구해야 하게 되는 등 풀이 순서가 달라지면 해당한다. 예를 들어 묻는 a가 부피에서 분자량으로 바뀌면 종류 변경이다. 원본에서도 그 분자량을 중간 계산했다는 이유만으로 종류 변경을 무시하지 않는다. 같은 종류의 값을 다른 행·대상으로 옮겼을 뿐 같은 방법으로 구하면 해당하지 않는다. '
-  + '(3) 판정의 기준이나 방향: 원본 풀이가 기준으로 삼는 대상(기준 실험·기준 기체·기준 지점·기준 구성원), 가정하는 쪽, 또는 주어진 값과 구하는 값의 방향(원본이 A로 B를 구했으면 B를 주고 A를 구하기). 판정하는 방법이 같아도 기준이 되는 대상이 원본과 다른 자리(다른 실험, 다른 세대의 구성원, 다른 지점)이면 해당한다. '
-  + '(4) 원본 자료 밖의 새 실험·대상·조건이 풀이에 꼭 필요함. '
-  + '(5) 묻는 대상이 원본에서 구하지 않던 새로운 양: 원본에서 구하던 값들을 다르게 곱하거나 나눈 식, 같은 값의 다른 대상은 해당하지 않는다.';
+// One definition of a final problem's structure, read by the writer, the independent solve, the final review and the
+// set review (review-criteria.md C). Adding a row or a condition used to count as a change while the criteria forbid
+// both ('용기·실험 구성', '형식'): on the gas original (2026-10-21) every final fell on one side or the other — a 4th row,
+// then a reversed STEP called 역방향, then the same table called numbers-only — through 16 sets.
+const VARIATION_CRITERIA = '구조 변형의 기준: 원본의 표·그림 구조(행·용기·실험의 수와 이름표, 열)와 선생님 해설의 STEP 순서는 그대로 두고, 다음 세 항목 중 둘 이상이 원본과 달라야 구조 변형이다. 하나 이하이면 숫자만 바꾼 문제(numbers-only)다. '
+  + '(1) 숨긴 값의 종류나 풀이에서의 역할: 발문·보기에서 실제로 묻는 미지량의 종류가 달라지거나(예: 묻는 a가 부피에서 분자량으로), 숨긴 값을 구하려면 다른 값을 먼저 구해야 하게 되어 풀이 순서가 달라지면 해당한다. 원본에서도 그 값을 중간에 계산했다는 이유로 제외하지 않는다. 같은 종류의 값을 다른 행·대상으로 옮겼을 뿐 같은 방법으로 구하면 해당하지 않는다. '
+  + '(2) 판정의 기준이나 방향: 원본 풀이가 기준으로 삼는 대상(기준 실험·기준 기체·기준 지점·기준 구성원), 가정하는 쪽, 또는 주어진 값과 구하는 값의 방향(원본이 A로 B를 구했으면 B를 주고 A를 구하기). 판정하는 방법이 같아도 기준이 되는 대상이 원본과 다른 자리(다른 실험, 다른 세대의 구성원, 다른 지점)이면 해당한다. '
+  + '(3) 묻는 대상이 원본에서 구하지 않던 새로운 양: 선생님 해설의 STEP 결과들을 그대로 써서 나와야 하고, 새 계산 단계가 필요하면 안 된다. 원본에서 구하던 값들을 다르게 곱하거나 나눈 식, 같은 값의 다른 대상은 해당하지 않는다. '
+  + '해당하지 않는 것: 행·용기·실험을 더하거나 빼는 것(검수 기준의 용기·실험 구성·형식 결함이다), 원본 자료 밖의 새 조건, 보기 조합이나 선택지만 바꾸는 것. '
+  + '방향이 바뀐 STEP의 해설은 선생님의 같은 관계식을 같은 문장 틀로 반대쪽 값을 구하는 데 쓰고, 그 STEP 제목은 선생님 제목 그대로 둔다. 둘 다 결함이 아니다.';
 
 // A practice problem keeps the original's containers or experiments and their labels (an approved lesson,
 // 2026-10-03); the unused-condition check then flagged what a kept container holds, and the two sent C32's practice
@@ -179,7 +185,7 @@ const DESIGN_PRINCIPLES = `[변형 문제 설계 원칙]
 6. 문제 본문에는 학생에게 필요한 인쇄 정보만. 제작 의도는 designNote에만 쓴다. designNote는 최종 문제의 실제 수치와 일치해야 한다.
 7. 연습 문제에서도 목표 STEP 각각의 '핵심 기법'이 풀이에 반드시 필요해야 한다. 그 STEP의 기법(원본 해설의 technique) 없이 답을 낼 수 있으면 실패다. 예: 기법이 '한쪽이 모두 반응했다고 가정 → 다른 실험과 비교해 모순'이면 그 가정·비교 없이는 답이 안 나와야 하고, '막전위 값으로 각 지점을 짝짓기'이면 짝짓기 없이는 답이 안 나와야 한다.
 8. 원본에 없던 정보(원본에서 추론하던 값·대응 관계·이름, 예: 몰질량 값, 한계 반응물, 지점 대응, 전도 속도, 시냅스 위치)를 새로 주어 원본 기법을 우회하게 만들지 않는다. 문제의 형식(표·그림 구조, 묻는 방식, <보기> 형식)은 원본을 따른다.
-9. 해설의 각 STEP 제목(solution.steps[].title)은 원본 STEP 제목을 그대로 쓴다. 실험 번호(Ⅰ, Ⅱ)나 대상 기호의 범위((가)~(다), ㉠~㉢ 등)만 이 문제에 있는 것으로 바꾼다 (예: 대상이 (가), (나)뿐이면 "(가)와 (나)의 …"). 풀이 문장도 원본 해설의 문장 틀(가정·판정·계산을 쓰는 문장의 모양)과 순서를 따르고, 경우 나누기·다른 문자 도입 같은 다른 풀이로 바꾸지 않는다. 문제의 구조를 바꿔 원본과 다른 값을 구하게 되면 그 값을 구하는 문장도 원본 STEP의 같은 자리에서 원본의 문장 틀로 쓴다. 보조 문자(n, m 등)는 원본이 도입한 STEP에서 도입한다.
+9. 해설의 각 STEP 제목(solution.steps[].title)은 원본 STEP 제목을 그대로 쓴다. 실험 번호(Ⅰ, Ⅱ)나 대상 기호의 범위((가)~(다), ㉠~㉢ 등)만 이 문제에 있는 것으로 바꾼다 (예: 대상이 (가), (나)뿐이면 "(가)와 (나)의 …"). 구조 때문에 어느 STEP이 구하는 값이 바뀌어도 그 STEP 제목은 원본 제목 그대로 둔다. 풀이 문장도 원본 해설의 문장 틀(가정·판정·계산을 쓰는 문장의 모양)과 순서를 따르고, 경우 나누기·다른 문자 도입 같은 다른 풀이로 바꾸지 않는다. 문제의 구조를 바꿔 원본과 다른 값을 구하게 되면 그 값을 구하는 문장도 원본 STEP의 같은 자리에서 원본의 문장 틀로 쓴다. 보조 문자(n, m 등)는 원본이 도입한 STEP에서 도입한다.
 10. 문제 첫머리에 정보 없는 소개 문장(뒤에 반응식이나 자료가 없는 "…에 대한 자료이다")을 쓰지 않는다. 반응식은 풀이에 쓰일 때만 싣고, 원본 반응식의 계수 구조(문자 계수 등)를 바꿔 목표 STEP을 건너뛰게 만들지 않는다.`;
 
 const VERIFY_SPEC = `[verification — 서버가 코드로 정확한 분수 계산을 실행한다]
@@ -258,7 +264,7 @@ function stageInstruction(stage, total, mode) {
   (a) 연습 문제에서 새로 물은 값(예: 반응 후 전체 몰수 비, 특정 시점의 막전위)을 최종 풀이의 필수 중간 단계로 넣거나 조건으로 주고 역으로 다른 값을 묻는다.
   (b) 묻는 대상을 바꾼다 (원본이 구한 값을 조건으로 주고, 원본의 조건이던 값을 묻기 등).
   (c) 판정의 방향이나 위치를 바꾼다 (예: 어느 실험에서 가정→모순을 판정하는지, 어느 물질이 남는지, 시냅스가 어느 구간에 있는지).
-  (d) 표·그림의 정보 배치를 바꾼다 (주는 값과 숨기는 값을 바꾸되 원본 기법은 그대로 필요).
+  (d) 같은 표·그림 안에서 주는 값과 숨기는 값을 바꾼다 (행·용기·실험의 수와 이름표, 열은 원본 그대로. 행을 더하거나 빼면 검수에서 '용기·실험 구성' 결함이다). 원본 기법은 그대로 필요해야 한다.
 - 최종 문제는 원본과 같은 수준 이상의 킬러 문제다. 원본 마지막 STEP의 결론(원본이 최종적으로 판정·계산한 종류의 값)까지 가야 답이 나와야 한다. 앞 연습 문제보다 쉬워지면 안 된다.
 - 앞 연습 문제의 질문·수치·선택지·정답을 그대로 다시 쓰지 않는다. 연습 문제에서 구한 관계는 중간 단계로만 쓰고, 최종 질문은 달라야 한다.
 - 통합했다고 조건을 늘리지 않는다. 모든 조건은 풀이에 쓰여야 한다.
@@ -326,9 +332,19 @@ function framesBlock(material) {
     + frames.map((f) => f.frames.map((x, i) => `[틀 ${f.step}-${i + 1}] ${x}`).join('\n')).join('\n');
 }
 
-/** The original and the rules: the same for every design and repair of a set. */
+// The criteria the finished set is reviewed by (scripts/review-criteria.md, B~E), read fresh each time so a change
+// applies to running sets: the writer never saw them and learned each only as a repair note after failing it.
+const CRITERIA_FILE = path.join(__dirname, '..', 'scripts', 'review-criteria.md');
+function criteriaBlock() {
+  try {
+    const text = fs.readFileSync(CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## B\.)/, '').replace(/\n## 심각도[\s\S]*$/, '');
+    return "\n[검수 기준 — 만든 문제와 해설은 Claude·Gemini가 이 기준으로 검수한다. 모두 지키고, E의 '결함이 아닌 것'은 고치려 들지 않는다]\n" + text.trim();
+  } catch { return ''; }
+}
+
+/** The original, the rules and the review criteria: the same for every design and repair of a set. */
 function designContext({ material, rules }) {
-  return materialBlock(material) + framesBlock(material) + '\n' + rulesBlock(rules);
+  return materialBlock(material) + framesBlock(material) + '\n' + rulesBlock(rules) + criteriaBlock();
 }
 
 // Once per original: the teacher's solution as sentence frames, so a variant's solution can be held to them by code.

@@ -66,7 +66,8 @@ function createJobs({ store, llm, config }) {
       // it as learning, then review) — Gemini on every problem made a set take over an hour.
       secondReviewer: job.options?.secondReviewer || '',
       llm: { ...llm, json: (args) => llm.json({ ...args, provider: args.purpose === 'final-review-second' ? args.provider : ctx.routes[args.purpose] || provider }) },
-      effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low' },
+      // The final review runs at the set review's effort (high): at low it passed what Claude and Gemini then failed.
+      effort: { generate: job.options?.effort || 'low', solve: job.options?.effort || 'low', review: 'high' },
       direction: job.options?.direction || '',
       ...(({ maxRepairs, maxRewrites, maxDesigns }) => ({ maxRepairs, maxRewrites, maxDesigns }))(harnessSettings(config.dataDir)),
       save() { job.usage = budget.toJSON(); job.updatedAt = new Date().toISOString(); saveJob(job); extraSave?.(); },

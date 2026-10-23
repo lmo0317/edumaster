@@ -638,14 +638,15 @@ async function finalGate(ctx, item, material, prior, hints = []) {
   const subject = { ...material, id: ctx.job.materialId };
   try {
     const { data } = await ctx.llm.json({
-      purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 24000, vision: true,
+      purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.review || 'high', maxTokens: 24000, vision: true,
       system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
       text: finalReview.itemReviewText(material, item, prior, hints),
       images: originalImages(ctx.store, material),
     });
     const review = (data?.items || [])[0] || null;
     let faults = finalReview.itemFaults(data);
-    ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+    // What it found goes into the log: a 39-minute regeneration failed on 2026-10-23 with seven '1건 — 고침' lines and no way to tell what.
+    ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침: ${faults.map((f) => f.replace(/\s+/g, ' ').slice(0, 90)).join(' / ').slice(0, 300)}` : '통과'}`);
     // What one review passes, a second reviewer looks at too, as the finished set is reviewed by Claude and Gemini: on
     // the eight new originals (2026-10-21) the review here passed 24 of 25 problems and the set's review failed 7 of
     // them — Claude's own review 6, Gemini's 2. The second look is on its own subscription, outside the set's budget; if

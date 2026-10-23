@@ -530,7 +530,7 @@ test('a problem the final review passes is looked at by the second reviewer too,
   assert.deepEqual(calls, ['final-review'], 'what the first review fails is repaired without a second look');
 });
 
-test('the reviewer judges by the criteria and the teacher\'s learning; what the system learned itself is shown for reference only', () => {
+test('the reviewer judges by the criteria, the teacher\'s learning and what the system learned itself; a clash between lessons is a note, not a fault', () => {
   const { reviewSystem } = require('../server/final-review');
   const r = (id, text, from) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: '2026-10-01', source: from ? { from } : undefined });
   const system = reviewSystem({ id: 'm', subject: '생명과학', problem: { text: '' }, steps: [] }, [r('t', '선생님이 쓴 학습'), r('a', '검수에서 AI가 배운 학습', 'review'), r('b', '세트에서 AI가 배운 학습', 'auto')]);
@@ -539,7 +539,29 @@ test('the reviewer judges by the criteria and the teacher\'s learning; what the 
   assert.match(teacher, /선생님이 쓴 학습/);
   assert.doesNotMatch(teacher, /AI가 배운/);
   assert.match(ai, /검수에서 AI가 배운 학습[\s\S]*세트에서 AI가 배운 학습/);
-  assert.match(system, /판정 기준이 아니다/);
-  // '구조' is counted by the same five items as the independent solve.
-  assert.ok(system.includes(require('../server/prompts').VARIATION_CRITERIA));
+  assert.match(system, /선생님 학습과 같이 판정/);
+  assert.match(system, /학습 충돌/);
+  assert.doesNotMatch(system, /판정 기준이 아니다/);
+  // '구조' is counted by the one definition the writer and the independent solve get: the table shape stays, a row
+  // added is not a change, a reversed STEP keeps the teacher's title.
+  const { VARIATION_CRITERIA } = require('../server/prompts');
+  assert.ok(system.includes(VARIATION_CRITERIA));
+  assert.match(VARIATION_CRITERIA, /세 항목 중 둘 이상/);
+  assert.match(VARIATION_CRITERIA, /행·용기·실험을 더하거나 빼는 것\(검수 기준의 용기·실험 구성·형식 결함이다\)/);
+  assert.match(VARIATION_CRITERIA, /STEP 제목은 선생님 제목 그대로 둔다/);
+  assert.doesNotMatch(VARIATION_CRITERIA, /자료의 구성/);
+});
+
+// The writer reads the same criteria the set is reviewed by, so it does not learn each one as a repair note after
+// failing it; a low note on the analysis neither blocks the target nor triggers a fix, as on the problems.
+test('the design context carries the review criteria (B~E) and a low analysis note does not count', () => {
+  const prompts = require('../server/prompts');
+  const material = { id: 'm', title: '기체', subject: '화학', topic: '기체', problem: { text: '문제', choices: [] }, steps: [{ title: 'STEP 1', work: '' }], techniques: [] };
+  const { context } = prompts.generateParts({ material, stage: { kind: 'twin' }, total: 1, mode: 'integrated', prior: [], rules: [], variantNo: 1 });
+  assert.match(context, /\[검수 기준 — 만든 문제와 해설은 Claude·Gemini가 이 기준으로 검수한다/);
+  assert.match(context, /## C\. 최종 문제[\s\S]*## E\. 결함이 아닌 것/);
+  assert.doesNotMatch(context, /## 심각도|## A\. 분석/);
+  const { analysisIssues } = require('../server/set-check');
+  const record = { reviews: { 'claude-cli': { review: { analysis: { verdict: 'issues', issues: [{ severity: 'low', rule: '용어', detail: '표현' }, { severity: 'mid', rule: '판독', detail: '값' }] } } } } };
+  assert.deepEqual(analysisIssues(record).map((x) => x.rule), ['판독']);
 });
