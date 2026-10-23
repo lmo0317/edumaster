@@ -1540,7 +1540,7 @@
   // The subject tags in use (set on each paint): a subject's branch is s<index>, one kind of it s<index>-<category>, so
   // the branch sits in the address as plain letters (the router reads #/learn/map/<branch>).
   let lmSubjects = [];
-  const lmSubjectNode = (node) => { const m = /^s(d+)(?:-([a-z]+))?$/.exec(node); return m ? { subject: lmSubjects[Number(m[1])] || '', cat: m[2] || '' } : null; };
+  const lmSubjectNode = (node) => { const m = /^s(\d+)(?:-([a-z]+))?$/.exec(node); return m ? { subject: lmSubjects[Number(m[1])] || '', cat: m[2] || '' } : null; };
   // A branch is a filter over the items. s<i> is one subject's every-problem items, s<i>-<category> one kind of them;
   // nosubj the untagged ones (they reach every subject); p-<id> one problem's own.
   const lmFilter = (node) => {
