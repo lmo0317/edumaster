@@ -826,11 +826,57 @@ function hiddenValues(text, steps) {
   return out;
 }
 
+// A table of marks (○/×, +/−, ?) as the matrix of its data cells, header and label column dropped; null when the text
+// holds no such table.
+function markTable(text) {
+  let rows = [];
+  for (const line of String(text || '').split('\n')) {
+    if (!/^\s*\|/.test(line)) continue;
+    if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) { rows = []; continue; } // the line above was the header
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.replace(/\$|\s/g, '')).slice(1);
+    if (cells.length >= 2 && cells.every((c) => c.length > 0 && c.length <= 2 && !/\d/.test(c))) rows.push(cells);
+  }
+  return rows.length >= 2 && rows.every((r) => r.length === rows[0].length) ? rows : null;
+}
+// The matrix's one form under any order of its rows and of its columns: the smallest column list over the row orders.
+function canonicalMarks(m) {
+  if (m.length > 7) return null;
+  const perms = (xs) => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])));
+  let best = null;
+  for (const p of perms(m.map((_, i) => i))) {
+    const cols = m[0].map((_, j) => p.map((i) => m[i][j]).join('')).sort().join('|');
+    if (best === null || cols < best) best = cols;
+  }
+  return best;
+}
+const transposed = (m) => m[0].map((_, j) => m.map((r) => r[j]));
+/**
+ * A table of marks that is the original's (or an earlier problem's) with its rows renamed and its columns reordered is the
+ * same table: on bio-k61 (2026-10-23) the first set's final and the next set's final each mapped onto the original's
+ * ○/× table (㉠~㉣ and (가)~(다) permuted), one past the final review, one failed by the set review as numbers-only;
+ * the number checks above see no number in it.
+ */
+function marksReused(item, prior, material) {
+  const mine = markTable(item.problem.text);
+  if (!mine) return [];
+  const key = canonicalMarks(mine);
+  if (key === null) return [];
+  const notes = [];
+  const against = [['원본', material.problem], ...(item.stage.kind === 'twin' ? prior.filter((o) => o.problem && o.index !== item.index).map((o) => [`앞 문제(${o.label})`, o.problem]) : [])];
+  for (const [whose, problem] of against) {
+    const theirs = markTable(problem.text);
+    if (!theirs) continue;
+    const same = canonicalMarks(theirs) === key || (theirs[0].length === mine.length && theirs.length === mine[0].length && canonicalMarks(transposed(theirs)) === key);
+    if (same) notes.push(`${whose}의 표와 같은 표입니다: 행의 이름표와 열의 순서만 바꾸면 ${whose}의 ○/× 배치가 그대로 나옵니다. 배치를 새로 잡아 ${whose}과 다른 판단이 나오게 합니다.`);
+  }
+  return notes;
+}
+
 /** Experiment rows whose given amounts match the original's or (for the final problem) an earlier problem's. */
 function numbersReused(item, prior, material) {
   const vocab = readingVocabulary(material);
   const mine = designedRows(item.problem.text, vocab);
-  const notes = scaledOrKept(item, prior, material, vocab);
+  const notes = [...scaledOrKept(item, prior, material, vocab), ...marksReused(item, prior, material)];
   if (!mine.length) return notes;
   // The value a hidden letter comes to is the answer the student works out: the same as the original's (a = 12 asked
   // again, chem-c32-molar-volume 2026-10-19: the final review found it in a third round, past the repairs) is a
