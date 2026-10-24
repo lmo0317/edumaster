@@ -128,9 +128,16 @@ function index(jobs, { dataDir = null, exclude = null } = {}) {
   return out.sort(newestFirst);
 }
 
-// A reviewer words the same fault differently each time; two review faults are the same kind when most of the shorter
-// one's letter pairs are in the other.
-const sameReviewFault = (a, b) => overlap(a, b) >= 0.5;
+// A reviewer words the same fault differently each time ("원본과 달라진 항목이 (2) 하나뿐이어서 숫자만 바꾼 문제다", "구조 변형
+// 기준 세 항목 중 하나만 원본과 다르므로 숫자만 바꾼 문제다", "원본과 다른 항목이 하나도 없어 숫자만 바꾼 문제이다"), then
+// gives evidence particular to the problem. Two review faults are the same kind when most of the shorter one's letter
+// pairs are in the other, or when their first sentences — the verdict, before the evidence — mostly agree once labels,
+// numbers and variables are taken out. Measured over 123 sets on 2026-10-25: the "numbers-only final" kind alone was 24
+// records in 20 sets of 13 originals, split by wording into eleven groups and so never offered as one recurring kind.
+const firstSentence = (detail) => String(detail || '').replace(/\$[^$]*\$/g, ' ').split(/(?<=[.다요음임])\s+|[:：]\s/)[0].slice(0, 120);
+const kindText = (text) => String(text || '').replace(/[㉠-㉿ⓐ-ⓩ①-⑮]|\(\d\)|\d+(?:[.,]\d+)?|[a-zA-Z]_?\d*/g, ' ');
+const gramsOfReview = (detail) => ({ full: grams(detail), first: grams(kindText(firstSentence(detail))) });
+const sameReviewFault = (a, b) => overlap(a.full, b.full) >= 0.5 || overlap(a.first, b.first) >= 0.35;
 
 /** Records grouped by kind: {rule, detail (the newest), n, sets, materials, …}. */
 function groupsOf(records) {
@@ -139,11 +146,11 @@ function groupsOf(records) {
   for (const r of [...records].sort(newestFirst)) {
     let g = byKey.get(r.key);
     if (!g && r.from === 'review') {
-      const mine = grams(r.detail);
+      const mine = gramsOfReview(r.detail);
       g = groups.find((x) => x.rule === r.rule && x.reviewGrams && sameReviewFault(x.reviewGrams, mine)) || null;
     }
     if (!g) {
-      g = { key: r.key, rule: r.rule, detail: r.detail, label: r.label, at: r.at, n: 0, sets: new Set(), materials: new Set(), subjects: new Set(), topics: new Set(), stages: new Set(), reviewers: new Set(), fixed: 0, example: null, reviewGrams: r.from === 'review' ? grams(r.detail) : null };
+      g = { key: r.key, rule: r.rule, detail: r.detail, label: r.label, at: r.at, n: 0, sets: new Set(), materials: new Set(), subjects: new Set(), topics: new Set(), stages: new Set(), reviewers: new Set(), fixed: 0, example: null, reviewGrams: r.from === 'review' ? gramsOfReview(r.detail) : null };
       byKey.set(r.key, g);
       groups.push(g);
     }
@@ -195,12 +202,12 @@ function setStats(job, earlier, review = null) {
   const mine = recordsOf(job, review);
   const seen = new Set(earlier.map((r) => r.key));
   const ownSeen = new Set(earlier.filter((r) => r.materialId === job.materialId).map((r) => r.key));
-  const reviewed = earlier.filter((r) => r.from === 'review').map((r) => ({ g: grams(r.detail), own: r.materialId === job.materialId }));
+  const reviewed = earlier.filter((r) => r.from === 'review').map((r) => ({ g: gramsOfReview(r.detail), rule: r.rule, own: r.materialId === job.materialId }));
   const repeatOf = (r) => {
     if (seen.has(r.key)) return ownSeen.has(r.key) ? 'own' : 'other';
     if (r.from !== 'review') return '';
-    const g = grams(r.detail);
-    const hit = reviewed.filter((x) => sameReviewFault(x.g, g));
+    const g = gramsOfReview(r.detail);
+    const hit = reviewed.filter((x) => x.rule === r.rule && sameReviewFault(x.g, g));
     return hit.length ? (hit.some((x) => x.own) ? 'own' : 'other') : '';
   };
   let repeat = 0, own = 0;

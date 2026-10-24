@@ -106,6 +106,30 @@ test('a finished set is measured against the record: faults of a kind seen befor
   assert.equal(faults.setStats(again, earlier).own, 1);
 });
 
+test('a review fault is the kind its first sentence says, whatever the evidence after it: the numbers-only final of three originals is one recurring kind', () => {
+  // Three reviewers' wordings of the same verdict on the live data, 2026-10-24 (가계도, 골격근 두 원본); each goes on with the
+  // problem's own evidence, so the full texts share few letter pairs and the 28-letter keys differ.
+  const rep = (text, at) => ({ kind: 'repair', design: 1, at, failures: [text], problem: '첫 설계' });
+  const jobs = [
+    job('l64', 'mL', { topic: '가계도', title: '가계도', at: '2026-10-24T12:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 원본과 달라진 항목은 (1) 하나뿐이다. (1)은 원본이 수치 2로 준 ㉤ 칸을 ⓐ로 숨겨 ㄴ에서 판정하게 했으므로 해당한다. (2)는 해당하지 않는다. STEP 1의 기준 구성원은 원본처럼 ㉠(=1)이고 가정→모순의 방향도 같다.', '2026-10-24T12:30:00Z')] })] }),
+    job('e38', 'mE', { topic: '근수축', title: '골격근 1', at: '2026-10-24T13:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 원본과 다른 항목이 (2) 하나뿐이어서 숫자만 바꾼 문제(numbers-only)입니다. (1) 해당하지 않습니다. 숨긴 값은 원본과 같은 종류(한 시점의 X 길이)입니다. 이 값을 t2 행에서 t1 행으로 옮겼을 뿐입니다.', '2026-10-24T13:30:00Z')] })] }),
+    job('c38', 'mC', { subject: '화학', topic: '밀도', title: '기체의 밀도', at: '2026-10-24T09:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 원본과 다른 항목이 하나도 없어 숫자만 바꾼 문제(numbers-only)이다. ① 숨긴 값: 학생이 받는 표에 ?·문자 칸이 없다. ② 기준 실험: 원본처럼 (가)에서 시작한다.', '2026-10-24T09:30:00Z')] })] }),
+    // Another 구조 fault — the table's rows and columns copied — is a kind of its own.
+    job('n1', 'mN', { topic: '흥분 전도', title: '신경', at: '2026-10-24T10:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 표 구성이 원본과 같다(A·B 두 행, Ⅰ~Ⅳ, A 행의 값은 -80·0·0·?). 지점 이름만 바뀌었다.', '2026-10-24T10:30:00Z')] })] }),
+  ];
+  const history = faults.index(jobs);
+  const groups = faults.groupsOf(history).filter((g) => g.rule === '구조');
+  assert.deepEqual(groups.map((g) => g.sets.size).sort(), [1, 3], 'three wordings of the verdict are one kind; the copied table another');
+  // A new 생명과학 original's final problem gets it as a recurring kind of its subject, and its own such fault counts as a repeat.
+  const e37 = { id: 'mF', subject: '생명과학', topic: '근수축' };
+  const offered = faults.forItem(history, e37, item(1, twin));
+  assert.deepEqual(offered.map((e) => [e.where, e.rule, e.sets, e.count]), [['같은 단원의 다른 원본', '구조', 3, 3]]);
+  const made = job('e37', 'mF', { at: '2026-10-25T00:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 구조 변형 기준 세 항목 중 하나만 원본과 다르므로 숫자만 바꾼 문제다. (2)는 해당한다. A대 길이와 두 비를 모두 준 기준 행이 F₁에서 F₂로 바뀌었다.', '2026-10-25T00:30:00Z')] })] });
+  assert.deepEqual(faults.setStats(made, history), { faults: 1, repeat: 1, own: 0, lesson: 0, rate: 100 });
+  // Verdicts that only share the rule name stay apart: a different first sentence under the same rule is another kind.
+  assert.equal(faults.setStats(job('n2', 'mF', { at: '2026-10-25T01:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [구조 · mid] 위치 눈금 0, 6, 15, 21 cm는 원본 0, 2, 5, 7 cm의 정확히 3배이다.', '2026-10-25T01:30:00Z')] })] }), history).repeat, 0);
+});
+
 test('a fault that only restates a lesson the system wrote itself is a note, not what holds a problem back or costs its score', () => {
   const ai = '합답형 문항은 보기 하나를 판정했을 때 남는 선택지들이 모두 같은 보기를 포함하거나 모두 빼서 나머지 보기를 판정할 필요가 없어지는지 확인한다.';
   const teacher = '해설에서 가정→모순 판정을 선생님 순서대로 쓴다.';
