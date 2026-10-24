@@ -1266,7 +1266,10 @@
     const where = (r) => ({ material: '이 문제', topic: '유형' }[r.scope] || '모든 문제');
     const round = train?.rounds?.find((r) => r.setId === job.id);
     const learned = job.learned || [];
-    return `<section class="panel"><h2>이 세트에 들어간 학습 ${job.rules.length}개</h2>
+    // The set against the record of earlier sets' faults (server/faults.js): the same fault again is what learning should end.
+    const fs = job.faultStats;
+    const stats = !fs ? '' : `<section class="panel"><h2>결함 기록</h2><p>${fs.faults ? `이 세트에서 걸린 결함 ${fs.faults}건 중 전에 나온 종류 <b>${fs.repeat}건 (${fs.rate}%)</b>, 이 원본의 지난 세트에서 ${fs.own}건, 지시문의 학습이 이미 말한 것 ${fs.lesson}건.` : '걸린 것 없이 완성했습니다.'} <span class="muted small">지난 세트의 결함은 문제를 만들 때와 최종 검수 때 기록으로 들어갑니다.</span></p></section>`;
+    return `${stats}<section class="panel"><h2>이 세트에 들어간 학습 ${job.rules.length}개</h2>
         ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${where(r)}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : '<p class="muted">없습니다.</p>'}</section>
       <section class="panel"><h2>이 세트를 만들며 배운 학습</h2>
         ${learned.length ? `<ul class="lt-ul">${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''}</li>`).join('')}</ul><p class="muted small">다음 세트부터 들어갑니다. 학습 메뉴에서 고치거나 끌 수 있습니다.</p>` : '<p class="muted">새로 배운 학습은 없었습니다.</p>'}</section>

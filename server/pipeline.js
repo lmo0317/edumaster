@@ -6,6 +6,7 @@ const { selectRules, analysisLearning, layerOf, stageOf, readingHint, readingPai
 const { materialKey: analysisKey } = require('./material-version');
 const harness = require('./harness');
 const finalReview = require('./final-review');
+const faults = require('./faults');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
 const fixMath = (s) => s.replace(/\\ce\{([^{}]*)\}/g, (m, body) => (body.includes('$') ? `\\ce{${body.replace(/\$/g, '')}}` : m));
@@ -636,15 +637,20 @@ async function finalGate(ctx, item, material, prior, hints = []) {
   }
   ctx.log(`${item.label}: 최종 검수 기준으로 검토 중`);
   const subject = { ...material, id: ctx.job.materialId };
+  const allRules = ctx.store?.rules?.all() || [];
+  // The system's own lessons are advice to the writer, not criteria (final-review.js, advisoryTexts).
+  const advisory = finalReview.advisoryTexts(subject, allRules, ctx.generationRules ?? ctx.job.rules ?? null);
+  // What this original (and its topic) was faulted for before: the reviewer checks those first (server/faults.js).
+  const known = (ctx.priorFaults || []).filter((e) => e.own || e.where === '같은 단원의 다른 원본').slice(0, 6);
   try {
     const { data } = await ctx.llm.json({
       purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.review || 'high', maxTokens: 24000, vision: true,
-      system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
-      text: finalReview.itemReviewText(material, item, prior, hints),
+      system: finalReview.reviewSystem(subject, allRules, ctx.generationRules ?? ctx.job.rules ?? null),
+      text: finalReview.itemReviewText(material, item, prior, hints, known),
       images: originalImages(ctx.store, material),
     });
     const review = (data?.items || [])[0] || null;
-    let faults = finalReview.itemFaults(data);
+    let faults = finalReview.itemFaults(data, { advisory });
     // What it found goes into the log: a 39-minute regeneration failed on 2026-10-23 with seven '1건 — 고침' lines and no way to tell what.
     ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침: ${faults.map((f) => f.replace(/\s+/g, ' ').slice(0, 90)).join(' / ').slice(0, 300)}` : '통과'}`);
     // What one review passes, a second reviewer looks at too, as the finished set is reviewed by Claude and Gemini: on
@@ -657,11 +663,11 @@ async function finalGate(ctx, item, material, prior, hints = []) {
         ctx.log(`${item.label}: 두 번째 검수자(${ctx.secondReviewer})가 같은 기준으로 검토 중`);
         ({ data: second } = await ctx.llm.json({
           purpose: 'final-review-second', provider: ctx.secondReviewer, jobId: ctx.job.id, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }), signal: ctx.signal, maxTokens: 24000, vision: true,
-          system: finalReview.reviewSystem(subject, ctx.store?.rules?.all() || [], ctx.generationRules ?? ctx.job.rules ?? null),
-          text: finalReview.itemReviewText(material, item, prior, hints),
+          system: finalReview.reviewSystem(subject, allRules, ctx.generationRules ?? ctx.job.rules ?? null),
+          text: finalReview.itemReviewText(material, item, prior, hints, known),
           images: originalImages(ctx.store, material),
         }));
-        faults = finalReview.itemFaults(second).map((f) => `[두 번째 검수] ${f}`);
+        faults = finalReview.itemFaults(second, { advisory }).map((f) => `[두 번째 검수] ${f}`);
         ctx.log(`${item.label}: 두 번째 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
@@ -673,7 +679,7 @@ async function finalGate(ctx, item, material, prior, hints = []) {
     (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
     ctx.save();
     const judged = faults.length && second ? second : data;
-    return { faults, notes: faults.length ? [] : [...finalReview.itemNotes(data), ...(second ? finalReview.itemNotes(second) : [])], review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(judged) };
+    return { faults, notes: faults.length ? [] : [...finalReview.itemNotes(data, { advisory }), ...(second ? finalReview.itemNotes(second, { advisory }) : [])], review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(judged, { advisory }) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
@@ -1317,6 +1323,10 @@ async function fillRuleNotes(ctx, item, rules) {
   }
 }
 
+// An attempt that found faults keeps the problem as it was then, so the record of faults (server/faults.js) can show the
+// next writer what the fault looked like and, once the problem passed, what it became.
+const faulted = (kind, design, failures, item) => ({ kind, design, at: new Date().toISOString(), failures, ...(item.problem?.text ? { problem: String(item.problem.text).slice(0, 1500) } : {}) });
+
 /** One design of a problem: generated, checked, repaired (problem) and rewritten (solution) until it passes or stops
  *  getting better. Mutates `item`; returns its version, the last check and what is still wrong. */
 async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples, design }) {
@@ -1329,7 +1339,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   for (let tries = 0; ; tries++) {
     // A designer that returns no problem gets one more design told that giving up is not an answer.
     const feedback = lostAnswer ? extraFeedback : tries ? [extraFeedback, '지난 설계는 문제 없이 "만들지 못함"으로 끝났습니다. 설계를 중단하지 말고 반드시 완성된 문제를 내야 합니다.'].filter(Boolean).join('\n') : extraFeedback;
-    const designPrompt = prompts.generateParts({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback: feedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples), direction: ctx.direction, shapeHint });
+    const designPrompt = prompts.generateParts({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback: feedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples), direction: ctx.direction, shapeHint, priorFaults: ctx.priorFaults || [] });
     let data, generateShape = [];
     try {
       ({ data, shapeFixes: generateShape = [] } = await ctx.llm.json({
@@ -1417,7 +1427,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     for (let pre = 0; ctx.precheck && pre < 2 && !ctx.signal?.aborted; pre++) {
       const faults = await codeFaults(item, material, mode, prior, ctx);
       if (!faults.length) break;
-      item.attempts.push({ kind: 'precheck', design, at: new Date().toISOString(), failures: faults });
+      item.attempts.push(faulted('precheck', design, faults, item));
       ctx.log(`${item.label}: 코드 검사에서 ${faults.length}건 — 독립 풀이 전에 설계자가 고침`);
       await repairWith(faults, null);
     }
@@ -1456,7 +1466,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     // — no redesign, no new solve. Outside a lean run the current solution is what gets rewritten.
     if (check.rewriteNotes.length && !repairReasons(check).length && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(2 + (ctx.reserveCalls || 0)))) {
       rewrites++;
-      item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: check.rewriteNotes });
+      item.attempts.push(faulted('rewrite', design, check.rewriteNotes, item));
       if (!lean) item.outline = item.solution;
       // The judge's notes are rewritten by the designer in a mixed run (free), then held to the frames again.
       writeNotes = await writeSolution(ctx, item, material, rules, check.rewriteNotes, ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
@@ -1473,7 +1483,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     if (check.gate?.solutionOnly && rewrites < (ctx.maxRewrites ?? 2) && (!ctx.budget.affords || ctx.budget.affords(3 + (ctx.reserveCalls || 0)))) {
       rewrites++;
       const notes = check.gate.faults.map((n) => '최종 검수: ' + n);
-      item.attempts.push({ kind: 'rewrite', design, at: new Date().toISOString(), failures: notes });
+      item.attempts.push(faulted('rewrite', design, notes, item));
       if (!lean) item.outline = item.solution;
       writeNotes = await writeSolution(ctx, item, material, rules, notes, ctx.routes?.['polish-solution'] && !lean ? 'polish-solution' : 'write-solution');
       await polish();
@@ -1491,7 +1501,7 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     }
     round++;
     lastRepair = repairReasons(check);
-    item.attempts.push({ kind: 'repair', design, at: new Date().toISOString(), failures: lastRepair });
+    item.attempts.push(faulted('repair', design, lastRepair, item));
     item.status = 'repairing'; item.verification = check.verification; ctx.save();
     await repairWith(lastRepair, check.verification.blind);
     await polish();
@@ -1506,9 +1516,10 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
 /** Makes one problem without stopping for the teacher: up to ctx.maxDesigns designs (each repaired and rewritten), the
  *  best one kept. What was found and fixed along the way is in item.attempts (the report); what is still left is in
  *  item.problems (the answer cannot be trusted) or item.warnings (the problem is usable). Mutates `item`. */
-async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [] }) {
+async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedback, previous, examples: allExamples = [], priorFaults = [] }) {
   // A remake/check job has a different job object; its writer and final reviewers still use the same rule snapshot.
-  ctx = { ...ctx, generationRules: rules };
+  // What earlier sets were faulted for (faults.forItem) goes to this problem's writer and its final review alike.
+  ctx = { ...ctx, generationRules: rules, priorFaults };
   const examples = examplesFor(item, allExamples);
   item.examplesUsed = examples.length;
   item.attempts = [];
@@ -1526,7 +1537,7 @@ async function produceItem(ctx, { material, item, prior, rules, mode, extraFeedb
       }
       if (best) {
         ctx.log(`${item.label}: 고쳐도 ${best.reasons.length}건이 남아 새로 설계합니다`);
-        item.attempts.push({ kind: 'redesign', design, at: new Date().toISOString(), failures: left.problems });
+        item.attempts.push(faulted('redesign', design, left.problems, item));
       }
       item.redesigned = design - 1;
     }
@@ -1808,6 +1819,9 @@ async function runGeneration(ctx) {
   const rules = job.rules;
   // What the teacher adopted from earlier sets of this original (examples for the same stages).
   const examples = adoptedExamples(store, job.materialId, {});
+  // What every earlier set (of this original and the others) was faulted for, with its reviews: the data each problem's
+  // writer and reviewer get (faults.forItem), and what this set is measured against when it is done (faults.setStats).
+  const history = faults.index(store.jobs.all(), { dataDir: store.dataDir, exclude: job.id });
   if (ctx.finalGate) {
     if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') await reviewAnalysis(ctx, material);
     if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') {
@@ -1828,7 +1842,8 @@ async function runGeneration(ctx) {
       ctx.reserveCalls = Math.floor(job.items.filter((x) => x.index > item.index && !['passed', 'warning', 'needs_review'].includes(x.status))
         .reduce((s, x) => s + Math.max(3, share * weight(x)), 0));
       // A problem a 학습 반복 carried over to remake: the reviewers' faults are its note, its last version what to fix.
-      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples, extraFeedback: item.remakeNote, previous: item.remakeNote ? item.history?.[0] : undefined });
+      await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples, extraFeedback: item.remakeNote, previous: item.remakeNote ? item.history?.[0] : undefined,
+        priorFaults: faults.forItem(history, { ...material, id: job.materialId }, item) });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
       ctx.log(`${item.label}: 실패 — ${e.message}`);
@@ -1839,6 +1854,10 @@ async function runGeneration(ctx) {
     const stored = store.rules.get(rule.id);
     if (stored) store.rules.put({ ...stored, applied: (stored.applied || 0) + 1 });
   }
+  // The set against the record: how many of its faults were kinds already seen (the number a learning system drives down).
+  job.faultStats = faults.setStats(job, history);
+  ctx.log(faults.statsLine(job.faultStats));
+  ctx.save();
   if (!ctx.signal.aborted) await learnFromSet(ctx);
 }
 

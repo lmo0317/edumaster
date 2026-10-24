@@ -122,7 +122,7 @@ async function reviewSet({ store, set, call, providers = REVIEWERS, images, save
   const rejected = completed.find((r) => r.status === 'rejected');
   if (rejected) throw rejected.reason;
   record.done = true;
-  record.checklist = checklist(record);
+  record.checklist = checklist(record, advisoryOf(store, set));
   save(record);
   return record;
 }
@@ -133,7 +133,7 @@ async function reviewSet({ store, set, call, providers = REVIEWERS, images, save
  * same final of bio-k61 passed the set review in one round and was failed in the next, by the same reviewer, over two
  * lessons (2026-10-23) — a verdict that flips on unchanged content is noise, and acting on it remade a passed problem.
  */
-function failing(record, settled = null) {
+function failing(record, settled = null, advisory = []) {
   const out = [];
   (record.set?.items || []).forEach((it, i) => {
     if (settled?.has(it.index)) return;
@@ -141,7 +141,7 @@ function failing(record, settled = null) {
     for (const [p, v] of Object.entries(record.reviews || {})) {
       if (v.error || !v.review) continue;
       const mine = finalReview.matchItem(v.review, it, record.set.items);
-      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }).map((f) => `[${NAME[p] || p}] ${f}`));
+      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }, { advisory }).map((f) => `[${NAME[p] || p}] ${f}`));
     }
     if (faults.length) out.push({ index: it.index, label: it.label, faults });
   });
@@ -160,7 +160,7 @@ const WORST = { no: 3, partial: 2, ok: 1, na: 0 };
  * The 모델 비교 checklist (final-review.js CHECKLIST) for each reviewer: a row is as good as its worst problem, with
  * which problem fell short; the score counts each problem's ✓ on each row as 1 and △ as half, – not at all.
  */
-function checklist(record) {
+function checklist(record, advisory = []) {
   const rows = finalReview.CHECKLIST.flatMap((g) => g.items);
   const items = record.set?.items || [];
   const models = {};
@@ -170,7 +170,7 @@ function checklist(record) {
     const per = items.map((it) => {
       const mine = finalReview.matchItem(v.review, it, items);
       if (!mine) return Object.fromEntries(rows.filter((r) => !r.analysis).map((r) => [r.id, ['no', '문항 검수 결과 누락·불일치']]));
-      return finalReview.checklistOf(mine, { final: it.kind === 'twin' });
+      return finalReview.checklistOf(mine, { final: it.kind === 'twin', advisory });
     });
     const marks = {};
     // The score counts every problem's own mark on each row (and the analysis'), not a row's worst: with the worst, one
@@ -206,9 +206,12 @@ const scores = (record) => Object.fromEntries(REVIEWERS.map((p) => [p, record.ch
  * Whether a reviewed set reached the 학습 반복 target: every reviewer at the target, no problem failing, the analysis
  * unfaulted. A reviewer that failed leaves the set unjudged, so the other's score alone never reaches it.
  */
-const reaches = (record, target, settled = null) => !record.stale && !record.interrupted && record.set?.items?.length > 0 && Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record, settled).length && !analysisIssues(record).length;
+const reaches = (record, target, settled = null, advisory = []) => !record.stale && !record.interrupted && record.set?.items?.length > 0 && Object.values(scores(record)).every((s) => s != null && s >= target) && !failing(record, settled, advisory).length && !analysisIssues(record).length;
+
+/** The system's own lessons among the rules the set was made with: advice to the writer, not what the review judges by. */
+const advisoryOf = (store, set) => finalReview.advisoryTexts(set.material || store.materials.get(set.materialId) || {}, store.rules.all(), set.rules?.length ? set.rules : null);
 
 /** The remake's note: what the reviewers found, for the writer to fix. */
 const remakeNote = (f) => `Claude·Gemini 검수에서 이 문제에 걸린 점입니다. 모두 고친 문제를 새로 만듭니다.\n${f.faults.map((x) => `- ${x}`).join('\n')}`;
 
-module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, invalidateCheck, recoverChecks, contentKey, matchesSet, normalizeReview, checkRecord, reviewSet, failing, analysisIssues, checklist, scores, reaches, remakeNote };
+module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, invalidateCheck, recoverChecks, contentKey, matchesSet, normalizeReview, checkRecord, reviewSet, failing, analysisIssues, checklist, scores, reaches, advisoryOf, remakeNote };

@@ -6,7 +6,7 @@
 // 2026-10-19: "문제 생성할 때 대충 만들고 나중에 검수할 때 문제 있다 그러고 … 이거 반복").
 const fs = require('node:fs');
 const path = require('node:path');
-const { selectRules, analysisLearning, layerOf } = require('./learning');
+const { selectRules, analysisLearning, layerOf, grams } = require('./learning');
 const { notateMaterial } = require('./harness');
 // The final review counted '구조' by feel while the independent solve counts these five items: L64's final, the
 // original's table and three kinds of 보기 with members regrouped, passed the one and failed the other (2026-10-22).
@@ -24,9 +24,31 @@ const RULE_NAMES = [...new Set([...ANALYSIS_NAMES, ...ITEM_NAMES])].join(', ');
 // Learning the system wrote itself from reviews and sets (from 'review', 'auto', 'eval') guides the writer; the reviewer
 // is shown it but judges by the criteria and the teacher's own items. Judged as criteria, such lessons piled up against
 // one another — on 생명 D50 (2026-10-22) one said keep A's two 0 mV points and another change its −80, the review
-// failed each design on whichever it broke, and the set never finished.
+// failed each design on whichever it broke, and the set never finished. And a lesson learned from one reviewer's fault
+// became the bar the same reviewer then held every design to: on bio-k61 (2026-10-23) "the hidden cell must be settled
+// only at STEP 2" failed the final of six rounds running, 2.5 hours each. So what passes is decided by the criteria and
+// the teacher's items alone; a fault that only restates a system lesson is kept as a note (advisoryTexts, demote).
 const BY_SYSTEM = new Set(['review', 'auto', 'eval']);
 const bySystem = (r) => BY_SYSTEM.has(r.source?.from);
+
+/** The system's own lessons among the rules a set was made with — advice to the writer, not criteria. */
+function advisoryTexts(material, allRules, generationRules = null) {
+  const full = new Map(allRules.map((r) => [r.id, r]));
+  return (generationRules || selectRules(allRules, material)).filter((r) => bySystem(full.get(r.id) || r)).map((r) => r.text);
+}
+// A fault is a restated lesson when most of the lesson's letter pairs are in its text (the reviewer quotes it).
+const coverage = (lesson, detail) => { const a = grams(lesson), b = grams(detail); if (!a.size) return 0; let n = 0; for (const g of a) if (b.has(g)) n++; return n / a.size; };
+/** A reviewed item with faults that only break a system lesson turned into low notes. */
+function demote(it, advisory = []) {
+  if (!it || !advisory.length || !Array.isArray(it.issues)) return it;
+  const restates = (x) => x && typeof x.detail === 'string' && advisory.some((t) => coverage(t, x.detail) >= (x.rule === '학습' ? 0.5 : 0.7));
+  if (!it.issues.some(restates)) return it;
+  const issues = it.issues.map((x) => (restates(x) ? { ...x, severity: 'low', rule: 'AI 학습 참고' } : x));
+  // The check the reviewer marked for it ('학습': fix) is cleared when no other fault explains it.
+  const checks = { ...(it.checks || {}) };
+  for (const x of it.issues) if (restates(x) && checks[x.rule] === 'fix' && !issues.some((y) => y.rule === x.rule && y.severity !== 'low')) checks[x.rule] = 'ok';
+  return { ...it, issues, checks };
+}
 
 /** The reviewer's instructions: the criteria, and the learning for this problem (all rules, or the given ones). */
 function reviewSystem(material, allRules, generationRules = null) {
@@ -39,7 +61,8 @@ function reviewSystem(material, allRules, generationRules = null) {
 - 변형 문제는 반드시 네가 직접 끝까지 풀어서 정답을 확인한다. 표시된 정답이나 해설을 믿지 않는다.
 - 변형 문제에 [그림]이 있으면 그것이 학생이 받는 그 문제의 그림이다 (지점 위치, 신경의 방향, 그래프). 원본 그림이 아니라 이 그림으로 푼다.
 - 아래 [검수 기준]과 [선생님 지침·학습]을 하나씩 대조한다. 실제 결함만 적고, 기준의 'E. 결함이 아닌 것'은 적지 않는다.
-- [AI가 정리한 학습]은 세트와 검수에서 시스템이 배운 것으로, 작성자가 지키라고 받았다. 선생님 학습과 같이 판정하되, 두 학습이 서로 부딪혀 한쪽을 지키면 다른 쪽을 어기게 되는 경우에는 결함으로 적지 않고 summary에 "학습 충돌: …"로 두 문장을 적는다. 그 학습이 가리키는 결함이 실제로 있으면 해당 기준 항목 이름으로 적는다.
+- [AI가 정리한 학습]은 세트와 검수에서 시스템이 스스로 배운 것으로, 작성자가 참고하라고 받았다. 판정 기준이 아니다: 이 학습을 어긴 것 자체는 결함으로 적지 않고, 그 학습이 가리키는 실제 결함이 [검수 기준]의 항목에 해당할 때만 그 항목 이름으로 적는다 (학습 문장을 인용해 결함으로 삼지 않는다). 두 학습이 서로 부딪히면 summary에 "학습 충돌: …"로 두 문장을 적는다.
+- [전에 걸린 결함]이 있으면 그것부터 네 문제에서 확인한다. 기록이지 기준이 아니다: 실제 결함이 있을 때만 기준 항목 이름으로 적는다.
 - 각 결함은 어디에서 무엇이 왜 틀렸는지 구체적으로 쓰고, rule에 기준 항목 이름(${RULE_NAMES}) 하나를 쓴다. [선생님 지침·학습]을 어겼으면 rule은 "학습"이고 detail 앞에 그 문장을 인용한다.
 - checks에는 기준 항목마다 판정을 적는다: 지켰으면 "ok", 결함이 있으면 "fix", 이 문제에 해당하지 않으면 "na" (예: 연습 문제의 '구조'·'STEP 전부 필요', ㄱ·ㄴ·ㄷ 문제가 아닌데 '보기 분석'). analysis.checks는 A의 항목(${ANALYSIS_NAMES.join(', ')}), items[].checks는 B~D의 항목(${ITEM_NAMES.join(', ')}).
 - 최종 문제의 '구조'는 독립 풀이와 같은 기준으로 센다: ${VARIATION_CRITERIA} 원본과 다른 항목이 둘 이상일 때만 "ok"이고, 하나 이하이면 "fix"로 하고 issues에 달라진 항목 번호와 근거를 적는다.
@@ -54,7 +77,7 @@ ${ruleLines(analysisRules.filter((r) => !system(r)))}
 [선생님 지침·학습 — 변형 문제와 해설]
 ${ruleLines(learnedG.filter((r) => !system(r)))}
 
-[AI가 정리한 학습 — 선생님 학습과 같이 판정한다. 서로 부딪히면 summary에 적는다]
+[AI가 정리한 학습 — 작성자가 참고한 것. 판정 기준이 아니다]
 ${ruleLines([...analysisRules, ...learnedG].filter(system))}
 
 반환 형식:
@@ -97,12 +120,14 @@ function setText(material, items) {
 }
 
 /** One problem of a set being made: the earlier ones are shown (numbers must not repeat) but not reviewed. */
-function itemReviewText(material, item, prior = [], hints = []) {
+function itemReviewText(material, item, prior = [], hints = [], priorFaults = []) {
   return [
     ...materialText(material),
     prior.length ? `\n[같은 세트의 앞 문제 — 검토하지 않는다. 수치·구성이 겹치는지 볼 때만 쓴다]\n${prior.map((it) => itemText(material, it)).join('\n\n')}` : '',
     `\n[검토할 변형 문제]\n${itemText(material, item)}`,
     identities([item]),
+    // What this original's earlier sets were faulted for (server/faults.js): checked first, as a record, not as criteria.
+    priorFaults.length ? `\n[전에 걸린 결함 — 이 원본의 지난 세트와 같은 단원에서. 먼저 확인한다. 기록이지 기준이 아니다]\n${priorFaults.map((e) => `- (${e.where} · ${e.sets}세트${e.label ? ` · ${e.label}` : ''}) [${e.rule}] ${e.detail}`).join('\n')}` : '',
     // What the earlier checks noted is weighed here, not taken as it is: a note that goes against the criteria (keeping
     // the original's cylinders, its table, 'E. 결함이 아닌 것') is not a fault.
     hints.length ? `\n[앞선 자동 검토가 짚은 점 — 참고만 한다]\n아래는 독립 풀이와 코드 검사가 짚은 점이다. [검수 기준]에 비추어 실제 결함인 것만 네 판정으로 적는다. 기준과 부딪히면(예: 원본의 용기·실험 구성이나 표 구조를 지키느라 연습 문제에서 쓰이지 않는 값, 합답형이라 같은 선택지) 결함이 아니다.\n${hints.map((h) => `- ${h}`).join('\n')}` : '',
@@ -113,9 +138,11 @@ function itemReviewText(material, item, prior = [], hints = []) {
 // The criteria of D (the solution): a fault only there is fixed by rewriting the solution, not by a new problem.
 const SOLUTION_NAMES = ['STEP 제목', '범위', '풀이 방식', '보기 분석', '덧붙임', '숨긴 값의 판단', '정답 줄', '표기'];
 /** Whether a reviewer's faults on one problem are all in its solution (the answer right, the problem itself fine). */
-function solutionOnly(review) {
-  const it = (review?.items || [])[0];
-  return Boolean(it && it.answerOk === true && it.verdict !== 'reject' && Array.isArray(it.issues) && it.issues.length && it.issues.every((x) => SOLUTION_NAMES.includes(x?.rule))
+function solutionOnly(review, { advisory = [] } = {}) {
+  const it = demote((review?.items || [])[0], advisory);
+  // A low note never holds a problem back, so it does not decide what kind of fix the others need.
+  const counted = Array.isArray(it?.issues) ? it.issues.filter((x) => x?.severity !== 'low') : [];
+  return Boolean(it && it.answerOk === true && it.verdict !== 'reject' && counted.length && counted.every((x) => SOLUTION_NAMES.includes(x?.rule))
     && Object.entries(it.checks || {}).every(([name, value]) => value !== 'fix' || SOLUTION_NAMES.includes(name)));
 }
 
@@ -126,14 +153,16 @@ function solutionOnly(review) {
  * the gas original's final went through 13 repairs and 3 designs over low notes on its STEP 3 title and was not made
  * (2026-10-21).
  */
-function itemFaults(review) {
-  const it = Array.isArray(review?.items) && review.items.length === 1 ? review.items[0] : null;
+function itemFaults(review, { advisory = [] } = {}) {
+  const it = Array.isArray(review?.items) && review.items.length === 1 ? demote(review.items[0], advisory) : null;
   if (!it) return ['최종 검수가 결과를 내지 못했습니다.'];
   if (typeof it.answerOk !== 'boolean' || !['use', 'fix', 'reject'].includes(it.verdict) || !Array.isArray(it.issues)
       || it.issues.some((x) => !x || !['high', 'mid', 'low'].includes(x.severity) || typeof x.detail !== 'string' || !x.detail.trim())) {
     return ['최종 검수의 정답 확인·판정·결함 목록이 누락되었거나 잘못되었습니다. 다시 검수해야 합니다.'];
   }
-  const faults = (it.issues || []).map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
+  // A restated system lesson (demote) stays a note even when another fault sends the problem back: sent along, the
+  // writer would be told to fix it anyway, and the lesson would still be acting as a criterion.
+  const faults = (it.issues || []).filter((x) => x.rule !== 'AI 학습 참고').map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
   // A check marked 'fix' is unexplained only when the item lists no fault at all: the reviewer names rules freely, so
   // a fault filed under '학습' explains a '풀이 방식' check (the gas original's round 1, 2026-10-23: 100 points, one
   // low note, held back as "no explanation").
@@ -168,8 +197,8 @@ function analysisFaults(a) {
   return issues;
 }
 /** The low notes a reviewer left on a problem it passed. */
-function itemNotes(review) {
-  const it = (review?.items || [])[0];
+function itemNotes(review, { advisory = [] } = {}) {
+  const it = demote((review?.items || [])[0], advisory);
   return (it?.issues || []).filter((x) => x.severity === 'low').map((x) => `[${x.rule || '기준'} · low] ${x.detail || ''}`.trim());
 }
 
@@ -197,8 +226,9 @@ const CHECKLIST = [
 ];
 
 /** One review (of the analysis or of a problem) → the checklist rows it fills: {id: [ok|partial|no|na, note]}. */
-function checklistOf(part, { analysis = false, final = false } = {}) {
+function checklistOf(part, { analysis = false, final = false, advisory = [] } = {}) {
   if (!part) return {};
+  if (!analysis) part = demote(part, advisory);
   const checks = part.checks || {};
   const issues = Array.isArray(part.issues) ? part.issues.filter((x) => x && typeof x === 'object') : [];
   const out = {};
@@ -219,4 +249,4 @@ function checklistOf(part, { analysis = false, final = false } = {}) {
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, CHECKLIST, CRITERIA_FILE };

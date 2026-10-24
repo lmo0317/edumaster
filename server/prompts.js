@@ -309,6 +309,22 @@ function examplesBlock(examples) {
     ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+// What went wrong before (server/faults.js): this original's earlier sets, the same subject and topic, what recurs
+// anywhere — each as the fault was recorded, with the problem it happened to. A lesson sentence alone was not followed
+// (638 of 3,286 recorded faults by 2026-10-24 were faults a lesson in the prompt already named); the record is concrete.
+function priorFaultsBlock(list) {
+  if (!list?.length) return '';
+  const line = (e) => {
+    const where = `${e.where} · ${e.sets}세트에서 ${e.count}번${e.materials > 1 ? ` · 원본 ${e.materials}개` : ''}${e.label ? ` · ${e.label}` : ''}${e.reviewers?.length ? ` · ${e.reviewers.join('·')} 검수` : ''}`;
+    const head = `- (${where}) [${e.rule}] ${e.detail}`;
+    const ex = e.example;
+    if (!ex?.problem) return head;
+    return head + `\n  걸린 문제: ${ex.problem.slice(0, 240)}${ex.problem.length > 240 ? '…' : ''}` + (ex.after ? `\n  고친 뒤 통과한 문제: ${ex.after.slice(0, 240)}${ex.after.length > 240 ? '…' : ''}` : '');
+  };
+  return '\n[전에 걸린 결함 — 이 원본의 지난 세트, 같은 단원·과목의 다른 원본, 어디서나 되풀이된 것. 설계를 끝내기 전에 한 항목씩 네 문제와 대조해 같은 결함을 내지 않는다. 기록이지 기준이 아니다: [검수 기준]·지침과 부딪히면 기준을 따른다. 걸린 문제의 내용·수치는 베끼지 않는다]\n'
+    + list.map(line).join('\n');
+}
+
 const DIRECTION = {
   same: '[가정 방향] 원본 STEP 1과 같은 쪽을 가정해 모순을 보인다 (원본이 \'A가 모두 반응했다면 … 맞지 않다\'면 이 문제도 A를 가정해 모순, 결론은 원본과 같은 쪽).',
   flip: '[가정 방향] 원본 STEP 1과 반대로 만든다. 원본에서 결론이던 쪽을 가정하면 모순이 되고, 원본에서 모순이던 쪽이 결론이 되게 수치를 잡는다 (원본이 \'A가 모두 반응했다면 모순 → B가 모두 반응\'이면 이 문제는 \'B가 모두 반응했다면 모순 → A가 모두 반응\'). 해설의 가정도 그 쪽으로 쓴다.',
@@ -362,8 +378,8 @@ function extractFramesText(material) {
   return '[선생님 해설]\n' + material.steps.map((s, i) => `STEP ${i + 1}. ${s.title}\n${s.work}`).join('\n\n') + '\n\nJSON만 반환하라.';
 }
 
-function generateParts({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '', shapeHint = '' }) {
-  const parts = [stageInstruction(stage, total, mode), priorBlock(prior), examplesBlock(examples)];
+function generateParts({ material, stage, total, mode, prior, rules, variantNo, extraFeedback, previous, usedRows = [], examples = [], direction = '', shapeHint = '', priorFaults = [] }) {
+  const parts = [stageInstruction(stage, total, mode), priorBlock(prior), examplesBlock(examples), priorFaultsBlock(priorFaults)];
   if (shapeHint) parts.push('\n[원본과 다른 구조로 바꾸는 방법 — 원본 표 기준]\n' + shapeHint);
   if (DIRECTION[direction] && (stage.kind !== 'focus')) parts.push('\n' + DIRECTION[direction]);
   if (usedRows.length) {
@@ -684,5 +700,5 @@ module.exports = {
   SOLUTION_REVIEW_SYSTEM, solutionReviewText, solutionReviewParts,
   REPAIR_SYSTEM, repairText, repairParts,
   LEAN_DESIGN, LEAN_REPAIR, WRITE_SOLUTION_SYSTEM, writeSolutionText, writeSolutionParts, ADJUDICATE_SYSTEM, adjudicateText,
-  LEARN_SYSTEM, learnText, LEARN_REVIEW_SYSTEM, learnReviewText, stageScope, stageInstruction, rulesBlock,
+  LEARN_SYSTEM, learnText, LEARN_REVIEW_SYSTEM, learnReviewText, stageScope, stageInstruction, rulesBlock, priorFaultsBlock,
 };

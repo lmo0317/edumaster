@@ -534,7 +534,7 @@ test('a problem the final review passes is looked at by the second reviewer too,
   assert.deepEqual(calls, ['final-review'], 'what the first review fails is repaired without a second look');
 });
 
-test('the reviewer judges by the criteria, the teacher\'s learning and what the system learned itself; a clash between lessons is a note, not a fault', () => {
+test('the reviewer judges by the criteria and the teacher\'s learning; what the system learned itself is shown as advice, not as criteria', () => {
   const { reviewSystem } = require('../server/final-review');
   const r = (id, text, from) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', createdAt: '2026-10-01', source: from ? { from } : undefined });
   const system = reviewSystem({ id: 'm', subject: '생명과학', problem: { text: '' }, steps: [] }, [r('t', '선생님이 쓴 학습'), r('a', '검수에서 AI가 배운 학습', 'review'), r('b', '세트에서 AI가 배운 학습', 'auto')]);
@@ -543,9 +543,10 @@ test('the reviewer judges by the criteria, the teacher\'s learning and what the 
   assert.match(teacher, /선생님이 쓴 학습/);
   assert.doesNotMatch(teacher, /AI가 배운/);
   assert.match(ai, /검수에서 AI가 배운 학습[\s\S]*세트에서 AI가 배운 학습/);
-  assert.match(system, /선생님 학습과 같이 판정/);
+  // bio-k61 (2026-10-23): a lesson learned from one reviewer's fault became the bar every design was failed by.
+  assert.match(system, /판정 기준이 아니다/);
   assert.match(system, /학습 충돌/);
-  assert.doesNotMatch(system, /판정 기준이 아니다/);
+  assert.doesNotMatch(system, /선생님 학습과 같이 판정/);
   // '구조' is counted by the one definition the writer and the independent solve get: the table shape stays, a row
   // added is not a change, a reversed STEP keeps the teacher's title.
   const { VARIATION_CRITERIA } = require('../server/prompts');

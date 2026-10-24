@@ -7,6 +7,7 @@ const pipeline = require('./pipeline');
 const cliModels = require('./cli-models');
 const { PROMPT_VERSION } = require('./prompts');
 const setCheck = require('./set-check');
+const faults = require('./faults');
 const { invalidateDerived, materialKey } = require('./material-version');
 
 const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
@@ -145,7 +146,7 @@ function createJobs({ store, llm, config }) {
           record = await setCheck.reviewSet({ store, set: store.jobs.get(parentId), call, images, save });
           const errors = Object.entries(record.reviews).filter(([, v]) => v.error);
           if (errors.length === Object.keys(record.reviews).length) throw new Error(`검수하지 못했습니다: ${errors.map(([p, v]) => `${setCheck.NAME[p] || p} ${v.error}`).join(' / ')}`);
-          const fails = setCheck.failing(record);
+          const fails = setCheck.failing(record, null, setCheck.advisoryOf(store, store.jobs.get(parentId)));
           const issues = setCheck.analysisIssues(record);
           const step = { at: record.at, scores: Object.fromEntries(Object.entries(record.checklist.models).map(([p, m]) => [p, m.score])), failing: fails.map((f) => f.label), analysisIssues: issues.length };
           rounds.push(step);
@@ -224,13 +225,17 @@ function createJobs({ store, llm, config }) {
         const lost = Object.entries(record.reviews || {}).find(([, v]) => v.error);
         if (lost) throw new Error(`${r + 1}번째 세트의 ${setCheck.NAME[lost[0]] || lost[0]} 검수가 실패해 멈췄습니다: ${lost[1].error}`);
         const scores = setCheck.scores(record);
-        const fails = setCheck.failing(record, settled);
-        const flipped = setCheck.failing(record).filter((f) => settled.has(f.index));
+        // The system's own lessons do not decide what fails (final-review.js, advisoryTexts).
+        const advisory = setCheck.advisoryOf(store, set);
+        const fails = setCheck.failing(record, settled, advisory);
+        const flipped = setCheck.failing(record, null, advisory).filter((f) => settled.has(f.index));
         const issues = setCheck.analysisIssues(record);
-        const pass = setCheck.reaches(record, t.target, settled);
-        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), faults: fails, analysisIssues: issues.length, pass, ...(flipped.length ? { flipped } : {}) };
+        const pass = setCheck.reaches(record, t.target, settled, advisory);
+        const made = store.jobs.get(set.id);
+        const round = { setId: set.id, at: new Date().toISOString(), scores, failing: fails.map((f) => f.label), faults: fails, analysisIssues: issues.length, pass, ...(flipped.length ? { flipped } : {}), faultStats: made?.faultStats || null };
         t.rounds.push(round);
         ctx.log(`${r + 1}번째 세트: ${Object.entries(scores).map(([p, s]) => `${setCheck.NAME[p] || p} ${s ?? '실패'}%`).join(' · ')}${fails.length ? ` — 걸린 문제 ${round.failing.join(', ')}` : ''}${issues.length ? ` · 원본 분석 지적 ${issues.length}건` : ''}`);
+        if (round.faultStats) ctx.log(`${r + 1}번째 세트 ${faults.statsLine(round.faultStats)}`);
         if (flipped.length) ctx.log(`지난 세트에서 통과한 ${flipped.map((f) => f.label).join(', ')}에 이번 검수가 결함을 적었지만, 문제가 그대로라 지난 판정을 둡니다: ${flipped.flatMap((f) => f.faults).map((x) => x.slice(0, 120)).join(' / ').slice(0, 400)}`);
         ctx.save();
         if (pass) { t.reached = true; ctx.log(`목표(${t.target}점)에 도달했습니다`); return; }
@@ -292,13 +297,16 @@ function createJobs({ store, llm, config }) {
     sub.generationRules = rules;
     ctx.job.rules = rules;
     const examples = pipeline.adoptedExamples(store, parent.materialId, { jobId: parent.id, index: item.index });
+    // What earlier sets were faulted for (the parent set's own faults on this problem are already in `previous`).
+    const history = faults.index(store.jobs.all(), { dataDir: config.dataDir, exclude: parent.id });
+    const priorFaults = faults.forItem(history, { ...parent.material, id: parent.materialId }, item);
     try {
       if (sub.finalGate) {
         const reviewed = await pipeline.reviewAnalysis(sub, parent.material);
         if (reviewed?.verdict !== 'ok' || reviewed.key !== materialKey(parent.material)) throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인해 주세요.');
       }
       await pipeline.ensureFrames(sub, parent.material);
-      await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: feedback, previous, examples });
+      await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: feedback, previous, examples, priorFaults });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; saveParent(); throw e;
     }

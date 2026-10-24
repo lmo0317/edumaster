@@ -110,7 +110,7 @@ function createApp(options = {}) {
     if (r?.done) {
       const job = store.jobs.get(id);
       for (const it of r.set?.items || []) it.kind = it.kind || job?.items?.find((x) => x.label === it.label)?.stage?.kind || '';
-      r.checklist = setCheck.checklist(r);
+      r.checklist = setCheck.checklist(r, job ? setCheck.advisoryOf(store, job) : []);
     }
     return r;
   };
