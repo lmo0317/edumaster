@@ -65,6 +65,8 @@ function makeRule(input, now = new Date()) {
       jobId: clean(input.source.jobId, 40), itemIndex: Number.isInteger(input.source.itemIndex) ? input.source.itemIndex : undefined,
       materialId: clean(input.source.materialId, 40), label: clean(input.source.label, 120), excerpt: clean(input.source.excerpt, 600),
       from: FROM.has(input.source.from) ? input.source.from : 'input',
+      // The kinds of fault a system lesson was learned from (faults.keysOf): what wakes it once asleep.
+      ...(Array.isArray(input.source.faultKeys) && input.source.faultKeys.length ? { faultKeys: input.source.faultKeys.slice(0, 40).map((k) => clean(k, 40)).filter(Boolean) } : {}),
     } : undefined,
     applied: 0,
   };
@@ -86,7 +88,12 @@ function updateRule(rule, patch, now = new Date(), change = {}) {
   }
   if (CATEGORIES.includes(patch.category)) next.category = patch.category;
   if (patch.topic !== undefined) next.topic = clean(patch.topic, 120);
-  if (['approved', 'pending', 'rejected'].includes(patch.status)) next.status = patch.status;
+  // dormant: a lesson the system wrote and the data put to sleep (faults.sleepLessons) — not sent, kept, woken by its
+  // fault coming back. A status the system changes is on the record with its reason, like a rewritten sentence.
+  if (['approved', 'pending', 'rejected', 'dormant'].includes(patch.status)) {
+    if (patch.status !== rule.status && change.by === 'system') next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: 'system', why: clean(change.why, 300), jobId: clean(change.jobId, 40), status: patch.status }].slice(-20);
+    next.status = patch.status;
+  }
   // Moving up and down: 문제 학습 → 공통 학습 → 지침, and back (to a problem only if it came from one).
   if (SCOPES.has(patch.scope) && (patch.scope !== 'material' || next.source?.materialId)) next.scope = patch.scope;
   if (next.scope === 'global') next.layer = LAYERS.has(patch.layer) ? patch.layer : (next.layer || 'lesson');

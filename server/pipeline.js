@@ -6,7 +6,7 @@ const { selectRules, analysisLearning, layerOf, stageOf, readingHint, readingPai
 const { materialKey: analysisKey } = require('./material-version');
 const harness = require('./harness');
 const finalReview = require('./final-review');
-const faults = require('./faults');
+const faultsData = require('./faults');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
 const fixMath = (s) => s.replace(/\\ce\{([^{}]*)\}/g, (m, body) => (body.includes('$') ? `\\ce{${body.replace(/\$/g, '')}}` : m));
@@ -999,17 +999,21 @@ function scaledOrKept(item, prior, material, vocab) {
 // A variant the teacher adopted (채택) is a good example for its original: later variants of the same stage are shown
 // it as a model of structure and solution style (not to copy — its numbers join the ones to avoid).
 const stageKey = (s) => `${s?.kind}:${s?.upto || s?.step || ''}`;
-/** Adopted variants of this original across its sets, newest first; `exclude` leaves out the one being replaced. */
+/** Adopted variants of this original across its sets (the teacher's first, then the ones both reviewers passed —
+ *  faultsData.passedProblems), newest first; `exclude` leaves out the one being replaced. */
 function adoptedExamples(store, materialId, exclude = {}) {
   const out = [];
   for (const j of store.jobs.all()) {
     if (j.type !== 'generate' || j.materialId !== materialId) continue;
+    const passed = faultsData.passedProblems(store, j);
     for (const it of j.items || []) {
-      if (!it.adopted || !it.problem || (j.id === exclude.jobId && it.index === exclude.index)) continue;
-      out.push({ stage: it.stage, label: it.label, problem: it.problem, solution: it.solution, at: it.reviewedAt || j.createdAt });
+      if (!it.problem || (j.id === exclude.jobId && it.index === exclude.index)) continue;
+      const source = it.adopted ? 'adopted' : passed.indices.has(it.index) ? 'passed' : '';
+      if (!source) continue;
+      out.push({ stage: it.stage, label: it.label, problem: it.problem, solution: it.solution, at: it.reviewedAt || j.createdAt, source, jobId: j.id, index: it.index, scores: source === 'passed' ? passed.scores : null });
     }
   }
-  return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return out.sort((a, b) => Number(b.source === 'adopted') - Number(a.source === 'adopted') || String(b.at).localeCompare(String(a.at)));
 }
 /** The examples for one item: adopted variants of the same stage, at most two. */
 const examplesFor = (item, examples = []) => examples.filter((e) => stageKey(e.stage) === stageKey(item.stage)).slice(0, 2);
@@ -1636,10 +1640,12 @@ async function learnFromSet(ctx) {
     return;
   }
   const learned = [];
+  // The kinds of fault this set's lessons come from: what wakes a lesson the data put to sleep (faults.wakeLessons).
+  const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   for (const x of arr(data?.items).slice(0, 3)) {
     const text = str(x?.text, 600);
     if (text.length < 8 || existing.includes(text)) continue;
-    const change = await keepLesson(ctx, store, draftLesson(x, text, material, { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto' }), { why: str(x?.why, 300), jobId: job.id, by: 'auto' });
+    const change = await keepLesson(ctx, store, draftLesson(x, text, material, { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto', faultKeys }), { why: str(x?.why, 300), jobId: job.id, by: 'auto' });
     if (change) learned.push(change);
   }
   job.learned = learned;
@@ -1730,10 +1736,11 @@ async function learnFromReview(ctx, material, set, all) {
     changed.push({ kind: 'remove', id: r.id, before: r.text, why: str(x?.why, 300) });
   }
   const existing = new Set(rules.map((r) => r.text));
+  const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   for (const x of arr(data?.add).slice(0, 3)) {
     const text = str(x?.text, 600);
     if (text.length < 8 || existing.has(text)) continue;
-    const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review' }), { why: str(x?.why, 300), jobId: set.id, by: 'review' });
+    const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review', faultKeys }), { why: str(x?.why, 300), jobId: set.id, by: 'review' });
     if (change) changed.push(change);
   }
   ctx.log(changed.length ? `학습 ${changed.length}곳을 고쳤습니다 (${summary(changed)})` : '고칠 학습이 없습니다');
@@ -1821,7 +1828,7 @@ async function runGeneration(ctx) {
   const examples = adoptedExamples(store, job.materialId, {});
   // What every earlier set (of this original and the others) was faulted for, with its reviews: the data each problem's
   // writer and reviewer get (faults.forItem), and what this set is measured against when it is done (faults.setStats).
-  const history = faults.index(store.jobs.all(), { dataDir: store.dataDir, exclude: job.id });
+  const history = faultsData.index(store.jobs.all(), { dataDir: store.dataDir, exclude: job.id });
   if (ctx.finalGate) {
     if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') await reviewAnalysis(ctx, material);
     if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') {
@@ -1843,7 +1850,7 @@ async function runGeneration(ctx) {
         .reduce((s, x) => s + Math.max(3, share * weight(x)), 0));
       // A problem a 학습 반복 carried over to remake: the reviewers' faults are its note, its last version what to fix.
       await produceItem(ctx, { material, item, prior, rules, mode: job.options.mode, examples, extraFeedback: item.remakeNote, previous: item.remakeNote ? item.history?.[0] : undefined,
-        priorFaults: faults.forItem(history, { ...material, id: job.materialId }, item) });
+        priorFaults: faultsData.forItem(history, { ...material, id: job.materialId }, item) });
     } catch (e) {
       item.status = 'failed'; item.error = e.message; ctx.save();
       ctx.log(`${item.label}: 실패 — ${e.message}`);
@@ -1855,10 +1862,23 @@ async function runGeneration(ctx) {
     if (stored) store.rules.put({ ...stored, applied: (stored.applied || 0) + 1 });
   }
   // The set against the record: how many of its faults were kinds already seen (the number a learning system drives down).
-  job.faultStats = faults.setStats(job, history);
-  ctx.log(faults.statsLine(job.faultStats));
+  job.faultStats = faultsData.setStats(job, history);
+  ctx.log(faultsData.statsLine(job.faultStats));
   ctx.save();
   if (!ctx.signal.aborted) await learnFromSet(ctx);
+  // The data decides what the lessons are worth: one whose fault came back wakes, one no review has cited for a window
+  // of sets sleeps (faults.sleepLessons / wakeLessons). The teacher's own items are never touched.
+  try {
+    const mine = faultsData.recordsOf(job);
+    const changes = [...faultsData.wakeLessons(store, mine), ...faultsData.sleepLessons(store, [...history, ...mine])];
+    if (changes.length) {
+      job.lessonChanges = changes;
+      ctx.log(`학습 수명: ${changes.map((c) => `${c.kind === 'wake' ? '깨어남' : '휴면'} — ${c.text.slice(0, 50)}… (${c.why.slice(0, 60)})`).join(' / ').slice(0, 500)}`);
+      ctx.save();
+    }
+  } catch (e) {
+    ctx.log(`학습 수명 정리 실패 — ${e.message}`);
+  }
 }
 
 function pickRules(store, material) {

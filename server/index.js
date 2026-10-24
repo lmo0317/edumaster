@@ -17,6 +17,7 @@ const learningMap = require('./learning-map');
 const pipeline = require('./pipeline');
 const { invalidateDerived } = require('./material-version');
 const setCheck = require('./set-check');
+const faults = require('./faults');
 const prompts = require('./prompts');
 const harness = require('./harness');
 const reviewCriteria = () => { try { return fs.readFileSync(require('./final-review').CRITERIA_FILE, 'utf8').replace(/^[\s\S]*?(?=## A\.)/, ''); } catch { return ''; } };
@@ -401,6 +402,8 @@ function createApp(options = {}) {
     return out;
   }
   const titleOfMaterial = (id) => (id ? store.materials.get(id)?.title || '삭제된 문제' : '');
+  // What the record says of a lesson (faults.lessonEffects): cited as broken n times, last when; asleep (dormant).
+  const effectView = (r, effects) => { const e = effects.get(r.id) || {}; return { cited: e.cited || 0, citedSets: e.sets || 0, lastCitedAt: e.lastCitedAt || '', lastCitedJobId: e.lastCitedJobId || '', dormant: r.status === 'dormant', dormantAt: r.dormantAt || '' }; };
   // An item as the pages show it: which of 지침 / 이 문제 / 공통 학습, where it was learned, and how it fared.
   const itemView = (r, kept) => ({
     id: r.id, layer: layerOf(r), stage: stageOf(r), text: r.text, target: r.target, status: r.status, createdAt: r.createdAt,
@@ -427,15 +430,23 @@ function createApp(options = {}) {
     const analysisItems = [...learn.guides, ...learn.own, ...own.filter((r) => stageOf(r) === 'analysis' && r.status !== 'approved'), ...learn.lessons]
       // An analysis from before learningUsed was kept: an item it had is one taught before it ran.
       .map((r) => ({ ...itemView(r, kept), inAnalysis: m.learningUsed ? used.has(r.id) : Boolean(m.analyzedAt && r.createdAt < m.analyzedAt), how: how(r.text) }));
-    // Generation: what the next set gets (in that order), plus this problem's switched-off ones; the models.
+    // Generation: what the next set gets (in that order), plus this problem's switched-off ones; the models. Each lesson
+    // with what the record says of it (faults.lessonEffects): how often a review cited it as broken, and whether it sleeps.
+    const history = faults.index(store.jobs.all(), { dataDir: cfg.dataDir });
+    const effects = faults.lessonEffects(all, history);
+    const withEffect = (r) => ({ ...itemView(r, kept), ...effectView(r, effects) });
     const picked = selectRules(all, m);
-    const generationItems = [...picked, ...ownGen.filter((r) => r.status !== 'approved')].map((r) => itemView(r, kept));
-    const examples = sets.flatMap((j, i) => (j.items || []).filter((it) => it.adopted && it.problem).map((it) => ({
-      jobId: j.id, setNo: i + 1, index: it.index, label: it.label, at: it.reviewedAt || j.createdAt,
-      preview: String(it.problem.text || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|'))?.slice(0, 140) || '' })));
+    const generationItems = [...picked, ...ownGen.filter((r) => r.status !== 'approved')].map(withEffect);
+    // 본보기: the problems the teacher adopted and the ones Claude and Gemini both passed (pipeline.adoptedExamples).
+    const setNo = new Map(sets.map((j, i) => [j.id, i + 1]));
+    const examples = pipeline.adoptedExamples(store, id).map((e) => ({
+      jobId: e.jobId, setNo: setNo.get(e.jobId) || 0, index: e.index, label: e.label, at: e.at, source: e.source, scores: e.scores,
+      preview: String(e.problem.text || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('|'))?.slice(0, 140) || '' }));
     return {
       analysis: { analyzedAt: m.analyzedAt || '', correctionsUsed: m.correctionsUsed || 0, items: analysisItems },
       generation: { items: generationItems, examples },
+      // 이 원본의 기록 (docs/learning.md): the sets with their scores and fault stats, the kinds that came back, what the next writer gets.
+      data: faults.materialView(store, m, history),
       sets: sets.map((j, i) => {
         const made = (j.items || []).filter((it) => it.problem);
         return {
@@ -579,9 +590,11 @@ function createApp(options = {}) {
     if (!FINISHED.has(job.status)) throw fail(409, '진행 중인 작업은 먼저 취소해 주세요.');
     jobs.busyGuard(job);
     if (job.trainJobId && !FINISHED.has(store.jobs.get(job.trainJobId)?.status)) throw fail(409, '학습 반복이 끝난 뒤에 삭제할 수 있습니다.');
+    // The set goes; what it taught stays (data/faults, read by faults.index).
+    const archived = job.type === 'generate' ? faults.archive(cfg.dataDir, job, setCheck.readCheck(cfg.dataDir, id)) : 0;
     store.jobs.remove(id);
     fs.rmSync(checkFile(id), { force: true });
-    return { ok: true };
+    return { ok: true, archived };
   });
   route('POST', /^\/api\/jobs\/([a-f0-9]+)\/items\/(\d+)\/regenerate$/, async (req, res, [id, index]) => {
     const parent = getJob(id);
@@ -632,7 +645,9 @@ function createApp(options = {}) {
   });
   route('PUT', /^\/api\/rules\/([a-f0-9]+)$/, async (req, res, [id]) => {
     const rule = store.rules.get(id) || (() => { throw fail(404, '지침을 찾지 못했습니다.'); })();
-    return store.rules.put(updateRule(rule, await readBody(req, 16 * 1024)));
+    const next = updateRule(rule, await readBody(req, 16 * 1024));
+    if (next.status === 'approved') delete next.dormantAt; // switched back on by hand: awake
+    return store.rules.put(next);
   });
   route('DELETE', /^\/api\/rules\/([a-f0-9]+)$/, (req, res, [id]) => ({ ok: store.rules.remove(id) }));
   // Claude subscription login for the CLI provider, from the LLM tab (no SSH session needed): the server runs
@@ -892,6 +907,7 @@ function createApp(options = {}) {
   // it fared; the reading corrections (공통 학습 of analysis); the persona and, read-only, how results are checked (지침).
   route('GET', /^\/api\/learning$/, () => {
     const kept = keptByRule();
+    const effects = faults.lessonEffects(store.rules.all(), faults.index(store.jobs.all(), { dataDir: cfg.dataDir }));
     const global = store.rules.all().filter((r) => r.scope !== 'material').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => itemView(r, kept));
     const pick = (layer, stage) => global.filter((r) => r.layer === layer && r.stage === stage);
     // 문제별 학습: each problem's own items, problems with the newest teaching first. An analysis item says whether the
@@ -908,7 +924,7 @@ function createApp(options = {}) {
     }).filter((p) => p.analysis.length + p.generation.length).sort((a, b) => b.latest.localeCompare(a.latest));
     return {
       problems,
-      map: learningMapView(kept),
+      map: learningMapView(kept, effects),
       materials: store.materials.all().length,
       persona: llmSettings(cfg.dataDir).persona || '',
       guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
@@ -939,7 +955,7 @@ function createApp(options = {}) {
       }
     })().catch((e) => console.log(`[learning] 정리 후보 확인 실패: ${e.message}`)).finally(() => { mergeCheck = null; });
   }
-  function learningMapView(kept) {
+  function learningMapView(kept, effects = new Map()) {
     const all = store.rules.all();
     const jobsAll = store.jobs.all();
     const marks = learningMap.setMarks(jobsAll, all);
@@ -947,7 +963,7 @@ function createApp(options = {}) {
     const materials = store.materials.all();
     const analysisUses = (id) => materials.filter((m) => (m.learningUsed || []).some((x) => x.id === id)).length;
     const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
-      ...itemView(r, kept), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
+      ...itemView(r, kept), ...effectView(r, effects), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
       materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
       category: categoryOf(r), system: bySystem(r), tagged: r.tagged || '', offReason: r.offReason || '', format: isFormatLesson(r.text),
       history: (r.history || []).slice().reverse(), uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
@@ -969,6 +985,8 @@ function createApp(options = {}) {
       // What the teacher can tidy now, each a list of ids the page opens as a selection.
       todo: {
         groups: groups.length,
+        // Lessons the data put to sleep (faults.sleepLessons): shown, not to be tidied — they wake by themselves.
+        dormant: all.filter((r) => r.status === 'dormant').map((r) => r.id),
         untagged: on.filter((r) => r.scope === 'global' && r.layer !== 'guide' && bySystem(r) && !r.subject).map((r) => r.id),
         tagged: on.filter((r) => r.tagged === 'migrated').map((r) => r.id),
         format: all.filter((r) => stageOf(r) === 'generation' && isFormatLesson(r.text) && (r.status === 'approved' || r.offReason === 'format')).map((r) => r.id),
@@ -1015,7 +1033,7 @@ function createApp(options = {}) {
       for (const k of ['subject', 'status', 'category', 'topic']) if (body.patch?.[k] !== undefined) patch[k] = body.patch[k];
       const next = updateRule(r, patch);
       if (body.confirm === true || patch.subject !== undefined) delete next.tagged;
-      if (patch.status === 'approved') delete next.offReason;
+      if (patch.status === 'approved') { delete next.offReason; delete next.dormantAt; }
       store.rules.put(next); n++;
     }
     return { changed: n };

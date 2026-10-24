@@ -149,6 +149,7 @@ test('the generation prompt shows adopted examples as models, not to copy', () =
   const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'S1', work: 'w' }], techniques: [] };
   const examples = [{ label: 'STEP 1 연습', problem: { text: '채택된 문제 본문', choices: ['1', '2'], answer: 2 }, solution: { steps: [{ step: 1, title: 'S1', work: '채택된 해설' }] } }];
   const text = generateText({ material, stage: { kind: 'upto', upto: 1 }, total: 1, mode: 'integrated', prior: [], rules: [], variantNo: 1, examples });
-  assert.match(text, /선생님이 채택한 좋은 예시[\s\S]*그대로 쓰지 않고[\s\S]*채택된 문제 본문[\s\S]*정답: 2번[\s\S]*채택된 해설/);
+  // The header now says both sources (the teacher's adopted problems and the ones both reviewers passed, 2026-10-24).
+  assert.match(text, /본보기 — 이 원본으로 만든 같은 단계 문제 중 선생님이 채택했거나 Claude·Gemini 검수를 모두 통과한 것[\s\S]*그대로 쓰지 않고[\s\S]*선생님 채택\)[\s\S]*채택된 문제 본문[\s\S]*정답: 2번[\s\S]*채택된 해설/);
   assert.doesNotMatch(generateText({ material, stage: { kind: 'upto', upto: 1 }, total: 1, mode: 'integrated', prior: [], rules: [], variantNo: 1 }), /채택한 좋은 예시/);
 });

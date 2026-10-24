@@ -38,6 +38,8 @@ function advisoryTexts(material, allRules, generationRules = null) {
 }
 // A fault is a restated lesson when most of the lesson's letter pairs are in its text (the reviewer quotes it).
 const coverage = (lesson, detail) => { const a = grams(lesson), b = grams(detail); if (!a.size) return 0; let n = 0; for (const g of a) if (b.has(g)) n++; return n / a.size; };
+/** Whether a fault's text restates a lesson (quotes it, or most of it). */
+const restates = (lesson, detail, min = 0.5) => coverage(lesson, detail) >= min;
 /** A reviewed item with faults that only break a system lesson turned into low notes. */
 function demote(it, advisory = []) {
   if (!it || !advisory.length || !Array.isArray(it.issues)) return it;
@@ -249,4 +251,4 @@ function checklistOf(part, { analysis = false, final = false, advisory = [] } = 
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, restates, CHECKLIST, CRITERIA_FILE };

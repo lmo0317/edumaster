@@ -9,9 +9,17 @@
 // 638 were faults a lesson in the writer's prompt already named, 133 of them quoting the lesson; the faults of an
 // original's n-th set were no fewer than its first's. The record of what actually went wrong, in the writer's own
 // words with the problem it happened to, is the data; the lessons stay as general advice.
+//
+// The same records say what the data is worth (docs/learning.md, 결함 기록·본보기·학습의 수명): a problem both reviewers
+// passed is an example for the next writer (passedIndices); a lesson the system wrote is measured by how often a review
+// cited it as broken (lessonEffects), put to sleep when no review of its reach cited it for a window of sets
+// (sleepLessons) and woken when the fault it was learned from comes back (wakeLessons); a set the teacher deletes
+// leaves its records behind (archive). Nothing here is decided by the teacher: the data decides.
+const fs = require('node:fs');
+const path = require('node:path');
 const finalReview = require('./final-review');
 const setCheck = require('./set-check');
-const { grams, overlap } = require('./learning');
+const { grams, overlap, stageOf, updateRule } = require('./learning');
 
 // "최종 검수: [STEP 범위 · mid] …", "[두 번째 검수] [학습 · mid] …", "[Claude] [구조 · high] …"
 const TAGGED = /^(?:최종 검수: )?(?:\[(?:두 번째 검수|Claude|Gemini|GPT)\] )*\[([^\]·]+?)(?: · (high|mid|low))?\]\s*([\s\S]*)$/;
@@ -22,6 +30,11 @@ const PREFIXED = /^(문제 설계|STEP 범위|해설|코드 검산|독립 풀이
 const FORMAT_NOISE = /\[틀 \d+-\d+\]|틀 번호|자리 이름 그대로|최종 검수까지 가지 못했습니다|^통과하지 못함$|결과를 내지 못했습니다|다시 검수해야 합니다/;
 // Attempts whose failures are faults of the problem or its solution (not a lost answer, not a frame value to fill).
 const KINDS = new Set(['precheck', 'repair', 'redesign', 'rewrite']);
+// A fault that restates a lesson: it names the lesson, not a kind of fault of its own.
+const LESSON_RULE = /^(학습|AI 학습 참고)$/;
+// Lessons the system wrote itself (learnFromSet 'auto', learnFromReview 'review', a harness evaluation 'eval').
+const SYSTEM_FROM = new Set(['auto', 'review', 'eval']);
+const bySystem = (r) => SYSTEM_FROM.has(r.source?.from);
 
 /** One fault line → its criteria name, severity, text and where it came from ('review' = a reviewer, 'check' = code or the solve). */
 function parseFault(raw) {
@@ -47,6 +60,7 @@ function faultKey(detail) {
 
 const stageKey = (s) => `${s?.kind || ''}:${s?.upto || s?.step || ''}`;
 const squash = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+const newestFirst = (a, b) => String(b.at).localeCompare(String(a.at));
 
 /**
  * The fault records of one set: every failure of every attempt that repaired, redesigned or rewrote a problem, what was
@@ -80,7 +94,29 @@ function recordsOf(job, review = null) {
   return out;
 }
 
-/** Every record of the given sets (and of their reviews, when `dataDir` is given), newest first. */
+/** The records a set left when it was deleted (archive), one file per set under data/faults. */
+function archived(dataDir, except = new Set()) {
+  const dir = path.join(dataDir, 'faults');
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json') || except.has(name.slice(0, -5))) continue;
+    try { out.push(...(JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')).records || [])); } catch { /* a half-written file is skipped */ }
+  }
+  return out;
+}
+
+/** Keeps a set's records (the problem texts shortened) before the set itself is deleted: the data outlives the set. */
+function archive(dataDir, job, review = null) {
+  const records = recordsOf(job, review).map((r) => ({ ...r, problem: r.problem.slice(0, 600), after: r.after.slice(0, 600) }));
+  if (!records.length) return 0;
+  const dir = path.join(dataDir, 'faults');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${job.id}.json`), JSON.stringify({ jobId: job.id, materialId: job.materialId, title: job.material?.title || job.title || '', archivedAt: new Date().toISOString(), records }, null, 1));
+  return records.length;
+}
+
+/** Every record of the given sets (and of their reviews and of deleted sets, when `dataDir` is given), newest first. */
 function index(jobs, { dataDir = null, exclude = null } = {}) {
   const out = [];
   for (const j of jobs) {
@@ -88,7 +124,8 @@ function index(jobs, { dataDir = null, exclude = null } = {}) {
     const review = dataDir ? setCheck.readCheck(dataDir, j.id) : null;
     out.push(...recordsOf(j, review?.done ? review : null));
   }
-  return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  if (dataDir) out.push(...archived(dataDir, new Set(jobs.map((j) => j.id))));
+  return out.sort(newestFirst);
 }
 
 // A reviewer words the same fault differently each time; two review faults are the same kind when most of the shorter
@@ -99,7 +136,7 @@ const sameReviewFault = (a, b) => overlap(a, b) >= 0.5;
 function groupsOf(records) {
   const byKey = new Map();
   const groups = [];
-  for (const r of records) {
+  for (const r of [...records].sort(newestFirst)) {
     let g = byKey.get(r.key);
     if (!g && r.from === 'review') {
       const mine = grams(r.detail);
@@ -120,19 +157,23 @@ function groupsOf(records) {
 }
 
 const WHERE = ['다른 과목의 원본', '같은 과목의 다른 원본', '같은 단원의 다른 원본', '이 원본'];
+// Faults of other originals are offered only while they keep coming: a kind last seen before the most recent sets is
+// history, not advice (the records stay; the offer window moves).
+const OFFER_WINDOW = 12;
 /**
  * What the writer (and the reviewer) of one problem should know went wrong before: this original's own faults first
  * (any number of times, newest first), then the faults of the same subject and topic, then what recurs in two sets or
- * more anywhere. Faults of the same stage (practice up to STEP n, final) come before the others. At most `limit`
- * entries and about `maxChars` characters.
+ * more anywhere — the others only when seen within the last `window` sets. Faults of the same stage (practice up to
+ * STEP n, final) come before the others. At most `limit` entries and about `maxChars` characters.
  */
-function forItem(records, material, item, { limit = 8, maxChars = 3600 } = {}) {
+function forItem(records, material, item, { limit = 8, maxChars = 3600, window = OFFER_WINDOW } = {}) {
   const sk = stageKey(item.stage);
+  const recent = new Set([...new Set([...records].sort(newestFirst).map((r) => r.jobId))].slice(0, window));
   const tier = (g) => (g.materials.has(material.id) ? 3 : g.topics.has(`${material.subject || ''}|${material.topic || ''}`) && material.topic ? 2 : g.subjects.has(material.subject || '') && material.subject ? 1 : 0);
   // A fault that restates a lesson ('학습') says nothing the lesson in the writer's prompt does not; offered again as a
   // record it would only weigh that lesson up — for a lesson the system wrote itself, back to the bar that stalled bio-k61.
-  const scored = groupsOf(records).filter((g) => !/^(학습|AI 학습 참고)$/.test(g.rule)).map((g) => ({ g, tier: tier(g) }))
-    .filter(({ g, tier: t }) => t >= 2 || g.sets.size >= 2)
+  const scored = groupsOf(records).filter((g) => !LESSON_RULE.test(g.rule)).map((g) => ({ g, tier: tier(g) }))
+    .filter(({ g, tier: t }) => (t >= 2 || g.sets.size >= 2) && (t === 3 || [...g.sets].some((id) => recent.has(id))))
     .sort((a, b) => b.tier - a.tier || Number(b.g.stages.has(sk)) - Number(a.g.stages.has(sk)) || Math.min(b.g.sets.size, 5) - Math.min(a.g.sets.size, 5) || String(b.g.at).localeCompare(String(a.g.at)));
   const out = [];
   let chars = 0;
@@ -164,7 +205,7 @@ function setStats(job, earlier, review = null) {
   };
   let repeat = 0, own = 0;
   for (const r of mine) { const k = repeatOf(r); if (k) repeat++; if (k === 'own') own++; }
-  return { faults: mine.length, repeat, own, lesson: mine.filter((r) => r.rule === '학습').length, rate: mine.length ? Math.round((100 * repeat) / mine.length) : null };
+  return { faults: mine.length, repeat, own, lesson: mine.filter((r) => LESSON_RULE.test(r.rule)).length, rate: mine.length ? Math.round((100 * repeat) / mine.length) : null };
 }
 
 /** The set's log line for its stats. */
@@ -173,4 +214,116 @@ function statsLine(s) {
   return `결함 기록: ${s.faults}건 — 전에 나온 종류 ${s.repeat}건 (${s.rate}%, 이 원본에서 ${s.own}건) · 지시문의 학습이 이미 말한 것 ${s.lesson}건`;
 }
 
-module.exports = { parseFault, faultKey, recordsOf, index, groupsOf, forItem, setStats, statsLine, FORMAT_NOISE, KINDS };
+// ---------------------------------------------------------------- what worked: problems both reviewers passed
+/**
+ * The problems of a set that every reviewer passed in the review kept with it (검수하기, 학습 반복): none when there is
+ * no review, it is stale, or a reviewer failed. With the review's scores. These are examples for the next writer as
+ * much as the ones the teacher adopted — no problem had been adopted by hand on the production server by 2026-10-24.
+ */
+function passedProblems(store, job) {
+  const review = store.dataDir ? setCheck.readCheck(store.dataDir, job.id) : null;
+  if (!review?.done || review.stale || !setCheck.matchesSet(review, job)) return { indices: new Set(), scores: {} };
+  const reviews = Object.values(review.reviews || {});
+  if (reviews.length < 2 || reviews.some((v) => v.error || !v.review)) return { indices: new Set(), scores: {} };
+  const failed = new Set(setCheck.failing(review, null, setCheck.advisoryOf(store, job)).map((f) => f.index));
+  return { indices: new Set((job.items || []).filter((it) => it.problem && ['passed', 'warning'].includes(it.status) && !failed.has(it.index)).map((it) => it.index)), scores: setCheck.scores(review) };
+}
+
+// ---------------------------------------------------------------- what a lesson is worth
+/** For each rule, how often a review cited it as broken (a '학습' fault restating it), and when last. */
+function lessonEffects(rules, records) {
+  const cites = records.filter((r) => LESSON_RULE.test(r.rule)).sort(newestFirst);
+  const out = new Map();
+  for (const rule of rules) {
+    const hits = cites.filter((c) => finalReview.restates(rule.text, c.detail));
+    out.set(rule.id, { cited: hits.length, sets: new Set(hits.map((h) => h.jobId)).size, lastCitedAt: hits[0]?.at || '', lastCitedJobId: hits[0]?.jobId || '' });
+  }
+  return out;
+}
+
+// The sets a lesson reaches: its original's, its subject's, or every set.
+const reachesJob = (rule, job) => (rule.scope === 'material' ? job.materialId === rule.source?.materialId : !rule.subject || (job.material?.subject || '') === rule.subject);
+const reachesRecord = (rule, r) => (rule.scope === 'material' ? r.materialId === rule.source?.materialId : !rule.subject || (r.subject || '') === rule.subject);
+const SLEEP_WINDOW = 10;
+
+/**
+ * A lesson the system wrote itself goes to sleep when the last `window` finished sets of its reach (made after it) had
+ * no review citing it: it is no longer sent to the writer, keeps its record, and wakes when its fault comes back
+ * (wakeLessons). The teacher's own items never sleep. Returns what changed.
+ */
+function sleepLessons(store, records, { window = SLEEP_WINDOW, now = new Date() } = {}) {
+  const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.status === 'done' && Array.isArray(j.items)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const cites = records.filter((r) => LESSON_RULE.test(r.rule));
+  const changes = [];
+  for (const rule of store.rules.all()) {
+    if (rule.status !== 'approved' || stageOf(rule) !== 'generation' || !bySystem(rule)) continue;
+    const mine = sets.filter((j) => reachesJob(rule, j) && j.createdAt > rule.createdAt).slice(0, window);
+    if (mine.length < window) continue;
+    const ids = new Set(mine.map((j) => j.id));
+    if (cites.some((c) => ids.has(c.jobId) && finalReview.restates(rule.text, c.detail))) continue;
+    const why = `최근 ${window}세트 동안 검수가 인용하지 않음`;
+    store.rules.put({ ...updateRule(rule, { status: 'dormant' }, now, { why, by: 'system' }), dormantAt: now.toISOString() });
+    changes.push({ kind: 'sleep', id: rule.id, text: rule.text, why });
+  }
+  return changes;
+}
+
+/**
+ * A sleeping lesson wakes when a new set's records hold the fault it was learned from (source.faultKeys, kept since
+ * 2026-10-24; older lessons by wording) within its reach. Returns what changed.
+ */
+function wakeLessons(store, fresh, { now = new Date() } = {}) {
+  const changes = [];
+  if (!fresh.length) return changes;
+  for (const rule of store.rules.all()) {
+    if (rule.status !== 'dormant') continue;
+    const keys = new Set(rule.source?.faultKeys || []);
+    const g = grams(rule.text);
+    const hit = fresh.find((r) => reachesRecord(rule, r) && (keys.size ? keys.has(r.key) : overlap(g, grams(r.detail)) >= 0.35));
+    if (!hit) continue;
+    const why = `배운 결함이 다시 나타남: ${hit.detail.slice(0, 80)}`;
+    const next = updateRule(rule, { status: 'approved' }, now, { why, by: 'system', jobId: hit.jobId });
+    delete next.dormantAt;
+    store.rules.put(next);
+    changes.push({ kind: 'wake', id: rule.id, text: rule.text, why });
+  }
+  return changes;
+}
+
+/** The fault keys of a list of fault texts (what a lesson was learned from). */
+const keysOf = (texts) => [...new Set(texts.map((t) => faultKey(parseFault(t).detail)).filter(Boolean))].slice(0, 40);
+
+// ---------------------------------------------------------------- the data of one original, for its page
+/**
+ * What the problem page shows under 문제 생성 (이 원본의 기록): every set of the original in time order with its review
+ * scores and fault stats, the kinds of fault that came back and whether they stopped, and what the next final problem's
+ * writer would get.
+ */
+function materialView(store, material, history) {
+  const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.materialId === material.id && Array.isArray(j.items)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const mine = history.filter((r) => r.materialId === material.id);
+  const rows = sets.map((j, i) => {
+    const earlier = history.filter((r) => r.jobId !== j.id && String(r.at) < String(j.createdAt));
+    const review = store.dataDir ? setCheck.readCheck(store.dataDir, j.id) : null;
+    const stats = j.faultStats || setStats(j, earlier, review?.done ? review : null);
+    const items = j.items || [];
+    return {
+      id: j.id, no: i + 1, at: j.createdAt, status: j.status, trainRound: j.trainRound || 0,
+      scores: review?.done && !review.stale ? setCheck.scores(review) : null,
+      made: items.filter((it) => ['passed', 'warning'].includes(it.status)).length, items: items.length,
+      repairs: items.reduce((n, it) => n + (it.attempts || []).filter((a) => a.kind === 'repair').length, 0),
+      redesigns: items.reduce((n, it) => n + (it.attempts || []).filter((a) => a.kind === 'redesign').length, 0),
+      ...stats,
+    };
+  });
+  const recentIds = new Set(sets.slice(-3).map((j) => j.id));
+  const kinds = groupsOf(mine).filter((g) => !LESSON_RULE.test(g.rule)).map((g) => ({
+    rule: g.rule, detail: g.detail.slice(0, 160), label: g.label, sets: g.sets.size, count: g.n, lastAt: g.at,
+    lastSetNo: rows.find((s) => [...g.sets].includes(s.id) && s.at === rows.filter((x) => g.sets.has(x.id)).map((x) => x.at).sort().at(-1))?.no || 0,
+    active: [...g.sets].some((id) => recentIds.has(id)),
+  })).sort((a, b) => b.sets - a.sets || String(b.lastAt).localeCompare(String(a.lastAt))).slice(0, 12);
+  const offered = forItem(history, material, { stage: { kind: 'twin' } }).map((e) => ({ where: e.where, rule: e.rule, detail: e.detail.slice(0, 160), sets: e.sets, label: e.label, example: Boolean(e.example?.after) }));
+  return { sets: rows, kinds, offered, records: mine.length };
+}
+
+module.exports = { parseFault, faultKey, keysOf, recordsOf, index, archive, archived, groupsOf, forItem, setStats, statsLine, passedProblems, lessonEffects, sleepLessons, wakeLessons, materialView, bySystem, FORMAT_NOISE, KINDS, OFFER_WINDOW, SLEEP_WINDOW };

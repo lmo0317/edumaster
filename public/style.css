@@ -382,6 +382,7 @@ pre.values { background: #f4f6f9; border-radius: 8px; padding: 8px 10px; font-si
 .lt-more { grid-column: 1 / -1; display: none; gap: 12px; padding: 14px 0 2px; }
 .lt-row:not(.lt-plain) .lt-more { grid-column: 2 / -1; }
 .lt-row.open .lt-more { display: grid; }
+.lt-row .lt-more.lt-more-open { display: grid; } /* 이 원본의 기록: always open */
 .lt-row.open .lt-open { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
 .lt-more label { margin: 0 0 4px; font-size: 13px; }
 .lt-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

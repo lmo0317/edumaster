@@ -531,13 +531,33 @@
   const emptyRow = (text) => `<div class="lt-row lt-plain fb-empty"><span class="muted small">${text}</span></div>`;
   const FROM_TXT = { check: '확인할 곳에서', fix: '세트의 고칠 점에서', auto: '세트 리포트에서 자동으로', review: '학습 반복의 검수에서' };
   function learnEffect(x) {
+    if (x.dormant) return `휴면 — ${x.dormantAt ? fmtTime(x.dormantAt) + ' · ' : ''}검수가 인용하지 않아 지시문에서 빠짐. 그 결함이 다시 나면 저절로 돌아옵니다`;
     if (x.status !== 'approved') return '꺼짐';
     if (x.stage === 'analysis') {
       if (x.inAnalysis === undefined) return '모든 분석에 들어감';
       return x.inAnalysis ? (x.how ? `반영: ${inlineRich(x.how)}` : '반영됨') : '<span class="warn">다시 분석하면 반영</span>';
     }
-    const judged = x.kept + x.broken;
-    return judged ? `지킴 ${x.kept}${x.broken ? ` · <span class="bad">어김 ${x.broken}</span>` : ''}` : '아직 검토 전';
+    // What the record says (faults.lessonEffects): a review cited it as broken n times (the writer had it and broke it).
+    if (x.cited) return `<span class="bad">검수 인용 ${x.cited}회</span> · 마지막 ${fmtTime(x.lastCitedAt)}`;
+    return x.citedSets === 0 && x.from && x.from !== 'input' ? '검수 인용 없음' : '아직 인용 없음';
+  }
+  // 이 원본의 기록 (docs/learning.md): the sets with scores and fault stats, the kinds that came back, the examples and
+  // the record the next final problem's writer gets.
+  function dataRows(D, examples = []) {
+    if (!D) return emptyRow('아직 기록이 없습니다.');
+    const pct = (s) => (s.rate == null ? '' : `${s.rate}%`);
+    const score = (s) => (s.scores ? Object.values(s.scores).map((v) => (v == null ? '–' : v)).join(' · ') : '<span class="muted">검수 없음</span>');
+    const sets = D.sets.length ? `<table class="rules small"><thead><tr><th>세트</th><th>날짜</th><th>Claude · Gemini</th><th>완성</th><th>결함</th><th>재발</th><th>수정 · 재설계</th></tr></thead><tbody>${D.sets.map((s) => `<tr><td><a href="#/j/${s.id}">${s.no}${s.trainRound ? ` <span class="muted">(반복 ${s.trainRound})</span>` : ''}</a></td><td>${fmtTime(s.at)}</td><td>${score(s)}</td><td>${s.made}/${s.items}</td><td>${s.faults}</td><td>${s.faults ? `${s.repeat} (${pct(s)})` : ''}</td><td>${s.repairs} · ${s.redesigns}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">아직 세트가 없습니다.</p>';
+    const kinds = D.kinds.length ? `<ul class="lt-ul small">${D.kinds.map((k) => `<li><span class="set-pill ${k.active ? 'bad' : 'ok'}">${k.active ? '계속' : '그침'}</span> [${esc(k.rule)}] ${inlineRich(k.detail)} <span class="muted">— ${k.sets}세트 ${k.count}번${k.lastSetNo ? `, 마지막 세트 ${k.lastSetNo}` : ''}${k.label ? ` · ${esc(k.label)}` : ''}</span></li>`).join('')}</ul>` : '<p class="muted small">되풀이된 결함이 없습니다.</p>';
+    const exList = examples.length ? `<ul class="lt-ul small">${examples.map((e) => `<li><span class="set-pill ok">${e.source === 'passed' ? '검수 통과' : '채택'}</span> <a href="#/j/${e.jobId}?item=${e.index}">${e.setNo ? `세트 ${e.setNo}` : '학습 반복 세트'} ${esc(e.label)}</a>${e.scores ? ` <span class="muted">(${Object.values(e.scores).join(' · ')})</span>` : ''} <span class="muted">${inlineRich(e.preview)}</span></li>`).join('')}</ul>` : '<p class="muted small">아직 없습니다. 채택한 문제나 Claude·Gemini 검수를 모두 통과한 문제가 본보기가 됩니다.</p>';
+    const offered = D.offered.length ? `<ul class="lt-ul small">${D.offered.map((o) => `<li><span class="muted">${esc(o.where)} · ${o.sets}세트${o.label ? ` · ${esc(o.label)}` : ''}${o.example ? ' · 고친 뒤 통과한 문제 포함' : ''}</span> [${esc(o.rule)}] ${inlineRich(o.detail)}</li>`).join('')}</ul>` : '<p class="muted small">아직 넘길 기록이 없습니다.</p>';
+    const row = (name, sub, more) => `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">${name}</span><span class="lt-sub lt-wrap">${sub}</span></div><div class="lt-more lt-more-open">${more}</div></div>`;
+    return [
+      row(`세트 ${D.sets.length}개 · 결함 기록 ${D.records}건`, '세트를 거듭하며 결함과 재발이 줄어야 합니다.', sets),
+      row(`되풀이된 결함 종류 ${D.kinds.length}개`, '최근 3세트 안에 다시 난 것은 "계속", 아니면 "그침"입니다.', kinds),
+      row(`본보기 ${examples.length}개`, '다음 세트의 같은 단계 문제에 최대 2개가 들어갑니다.', exList),
+      row(`다음 최종 문제의 작성자가 받는 기록 ${D.offered.length}건`, '이 원본의 지난 결함 → 같은 단원 → 어디서나 되풀이된 것(최근 12세트 안) 순서입니다.', offered),
+    ].join('');
   }
   function learnRow(x, opened) {
     const key = 'L:' + x.id;
@@ -638,6 +658,10 @@
           </div>
         </section>
         <section class="lt-sec">
+          <div class="lt-sec-head"><h2>이 원본의 기록</h2><p>세트마다 걸린 결함과 검수 점수, 되풀이된 결함 종류, 다음 세트의 작성자가 받는 본보기와 기록입니다. 선생님이 손대지 않아도 이 데이터로 다음 세트가 달라집니다.</p></div>
+          <div class="panel lt-list" id="g-data"><div class="lt-row lt-plain"><span class="muted small">불러오는 중…</span></div></div>
+        </section>
+        <section class="lt-sec">
           <div class="lt-sec-head"><h2>새 세트 만들기</h2><p>만든 문제는 다른 모델이 정답을 모른 채 다시 풀어 대조하고, 최종 검수를 통과해야 완성됩니다.</p></div>
           <div class="panel" id="generate"></div>
         </section>
@@ -695,9 +719,9 @@
       const ex = L.generation.examples;
       $('#a-learn').innerHTML = a.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 없습니다.');
       bindLearnRows($('#a-learn'), a, opened, side);
-      $('#g-learn').innerHTML = (g.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 없습니다.'))
-        + (ex.length ? `<div class="lt-row lt-plain"><div class="lt-main"><span class="lt-name">본보기 ${ex.length}개</span><span class="lt-sub lt-wrap">채택한 문제 · ${ex.map((e) => `<a href="#/j/${e.jobId}?item=${e.index}">세트 ${e.setNo} ${esc(e.label)}</a>`).join(', ')}</span></div></div>` : '');
+      $('#g-learn').innerHTML = g.map((x) => learnRow(x, opened)).join('') || emptyRow('아직 없습니다.');
       bindLearnRows($('#g-learn'), g, opened, side);
+      if ($('#g-data')) $('#g-data').innerHTML = dataRows(L.data, ex);
       $('#st-read').textContent = `STEP ${m.steps.length}개 · 학습 ${on(a).length}개`;
       $('#st-make').textContent = `생성 학습 ${on(g).length}개${ex.length ? ` · 본보기 ${ex.length}개` : ''}`;
       const review = gens.filter((j) => !isBusy(j)).flatMap((j) => j.items || []).filter((it) => !it.adopted && it.status === 'needs_review').length;
@@ -1549,7 +1573,7 @@
   const lmFilter = (node) => {
     const gen = (x) => x.stage === 'generation';
     const f = {
-      all: () => true, todo: () => false, persona: () => false, corr: () => false,
+      all: () => true, todo: () => false, persona: () => false, corr: () => false, dormant: (x) => x.dormant,
       'guide-a': (x) => x.layer === 'guide' && !gen(x), 'guide-g': (x) => x.layer === 'guide' && gen(x),
       nosubj: (x) => x.layer === 'lesson' && !x.subject, problems: (x) => x.layer === 'problem',
     }[node];
@@ -1578,6 +1602,7 @@
       const leaf = (id, label, depth, n = count(id)) => `<button type="button" class="lm-node d${depth}${node === id ? ' on' : ''}" data-node="${esc(id)}" title="${esc(label)}"><span class="lm-label">${esc(label)}</span><span class="n">${n || ''}</span></button>`;
       const tree = [
         leaf('todo', '할 일', 0, todoN), leaf('all', '전체', 0, items.filter((x) => x.status === 'approved').length),
+        leaf('dormant', '휴면', 0, items.filter((x) => x.dormant).length),
         '<div class="lm-group">지침</div>', leaf('persona', '페르소나', 1, d.persona ? 1 : 0), leaf('guide-a', '분석 지침', 1), leaf('guide-g', '생성 지침', 1),
         '<div class="lm-group">과목별 공통 학습</div>',
         ...subjects.flatMap((s, i) => [leaf(`s${i}`, s, 1), ...LM_CATS.filter((c) => count(`s${i}-${c}`)).map((c) => leaf(`s${i}-${c}`, LM_CAT[c], 2))]),
@@ -1586,11 +1611,12 @@
         problemIds.length ? '' : '<p class="lm-none">아직 없습니다</p>',
         '<div class="lm-group">읽기</div>', leaf('corr', '읽기 교정', 1, d.corrections.length),
       ].join('');
-      const label = { todo: '할 일', all: '전체', persona: '페르소나', 'guide-a': '분석 지침', 'guide-g': '생성 지침', nosubj: '모든 과목에 들어가는 공통 학습', problems: '문제별 학습', corr: '읽기 교정' }[node]
+      const label = { todo: '할 일', all: '전체', dormant: '휴면 학습', persona: '페르소나', 'guide-a': '분석 지침', 'guide-g': '생성 지침', nosubj: '모든 과목에 들어가는 공통 학습', problems: '문제별 학습', corr: '읽기 교정' }[node]
         || (node.startsWith('p-') ? titleOf.get(node.slice(2)) || '문제별 학습' : sn ? [sn.subject, sn.cat && LM_CAT[sn.cat]].filter(Boolean).join(' › ') : '');
       const NOTE = {
         todo: '지금 정리하면 좋은 것입니다. 묶음은 한 번에 합치고, 목록은 여러 개 골라 한꺼번에 처리합니다.',
         all: '모든 학습입니다. 왼쪽에서 과목·종류를 고르면 그 분류만 봅니다. 부딪히면 지침 → 문제별 → 공통 학습 순서로 따릅니다.',
+        dormant: 'AI가 쓴 학습 중 자기 범위의 세트 10개 동안 검수가 한 번도 인용하지 않은 것입니다. 지시문에서 빠져 있고, 그 결함이 다시 나면 저절로 돌아옵니다. 선생님 항목은 휴면하지 않습니다.',
         persona: '분석·생성·검토, 모든 AI 호출의 맨 앞에 붙는 AI의 역할입니다.',
         'guide-a': '원본을 읽고 STEP으로 정리할 때 반드시 지킬 것입니다. 모든 문제에 가장 먼저 들어갑니다.',
         'guide-g': '변형 문제를 만들 때 반드시 지킬 것입니다. 검수자도 이것을 기준으로 봅니다.',
@@ -1610,7 +1636,9 @@
         `<span class="lm-chip">${LM_CAT[x.category] || ''}</span>`,
         `<span class="lm-chip${x.system ? ' auto' : ''}">${LM_FROM[x.from] || '직접 입력'} · ${lmDay(x.createdAt)}</span>`,
         x.history.length ? `<span class="lm-chip">${x.history.length}번 고침</span>` : '',
-        x.status !== 'approved' ? `<span class="lm-chip off">꺼짐${x.offReason === 'format' ? ' · 서버가 맞추는 형식' : ''}</span>` : '',
+        // What the record says of it (faults.lessonEffects): a review cited it as broken while the writer had it.
+        x.stage === 'generation' && x.cited ? `<span class="lm-chip bad">검수 인용 ${x.cited}회 · ${lmDay(x.lastCitedAt)}</span>` : '',
+        x.dormant ? `<span class="lm-chip off">휴면 · ${lmDay(x.dormantAt)}</span>` : x.status !== 'approved' ? `<span class="lm-chip off">꺼짐${x.offReason === 'format' ? ' · 서버가 맞추는 형식' : ''}</span>` : '',
       ].join('');
       const row = (x) => {
         const open = lmUi.open === x.id, editing = lmUi.edit === x.id;
