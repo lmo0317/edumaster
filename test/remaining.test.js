@@ -555,6 +555,13 @@ test('the reviewer judges by the criteria and the teacher\'s learning; what the 
   assert.match(VARIATION_CRITERIA, /행·용기·실험을 더하거나 빼는 것\(검수 기준의 용기·실험 구성·형식 결함이다\)/);
   assert.match(VARIATION_CRITERIA, /STEP 제목은 선생님 제목 그대로 둔다/);
   assert.doesNotMatch(VARIATION_CRITERIA, /자료의 구성/);
+  // A hidden cell the student must infer is (1), whatever STEP settles it and however the filled table compares to the
+  // original's: read as "fill the cells and compare", a 3-cell ○/× table has one other arrangement, and bio-k61's final
+  // was failed six rounds running (2026-10-23) — unless the hidden cell is decoration.
+  assert.match(VARIATION_CRITERIA, /어느 STEP에서 정해지든 학생이 추론해야 하는 값이면 된다/);
+  assert.match(VARIATION_CRITERIA, /숨긴 칸을 정답으로 채운 표가 원본과 같은 배치라는 이유로 제외하지 않는다/);
+  assert.match(VARIATION_CRITERIA, /풀이와 보기 판정 어디에도 쓰이지 않으면\(장식\) 해당하지 않는다/);
+  assert.match(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'scripts', 'review-criteria.md'), 'utf8'), /표의 칸을 숨겨 추론하게 한 것은 ①에 해당한다/);
 });
 
 // The writer reads the same criteria the set is reviewed by, so it does not learn each one as a repair note after
