@@ -79,6 +79,11 @@ test('a lesson is measured by the reviews that cited it; a system lesson uncited
   assert.equal(asleep.history.at(-1).by, 'system');
   assert.match(asleep.history.at(-1).why, /10세트/);
   assert.equal(learning.selectRules(store.rules.all(), { id: 'm1', subject: '생명과학' }).some((r) => r.id === 'ai1'), false, 'asleep, it is not sent');
+  // Only the sets whose writer had the lesson count: with the lesson left out of the last two sets' prompts, nine were
+  // silent, not ten, and it stays awake.
+  const keptAwake = lessonOf('ai3', '그래프 축에 수치 눈금을 둘 때는 실제 값과 겹치지 않게 한다.', 'auto');
+  const store2 = tmpStore([keptAwake], jobs.map((j, i) => ({ ...j, rules: i >= 9 ? [{ id: 'other' }] : [{ id: 'ai3' }] })));
+  assert.deepEqual(faults.sleepLessons(store2, history, { now: new Date('2026-10-14T00:00:00Z') }), []);
   // The fault it was learned from comes back in a new set: awake. The other sleeps on (its text does not match).
   const fresh = faults.recordsOf(job('s99', 'm1', { at: day(15), items: [item(1, twin, { attempts: [rep('문제 설계: 앞 문제(STEP 1~2 연습)와 선택지가 같습니다.', day(15))] })] }));
   const woke = faults.wakeLessons(store, fresh, { now: new Date('2026-10-15T02:00:00Z') });

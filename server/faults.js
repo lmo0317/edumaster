@@ -246,10 +246,16 @@ const reachesJob = (rule, job) => (rule.scope === 'material' ? job.materialId ==
 const reachesRecord = (rule, r) => (rule.scope === 'material' ? r.materialId === rule.source?.materialId : !rule.subject || (r.subject || '') === rule.subject);
 const SLEEP_WINDOW = 10;
 
+// Whether a set's writer had the lesson in its prompt (the set keeps the rules it was made with); an older set without
+// that list counts by reach.
+const sentTo = (rule, job) => (Array.isArray(job.rules) && job.rules.length ? job.rules.some((r) => (typeof r === 'string' ? r : r.id) === rule.id) : reachesJob(rule, job));
+
 /**
- * A lesson the system wrote itself goes to sleep when the last `window` finished sets of its reach (made after it) had
- * no review citing it: it is no longer sent to the writer, keeps its record, and wakes when its fault comes back
- * (wakeLessons). The teacher's own items never sleep. Returns what changed.
+ * A lesson the system wrote itself goes to sleep when the last `window` finished sets whose writer had it (made after
+ * it) had no review citing it: it took room in the prompt that many times with no effect anyone could see. It is no
+ * longer sent, keeps its record, and wakes when its fault comes back (wakeLessons). Sets it was not sent to (another
+ * topic's, past the cap) do not count — a lesson about graph axes is not judged by sets without a graph. The teacher's
+ * own items never sleep. Returns what changed.
  */
 function sleepLessons(store, records, { window = SLEEP_WINDOW, now = new Date() } = {}) {
   const sets = store.jobs.all().filter((j) => j.type === 'generate' && j.status === 'done' && Array.isArray(j.items)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -257,11 +263,11 @@ function sleepLessons(store, records, { window = SLEEP_WINDOW, now = new Date() 
   const changes = [];
   for (const rule of store.rules.all()) {
     if (rule.status !== 'approved' || stageOf(rule) !== 'generation' || !bySystem(rule)) continue;
-    const mine = sets.filter((j) => reachesJob(rule, j) && j.createdAt > rule.createdAt).slice(0, window);
+    const mine = sets.filter((j) => j.createdAt > rule.createdAt && sentTo(rule, j)).slice(0, window);
     if (mine.length < window) continue;
     const ids = new Set(mine.map((j) => j.id));
     if (cites.some((c) => ids.has(c.jobId) && finalReview.restates(rule.text, c.detail))) continue;
-    const why = `최근 ${window}세트 동안 검수가 인용하지 않음`;
+    const why = `지시문에 들어간 최근 ${window}세트에서 검수가 한 번도 인용하지 않음`;
     store.rules.put({ ...updateRule(rule, { status: 'dormant' }, now, { why, by: 'system' }), dormantAt: now.toISOString() });
     changes.push({ kind: 'sleep', id: rule.id, text: rule.text, why });
   }
