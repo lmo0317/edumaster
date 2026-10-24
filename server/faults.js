@@ -17,8 +17,9 @@ const { grams, overlap } = require('./learning');
 const TAGGED = /^(?:최종 검수: )?(?:\[(?:두 번째 검수|Claude|Gemini|GPT)\] )*\[([^\]·]+?)(?: · (high|mid|low))?\]\s*([\s\S]*)$/;
 // The code checks' own prefixes ("문제 설계: …", "독립 풀이 지적(missing): …").
 const PREFIXED = /^(문제 설계|STEP 범위|해설|코드 검산|독립 풀이[^:：]*|손계산 수치|해설 보기 분석|보기·정답 연결|가정 방향|통합 변형|수치)\s*[:：]\s*([\s\S]*)$/;
-// Not fault data: what the server lays out itself (the teacher's sentence frames) — the writer is asked for a value, not told.
-const FORMAT_NOISE = /\[틀 \d+-\d+\]|틀 번호|자리 이름 그대로/;
+// Not fault data: what the server lays out itself (the teacher's sentence frames) — the writer is asked for a value, not
+// told — and the lines that say a review did not happen or could not be read.
+const FORMAT_NOISE = /\[틀 \d+-\d+\]|틀 번호|자리 이름 그대로|최종 검수까지 가지 못했습니다|^통과하지 못함$|결과를 내지 못했습니다|다시 검수해야 합니다/;
 // Attempts whose failures are faults of the problem or its solution (not a lost answer, not a frame value to fill).
 const KINDS = new Set(['precheck', 'repair', 'redesign', 'rewrite']);
 
@@ -128,7 +129,9 @@ const WHERE = ['다른 과목의 원본', '같은 과목의 다른 원본', '같
 function forItem(records, material, item, { limit = 8, maxChars = 3600 } = {}) {
   const sk = stageKey(item.stage);
   const tier = (g) => (g.materials.has(material.id) ? 3 : g.topics.has(`${material.subject || ''}|${material.topic || ''}`) && material.topic ? 2 : g.subjects.has(material.subject || '') && material.subject ? 1 : 0);
-  const scored = groupsOf(records).map((g) => ({ g, tier: tier(g) }))
+  // A fault that restates a lesson ('학습') says nothing the lesson in the writer's prompt does not; offered again as a
+  // record it would only weigh that lesson up — for a lesson the system wrote itself, back to the bar that stalled bio-k61.
+  const scored = groupsOf(records).filter((g) => !/^(학습|AI 학습 참고)$/.test(g.rule)).map((g) => ({ g, tier: tier(g) }))
     .filter(({ g, tier: t }) => t >= 2 || g.sets.size >= 2)
     .sort((a, b) => b.tier - a.tier || Number(b.g.stages.has(sk)) - Number(a.g.stages.has(sk)) || Math.min(b.g.sets.size, 5) - Math.min(a.g.sets.size, 5) || String(b.g.at).localeCompare(String(a.g.at)));
   const out = [];

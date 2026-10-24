@@ -76,6 +76,13 @@ test('a problem\'s writer gets this original\'s faults first, then its topic\'s,
   assert.equal(prompts.priorFaultsBlock([]), '');
   // A practice problem of the same original: its own stage's fault comes first.
   assert.equal(faults.forItem(history, material, item(0, step1))[0].rule, '문제 설계');
+  // A fault that restates a lesson is counted (setStats) but not offered: the lesson is in the prompt already, and a
+  // system lesson would come back as criteria (bio-k61, 2026-10-23).
+  const withLesson = [...history, ...faults.index([job('own3', 'm1', { at: '2026-10-22T00:00:00Z', items: [item(1, twin, { attempts: [rep('최종 검수: [학습 · mid] \'표의 칸을 숨길 때는 STEP 2를 거쳐야 정해지는 자리를 고른다.\' ⓑ는 STEP 1에서 정해집니다.', '2026-10-22T01:00:00Z')] })] })])];
+  assert.ok(!faults.forItem(withLesson, material, item(1, twin)).some((e) => e.rule === '학습'));
+  assert.equal(faults.setStats(job('own4', 'm1', { items: [item(1, twin, { attempts: [rep('최종 검수: [학습 · mid] \'표의 칸을 숨길 때는 STEP 2를 거쳐야 정해지는 자리를 고른다.\' 어겼습니다.')] })] }), withLesson).lesson, 1);
+  // A line that says the review did not happen is not a fault.
+  assert.equal(faults.recordsOf(job('x', 'm1', { items: [item(1, twin, { status: 'needs_review', problems: ['최종 검수: 앞의 검토에서 고칠 점이 남아 최종 검수까지 가지 못했습니다.'] })] })).length, 0);
 });
 
 test('a finished set is measured against the record: faults of a kind seen before, in this original, and ones a prompt lesson already named', () => {
