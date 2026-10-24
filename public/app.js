@@ -331,20 +331,26 @@
   };
 
   // What an original problem needs next: reading, a teacher look, or nothing.
-  function materialState(m, sets) {
+  function materialState(m, sets, all = sets) {
     if (m.status === 'analyzing') return { cat: 'busy', tone: 'run', label: '사진 읽는 중', next: '잠시 후 읽은 내용을 확인할 수 있습니다.' };
     if (m.status === 'failed') return { cat: 'check', tone: 'bad', label: '읽기 실패', next: '다시 분석하거나 더 선명한 사진을 넣어 주세요.' };
+    // A set being made counts as busy even when it is a 학습 반복 round the list does not show.
+    if (all.some((j) => ['queued', 'running'].includes(j.status))) return { cat: 'busy', tone: 'run', label: '문제 만드는 중', next: '' };
     if (!sets.length) return { cat: 'check', tone: 'warn', label: '문제 만들 준비됨', next: '읽은 내용과 STEP을 확인한 뒤 문제를 만드세요.' };
     const latest = setStatus(sets[0]);
-    if (sets.some((j) => ['queued', 'running'].includes(j.status))) return { cat: 'busy', tone: 'run', label: '문제 만드는 중', next: '' };
     if (latest.cat === 'check') return { cat: 'check', tone: 'warn', label: '결과 확인 필요', next: '검토가 필요한 문제가 있습니다.' };
     return { cat: 'done', tone: 'ok', label: '완료', next: '' };
   }
 
   async function materialsView() {
     const [materials, jobs] = await Promise.all([api('GET', '/api/materials'), api('GET', '/api/jobs')]);
-    const setsOf = (id) => jobs.filter((j) => j.type === 'generate' && j.materialId === id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const rows = materials.map((m) => ({ m, sets: setsOf(m.id) })).map((x) => ({ ...x, st: materialState(x.m, x.sets) }));
+    // The card counts the sets the problem page lists (regular sets and the 학습 반복 rounds that reached the target):
+    // "변형 세트 12" on a card whose page showed one set (every round counted, 2026-10-24).
+    const jobsOf = (id) => jobs.filter((j) => j.materialId === id);
+    const rows = materials.map((m) => {
+      const mine = jobsOf(m.id);
+      return { m, sets: listedSets(mine), all: mine.filter((j) => j.type === 'generate') };
+    }).map((x) => ({ ...x, st: materialState(x.m, x.sets, x.all) }));
     const TABS = [['all', '전체'], ['busy', '진행 중'], ['check', '확인 필요'], ['done', '완료']];
     const count = (cat) => (cat === 'all' ? rows.length : rows.filter((x) => x.st.cat === cat).length);
     const card = ({ m, sets, st }) => `<div class="mat-card" data-cat="${st.cat}">
