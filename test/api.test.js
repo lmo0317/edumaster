@@ -184,10 +184,12 @@ test('one-click STEP merge for a material whose STEPs outnumber the teacher\'s s
 test('지침 and 전체 학습: the persona leads every call; every-problem analysis items reach every analysis; the checks are listed', async () => {
   const s = await start();
   try {
-    assert.equal((await s.call('GET', '/api/learning')).status, 401, 'login required');
+    assert.equal((await s.call('GET', '/api/learning/rules')).status, 401, 'login required');
     await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
-    let d = (await s.call('GET', '/api/learning')).data;
-    assert.deepEqual([d.persona, d.guides.analysis, d.guides.generation, d.lessons.analysis, d.lessons.generation], ['', [], [], [], []]);
+    let d = (await s.call('GET', '/api/learning/rules')).data;
+    assert.deepEqual([d.persona, d.items], ['', []]);
+    assert.deepEqual((await s.call('GET', '/api/learning/journal')).data, { items: [], sets: [], subjects: [], newSets: 3 });
+    assert.deepEqual((await s.call('GET', '/api/learning/records')).data.totals, { sets: 0, faults: 0, repeat: 0, own: 0, lesson: 0, rate: null });
     // 하네스: the checks with what happens on failure, how they fared, and settings kept within their range.
     const h = (await s.call('GET', '/api/harness')).data;
     assert.ok(h.checks.generation.length >= 10 && h.checks.analysis.length >= 5);
@@ -212,8 +214,9 @@ test('지침 and 전체 학습: the persona leads every call; every-problem anal
     // 전체 학습 of analysis: a new problem's analysis follows it, though the problem has none of its own.
     const easy = (await s.call('POST', '/api/rules', { text: '해설은 쉽게 풀어 쓴다', scope: 'global', layer: 'lesson', stage: 'analysis' })).data;
     const four = (await s.call('POST', '/api/rules', { text: 'STEP을 4개로 나눈다', scope: 'global', layer: 'guide', stage: 'analysis' })).data;
-    d = (await s.call('GET', '/api/learning')).data;
-    assert.deepEqual([d.lessons.analysis.map((x) => x.text), d.guides.analysis.map((x) => x.text)], [['해설은 쉽게 풀어 쓴다'], ['STEP을 4개로 나눈다']]);
+    d = (await s.call('GET', '/api/learning/rules')).data;
+    const of = (layer, stage) => d.items.filter((x) => x.layer === layer && x.stage === stage).map((x) => x.text);
+    assert.deepEqual([of('lesson', 'analysis'), of('guide', 'analysis')], [['해설은 쉽게 풀어 쓴다'], ['STEP을 4개로 나눈다']]);
     const a = (await s.call('POST', '/api/materials', { problemImage: image, solutionImage: image })).data;
     await s.waitJob(a.jobId);
     let m = (await s.call('GET', '/api/materials/' + a.material.id)).data;
@@ -401,12 +404,12 @@ test('a problem\'s generation learning: 지침, this problem, 전체 학습 in t
     assert.equal(l.sets[0].rules, 3);
     // Up: this problem → 전체 학습 (it remembers where it was learned) → 지침.
     await s.call('PUT', '/api/rules/' + own.id, { scope: 'global' });
-    let d = (await s.call('GET', '/api/learning')).data;
-    const up = d.lessons.generation.find((x) => x.id === own.id);
+    let d = (await s.call('GET', '/api/learning/rules')).data;
+    const up = d.items.find((x) => x.id === own.id);
     assert.deepEqual([up.layer, up.learnedOn], ['lesson', 'P']);
     await s.call('PUT', '/api/rules/' + own.id, { layer: 'guide' });
-    d = (await s.call('GET', '/api/learning')).data;
-    assert.ok(d.guides.generation.some((x) => x.id === own.id));
+    d = (await s.call('GET', '/api/learning/rules')).data;
+    assert.ok(d.items.some((x) => x.id === own.id && x.layer === 'guide' && x.stage === 'generation'));
     // And back to the problem it came from.
     await s.call('PUT', '/api/rules/' + own.id, { scope: 'material' });
     l = (await s.call('GET', `/api/materials/${id}/learning`)).data;

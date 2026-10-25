@@ -14,6 +14,7 @@ const { createUsers } = require('./users');
 const { makeRule, updateRule, readingCorrections, recordCorrections, migrateLearning, migrateLearningV2, analysisLearning, selectRules, layerOf, stageOf, categoryOf, bySystem, isFormatLesson } = require('./learning');
 const { normalizeStages, buildItems } = require('./plan');
 const learningMap = require('./learning-map');
+const learningJournal = require('./learning-journal');
 const pipeline = require('./pipeline');
 const { invalidateDerived } = require('./material-version');
 const setCheck = require('./set-check');
@@ -910,36 +911,31 @@ function createApp(options = {}) {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');
     return comparePdf(res, id, key, round || '');
   }, { open: true });
-  // 학습 (docs/learning.md): each problem's own items (문제별 학습) and the every-problem items by layer and stage, with where each was learned and how
-  // it fared; the reading corrections (공통 학습 of analysis); the persona and, read-only, how results are checked (지침).
-  route('GET', /^\/api\/learning$/, () => {
-    const kept = keptByRule();
-    const effects = faults.lessonEffects(store.rules.all(), faults.index(store.jobs.all(), { dataDir: cfg.dataDir }));
-    const global = store.rules.all().filter((r) => r.scope !== 'material').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => itemView(r, kept));
-    const pick = (layer, stage) => global.filter((r) => r.layer === layer && r.stage === stage);
-    // 문제별 학습: each problem's own items, problems with the newest teaching first. An analysis item says whether the
-    // problem's current analysis had it (as on the problem page).
-    const own = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const problems = store.materials.all().map((m) => {
-      const mine = own.filter((r) => r.source.materialId === m.id);
-      const used = new Set((m.learningUsed || []).map((x) => x.id));
-      const view = (r) => (stageOf(r) === 'analysis'
-        ? { ...itemView(r, kept), inAnalysis: m.learningUsed ? used.has(r.id) : Boolean(m.analyzedAt && r.createdAt < m.analyzedAt) }
-        : itemView(r, kept));
-      return { id: m.id, title: m.title, subject: m.subject || '', topic: m.topic || '', latest: mine.at(-1)?.createdAt || '',
-        analysis: mine.filter((r) => stageOf(r) === 'analysis').map(view), generation: mine.filter((r) => stageOf(r) === 'generation').map(view) };
-    }).filter((p) => p.analysis.length + p.generation.length).sort((a, b) => b.latest.localeCompare(a.latest));
-    return {
-      problems,
-      map: learningMapView(kept, effects),
-      materials: store.materials.all().length,
-      persona: llmSettings(cfg.dataDir).persona || '',
-      guides: { analysis: pick('guide', 'analysis'), generation: pick('guide', 'generation') },
-      lessons: { analysis: pick('lesson', 'analysis'), generation: pick('lesson', 'generation') },
-      corrections: store.corrections.all().sort((a, b) => b.count - a.count),
-      // How results are checked is on 학습 › 하네스 (/api/harness).
-    };
+  // 학습 (docs/learning.md §4) is three reads, one per tab. 규칙: what the teacher set — the persona and every item the
+  // teacher wrote (지침, 공통 학습, a problem's own) — nothing the system wrote. AI 학습: what the system learned by itself,
+  // as a journal by set and as a list ordered by what the record says each lesson did. 기록: the fault data across
+  // every original. The subjects a tag can take are those of the problems and any already used.
+  const subjectsInUse = (all = store.rules.all()) => [...new Set([...store.materials.all().map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort();
+  route('GET', /^\/api\/learning\/rules$/, () => {
+    const all = store.rules.all();
+    const jobsById = new Map(store.jobs.all().map((j) => [j.id, j]));
+    const items = all.filter((r) => !bySystem(r)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
+      ...itemView(r, new Map()), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
+      materialId: r.scope === 'material' ? r.source?.materialId || '' : '', materialTitle: titleOfMaterial(r.scope === 'material' ? r.source?.materialId : ''),
+      category: categoryOf(r), history: (r.history || []).slice().reverse(), evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
+    }));
+    if (learningMap.mergePairs(all, readMerges()).some((p) => !p.decision)) checkMergePairs();
+    return { persona: llmSettings(cfg.dataDir).persona || '', items, subjects: subjectsInUse(all), materials: store.materials.all().map((m) => ({ id: m.id, title: m.title, subject: m.subject || '' })) };
   });
+  route('GET', /^\/api\/learning\/journal$/, () => {
+    const all = store.rules.all();
+    const jobsAll = store.jobs.all();
+    const effects = faults.lessonEffects(all, faults.index(jobsAll, { dataDir: cfg.dataDir }), jobsAll);
+    const items = all.filter(bySystem).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((r) => learningJournal.itemOf(r, effects.get(r.id) || {}, titleOfMaterial));
+    if (learningMap.mergePairs(all, readMerges()).some((p) => !p.decision)) checkMergePairs();
+    return { items, sets: learningJournal.journalOf(store), subjects: subjectsInUse(all), newSets: learningJournal.NEW_SETS };
+  });
+  route('GET', /^\/api\/learning\/records$/, () => ({ ...faults.recordsView(store), corrections: store.corrections.all().sort((a, b) => b.count - a.count) }));
   // 학습 지도: every item with how many problems carried it, its mark on the recent sets and what it was learned from;
   // the summary (how many, how many lately, what one problem gets against the cap); the pairs the AI found to be one
   // item (정리 후보), checked a few at a time in the background as items come in.
@@ -985,29 +981,6 @@ function createApp(options = {}) {
     return { id: next.id, text: next.text, removed: drop.length };
   }
   const pairsAmong = (list) => learningMap.mergePairs(list).filter((p) => list.includes(p.a) && list.includes(p.b));
-  function learningMapView(kept, effects = new Map()) {
-    const all = store.rules.all();
-    const jobsAll = store.jobs.all();
-    const marks = learningMap.setMarks(jobsAll, all);
-    const jobsById = new Map(jobsAll.map((j) => [j.id, j]));
-    const materials = store.materials.all();
-    const analysisUses = (id) => materials.filter((m) => (m.learningUsed || []).some((x) => x.id === id)).length;
-    const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
-      ...itemView(r, kept), ...effectView(r, effects), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
-      materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
-      category: categoryOf(r), system: bySystem(r), offReason: r.offReason || '', format: isFormatLesson(r.text),
-      history: (r.history || []).slice().reverse(), uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
-      evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
-    }));
-    // Items that may say the same thing are checked and merged by the AI in the background; the teacher is given no
-    // list to tidy (the user, 2026-10-25) — what the data decides shows on the items (history, 휴면, 검수 인용).
-    if (learningMap.mergePairs(all, readMerges()).some((p) => !p.decision)) checkMergePairs();
-    return {
-      items,
-      // The subjects an every-problem item can be tagged with: those of the problems, and any already used.
-      subjects: [...new Set([...materials.map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort(),
-    };
-  }
   // Merging by hand (the teacher's selection); skipping keeps the items apart and does not ask again about those pairs.
   const rulesOf = (ids) => {
     const list = [...new Set((Array.isArray(ids) ? ids : []).map(String))].map((id) => store.rules.get(id));

@@ -40,7 +40,12 @@ const FORMAT_LESSON = /\\ce\{[^}]*\}\$? ?(꼴|표기|로 (쓴|써|바꾸))|\\tex
 const isFormatLesson = (text) => FORMAT_LESSON.test(String(text || ''));
 
 function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
-
+/** The faulted line and its fix, when the learner gave one worth keeping. */
+function exampleOf(x) {
+  if (!x || typeof x !== 'object') return null;
+  const before = clean(x.before, 300), after = clean(x.after, 300);
+  return before || after ? { before, after } : null;
+}
 function makeRule(input, now = new Date()) {
   const text = clean(input.text, 1500);
   if (text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
@@ -58,6 +63,10 @@ function makeRule(input, now = new Date()) {
     target: TARGETS.has(input.target) ? input.target : 'all',
     ...(CATEGORIES.includes(input.category) ? { category: input.category } : {}),
     text,
+    // A lesson the system writes comes in three parts (docs/learning.md, 학습 문장의 구조): the rule sentence (text, what
+    // the prompt gets), the fault it prevents (why) and, when there is one, the faulted line and its fix (example).
+    ...(clean(input.why, 300) ? { why: clean(input.why, 300) } : {}),
+    ...(exampleOf(input.example) ? { example: exampleOf(input.example) } : {}),
     subject: clean(input.subject, 40),
     topic: clean(input.topic, 120),
     history: [],
@@ -88,6 +97,8 @@ function updateRule(rule, patch, now = new Date(), change = {}) {
   }
   if (CATEGORIES.includes(patch.category)) next.category = patch.category;
   if (patch.topic !== undefined) next.topic = clean(patch.topic, 120);
+  if (patch.why !== undefined) { if (clean(patch.why, 300)) next.why = clean(patch.why, 300); else delete next.why; }
+  if (patch.example !== undefined) { if (exampleOf(patch.example)) next.example = exampleOf(patch.example); else delete next.example; }
   // dormant: a lesson the system wrote and the data put to sleep (faults.sleepLessons) — not sent, kept, woken by its
   // fault coming back. A status the system changes is on the record with its reason, like a rewritten sentence.
   if (['approved', 'pending', 'rejected', 'dormant'].includes(patch.status)) {

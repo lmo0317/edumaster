@@ -44,7 +44,7 @@ test('candidates are switched-on items of one stage that reach the same problems
   assert.equal(keeperOf(rules[4], rules[0])[0].id, 'a');
 });
 
-test('학습 지도 over the API: the map, a group the AI read as one, merging and skipping', async () => {
+test('규칙 over the API: the teacher\x27s items, a group the AI read as one merged at once, bulk changes', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'em2-'));
   createUsers(dataDir).create({ username: 'admin', password: 'test-pass-1', role: 'admin' });
   const app = createApp({ dataDir, llmMode: 'mock' });
@@ -65,13 +65,14 @@ test('학습 지도 over the API: the map, a group the AI read as one, merging a
     // Two more that overlap but the (mock) AI reads as different (they do not start alike).
     await add('수는 계산하기 쉬운 값으로 잡고 오답도 같은 꼴로 만든다');
     await add('오답도 같은 꼴로 만들고 수는 계산하기 쉬운 값으로 잡는다');
-    let d = (await call('GET', '/api/learning')).data.map;
+    let d = (await call('GET', '/api/learning/rules')).data;
     assert.equal(d.items.length, 5);
     assert.ok(d.items.every((x) => x.category === 'solution' && Array.isArray(x.history) && Array.isArray(x.evidence)));
-    assert.equal(d.todo, undefined, 'the teacher is given no list to tidy');
+    assert.equal(d.persona, '');
+    assert.equal((await call('GET', '/api/learning/journal')).data.items.length, 0, 'the teacher\x27s items are not AI 학습');
     // The AI checks the overlapping pairs in the background and merges the pair it reads as one at once: the 지침 stays
     // with the teacher's own sentence and both originals; the other is gone.
-    const until = async (ok) => { for (let i = 0; i < 150 && !ok(d); i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; } return d; };
+    const until = async (ok) => { for (let i = 0; i < 150 && !ok(d); i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning/rules')).data; } return d; };
     await until((m) => m.items.length === 4);
     assert.equal(d.items.length, 4);
     const rules = (await call('GET', '/api/rules')).data;
@@ -91,10 +92,10 @@ test('학습 지도 over the API: the map, a group the AI read as one, merging a
     // Several at once: a subject tag, off, and removal.
     const two = d.items.slice(0, 2).map((x) => x.id);
     assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, patch: { subject: '화학', status: 'pending' } })).data, { changed: 2 });
-    d = (await call('GET', '/api/learning')).data.map;
+    d = (await call('GET', '/api/learning/rules')).data;
     assert.ok(two.every((id) => { const x = d.items.find((i) => i.id === id); return x.subject === '화학' && x.status === 'pending'; }));
     assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, remove: true })).data, { changed: 2 });
-    assert.equal((await call('GET', '/api/learning')).data.map.items.length, 2);
+    assert.equal((await call('GET', '/api/learning/rules')).data.items.length, 2);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
 

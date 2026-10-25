@@ -237,13 +237,25 @@ function passedProblems(store, job) {
 }
 
 // ---------------------------------------------------------------- what a lesson is worth
-/** For each rule, how often a review cited it as broken (a '학습' fault restating it), and when last. */
-function lessonEffects(rules, records) {
+/**
+ * What the record says of each rule: how often a review cited it as broken (a '학습' fault restating it) and when last;
+ * with the sets given, how many finished sets had it in their prompt (`sent`) and how many faults of the kinds it was
+ * learned from came back after it, within its reach (`recurred`) — the two numbers the AI 학습 page sorts by
+ * (docs/learning.md §4): a lesson in n prompts with its fault back m times is not working, whatever it says.
+ */
+function lessonEffects(rules, records, jobs = []) {
   const cites = records.filter((r) => LESSON_RULE.test(r.rule)).sort(newestFirst);
+  const done = jobs.filter((j) => j.type === 'generate' && j.status === 'done' && Array.isArray(j.items));
   const out = new Map();
   for (const rule of rules) {
     const hits = cites.filter((c) => finalReview.restates(rule.text, c.detail));
-    out.set(rule.id, { cited: hits.length, sets: new Set(hits.map((h) => h.jobId)).size, lastCitedAt: hits[0]?.at || '', lastCitedJobId: hits[0]?.jobId || '' });
+    const keys = new Set(rule.source?.faultKeys || []);
+    const recurred = keys.size ? records.filter((r) => String(r.at) > String(rule.createdAt) && r.jobId !== rule.source?.jobId && reachesRecord(rule, r) && keys.has(r.key)) : [];
+    out.set(rule.id, {
+      cited: hits.length, sets: new Set(hits.map((h) => h.jobId)).size, lastCitedAt: hits[0]?.at || '', lastCitedJobId: hits[0]?.jobId || '',
+      sent: done.filter((j) => j.createdAt > rule.createdAt && sentTo(rule, j)).length,
+      recurred: recurred.length, recurredSets: new Set(recurred.map((r) => r.jobId)).size, lastRecurredAt: recurred.sort(newestFirst)[0]?.at || '',
+    });
   }
   return out;
 }
@@ -339,4 +351,59 @@ function materialView(store, material, history) {
   return { sets: rows, kinds, offered, records: mine.length };
 }
 
-module.exports = { parseFault, faultKey, keysOf, recordsOf, index, archive, archived, groupsOf, forItem, setStats, statsLine, passedProblems, lessonEffects, sleepLessons, wakeLessons, materialView, bySystem, FORMAT_NOISE, KINDS, OFFER_WINDOW, SLEEP_WINDOW };
+// ---------------------------------------------------------------- the data of every original, for 학습 › 기록
+/**
+ * What the 기록 page shows (docs/learning.md §4): every set in time order with its scores and how many of its faults
+ * were kinds already seen (what scripts/fault-recurrence.js prints), the same per original, the kinds that came back in
+ * two sets or more and whether they still do (the last three sets), and the problems that are examples for the next
+ * writer (adopted, or passed by both reviewers).
+ */
+function recordsView(store) {
+  const jobsAll = store.jobs.all();
+  const history = index(jobsAll, { dataDir: store.dataDir });
+  const sets = jobsAll.filter((j) => j.type === 'generate' && Array.isArray(j.items) && j.items.some((it) => it.attempts?.length)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const materials = new Map(store.materials.all().map((m) => [m.id, m]));
+  const no = new Map();
+  for (const m of new Set(sets.map((j) => j.materialId))) sets.filter((j) => j.materialId === m).forEach((j, i) => no.set(j.id, i + 1));
+  const rows = sets.map((j) => {
+    const earlier = history.filter((r) => r.jobId !== j.id && String(r.at) < String(j.createdAt));
+    const review = store.dataDir ? setCheck.readCheck(store.dataDir, j.id) : null;
+    const stats = j.faultStats || setStats(j, earlier, review?.done ? review : null);
+    const items = j.items || [];
+    return {
+      id: j.id, no: no.get(j.id), at: j.createdAt, status: j.status, trainRound: j.trainRound || 0, materialId: j.materialId,
+      title: j.material?.title || j.title || '', subject: j.material?.subject || '',
+      scores: review?.done && !review.stale ? setCheck.scores(review) : null,
+      made: items.filter((it) => ['passed', 'warning'].includes(it.status)).length, items: items.length, ...stats,
+    };
+  });
+  const sum = (list, k) => list.reduce((n, s) => n + (s[k] || 0), 0);
+  const totalsOf = (list) => { const faults = sum(list, 'faults'), repeat = sum(list, 'repeat'); return { sets: list.length, faults, repeat, own: sum(list, 'own'), lesson: sum(list, 'lesson'), rate: faults ? Math.round((100 * repeat) / faults) : null }; };
+  // Deleted originals keep their archived records: they count in the totals and show as one line.
+  const ids = [...new Set([...rows.map((s) => s.materialId), ...history.map((r) => r.materialId)])];
+  const originals = ids.map((id) => {
+    const m = materials.get(id);
+    const mine = rows.filter((s) => s.materialId === id);
+    const recs = history.filter((r) => r.materialId === id);
+    const last = mine.at(-1);
+    return { id, title: m?.title || recs[0]?.title || '지워진 문제', subject: m?.subject || recs[0]?.subject || '', topic: m?.topic || '', gone: !m, ...totalsOf(mine),
+      records: recs.length, lastAt: last?.at || recs[0]?.at || '', lastScores: last?.scores || null };
+  }).sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+  const recentIds = new Set(rows.slice(-3).map((s) => s.id));
+  const kinds = groupsOf(history).filter((g) => !LESSON_RULE.test(g.rule) && g.sets.size >= 2).map((g) => ({
+    rule: g.rule, detail: g.detail.slice(0, 200), label: g.label, count: g.n, sets: g.sets.size, materials: g.materials.size,
+    titles: [...g.materials].map((id) => materials.get(id)?.title || '지워진 문제').slice(0, 6), lastAt: g.at, active: [...g.sets].some((id) => recentIds.has(id)), fixed: g.fixed,
+  })).sort((a, b) => b.sets - a.sets || b.count - a.count).slice(0, 40);
+  const examples = [];
+  for (const j of [...sets].reverse()) {
+    const passed = passedProblems(store, j);
+    for (const it of j.items || []) {
+      const source = it.adopted ? 'adopted' : passed.indices.has(it.index) ? 'passed' : '';
+      if (!source || !it.problem?.text) continue;
+      examples.push({ jobId: j.id, setNo: no.get(j.id), index: it.index, label: it.label, source, materialId: j.materialId, title: j.material?.title || j.title || '', scores: source === 'passed' ? passed.scores : null, preview: squash(it.problem.text).slice(0, 140) });
+    }
+  }
+  return { totals: totalsOf(rows), sets: rows.slice().reverse(), originals, kinds, examples: examples.slice(0, 60), records: history.length };
+}
+
+module.exports = { parseFault, faultKey, keysOf, recordsOf, index, archive, archived, groupsOf, forItem, setStats, statsLine, passedProblems, lessonEffects, sleepLessons, wakeLessons, materialView, recordsView, bySystem, FORMAT_NOISE, KINDS, OFFER_WINDOW, SLEEP_WINDOW };

@@ -1663,7 +1663,8 @@ const summary = (changed) => `더함 ${changed.filter((c) => c.kind === 'add').l
 function draftLesson(x, text, material, source) {
   const common = x?.scope === 'common';
   return makeRule({
-    text, stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
+    text, why: str(x?.why, 300), example: x?.example && typeof x.example === 'object' ? { before: str(x.example.before, 300), after: str(x.example.after, 300) } : undefined,
+    stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
     category: CATEGORIES.includes(x?.category) ? x.category : undefined,
     scope: common ? 'global' : 'material', layer: 'lesson',
     subject: common && x?.allSubjects === true ? '' : material.subject || '',
@@ -1726,7 +1727,7 @@ async function learnFromReview(ctx, material, set, all) {
     const text = str(x?.text, 600);
     if (!r || text.length < 8 || text === r.text) continue;
     if (isFormatLesson(text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${text.slice(0, 60)}…`); continue; }
-    ctx.store.rules.put(updateRule(r, { text }, new Date(), { why: str(x?.why, 300), jobId: set.id, by: 'review' }));
+    ctx.store.rules.put(updateRule(r, { text, ...(str(x?.why, 300) ? { why: str(x?.why, 300) } : {}) }, new Date(), { why: str(x?.why, 300), jobId: set.id, by: 'review' }));
     changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 300) });
   }
   for (const x of arr(data?.remove).slice(0, 5)) {

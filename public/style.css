@@ -992,3 +992,38 @@ i.pg-nv, path.pg-nv { background: #eb6834; fill: #eb6834; }
 .lm-originals summary { font-size: 13px; color: var(--muted); cursor: pointer; padding: 2px 0; }
 .lm-originals .lm-quote small { display: block; font-size: 11.5px; margin-bottom: 2px; }
 @media (max-width: 720px) { .lm-todo { grid-template-columns: 40px minmax(0, 1fr); } .lm-todo-acts { grid-column: 2; justify-content: flex-start; } .lm-q { width: 100%; } }
+/* 학습 — 규칙 · AI 학습 · 기록 (docs/learning.md §4) */
+.lm-sec { display: grid; gap: 8px; }
+.lm-sec-head h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.lm-sec-head h2 .n, .lm-cat .n { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.lm-sec-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.lm-rules { display: grid; gap: 22px; }
+.lm-rules .lm-head { align-items: center; }
+.lm-rest { display: block; font-weight: 400; font-size: 14px; color: var(--ink); margin-top: 2px; }
+.lm-more { color: var(--muted); font-weight: 400; }
+.lm-cat-note { font-weight: 400; margin-left: 8px; color: var(--muted); }
+.lm-cat.lm-eff-broken { color: var(--bad); }
+.lm-cat.lm-eff-new { color: var(--accent); }
+.lm-quote.lm-before { text-decoration: line-through; opacity: .75; }
+.lm-quote.lm-after { color: var(--ink); border-left: 3px solid var(--ok); }
+.lm-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lm-filters .lm-q { width: 200px; }
+.lm-filters .lm-count { margin-left: auto; }
+.lm-sets { display: grid; gap: 10px; }
+.lm-set { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 8px; }
+.lm-set.new { border-color: var(--accent); }
+.lm-set header { display: flex; gap: 8px 14px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.lm-set header > div { flex: 1 1 260px; min-width: 0; }
+.lm-evs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lm-ev { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
+.lm-ev-kind { font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; border-radius: 999px; background: #eef0f4; color: var(--muted); white-space: nowrap; }
+.lm-ev-add .lm-ev-kind { background: var(--accent-soft); color: var(--accent); }
+.lm-ev-revise .lm-ev-kind, .lm-ev-merge .lm-ev-kind, .lm-ev-teacher .lm-ev-kind { background: var(--warn-soft); color: var(--warn); }
+.lm-ev-remove .lm-ev-kind, .lm-ev-sleep .lm-ev-kind { background: var(--bad-soft); color: var(--bad); }
+.lm-ev-wake .lm-ev-kind { background: var(--ok-soft); color: var(--ok); }
+.lm-ev-body { display: grid; gap: 3px; min-width: 0; }
+.lm-ev-text.lm-before { text-decoration: line-through; color: var(--muted); }
+.lm-table { padding: 8px 12px; overflow-x: auto; }
+.lm-table table.rules td, .lm-table table.rules th { padding: 6px 8px; }
+@media (max-width: 760px) { .lm-ev { grid-template-columns: minmax(0, 1fr); } .lm-filters .lm-count { margin-left: 0; width: 100%; } }
+.lm-chip.bad { background: var(--bad-soft); color: var(--bad); }

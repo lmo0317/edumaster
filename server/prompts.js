@@ -542,13 +542,14 @@ const LEARN_SYSTEM = `너는 변형 문제 출제를 돕는 AI가 다음에 같�
 - common이면 allSubjects: 문장에 과목 고유 개념(기체·분자량·반응식·몰, 가계도·유전자형·흥분 전도·근육 등)이 하나도 없고 어느 과목의 문제에도 그대로 쓸 수 있을 때만 true. 하나라도 있으면 false(이 과목에만 들어간다).
 - target: 문제 설계에 관한 것이면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all".
 - category: 무엇에 관한 것인지 하나 — 문제 설계 "design", 수치 잡기 "numbers", 보기·선택지 "choices", 해설 쓰기 "solution".
-- text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓰고, 필요하면 괄호에 짧은 예를 든다. 이번 문제의 수치를 그대로 옮기지 않는다.
+- text는 규칙 '한 문장', 80자 안, '…한다' 또는 '…하지 않는다'로 끝낸다. 막연한 말("정확히 한다") 대신 무엇을 어떻게 하는지 쓴다. 둘째 문장·괄호 예시·이번 문제의 수치는 text에 넣지 않는다 — 예는 example에 둔다.
+- example은 선택: before에 걸린 문제의 그 부분 한 줄(60자 안), after에 고친 모양 한 줄. 보여 줄 것이 없으면 생략.
 - 변형 문제마다 바뀌는 것(실험 번호 Ⅰ·Ⅱ, 지점 이름, 가정하는 실험, 시냅스 위치)을 지침에 박지 않는다. 역할로 쓴다(예: 'Ⅰ에서 가정하고 Ⅱ로 모순' 대신 '한 실험에서 가정하고 다른 실험으로 모순'). 원본 그대로 박으면 구조를 바꾼 최종 문제가 그 지침을 어기게 된다. 원본 판독의 글자 표기(I와 Ⅰ 같은)도 학습으로 만들지 않는다.
 - 원본 문제와 선생님 해설이 하는 것을 금지하는 항목은 만들지 않는다 (예: 원본이 자극 지점을 문제에 적는데 '자극 지점을 적지 않는다', 선생님 STEP이 같은 값 두 개로 속도를 구하는데 '같은 값을 두지 않는다'). 그런 실수는 원본과 다르게 만든 데서 온 것이니 원본처럼 하라고 쓴다.
 - why에는 이 항목이 막는 실수를 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
-{"items":[{"text":"...","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"..."}]}`;
+{"items":[{"text":"규칙 한 문장","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"막는 결함 한 문장","example":{"before":"걸린 문제의 그 부분","after":"고친 모양"}}]}`;
 
 // 학습 반복 (jobs.js 'train'): what Claude·Gemini found in a finished set becomes learning, and the lessons the set
 // was made with may be rewritten or dropped — a lesson that led the writer into the fault is fixed, not added to.
@@ -563,11 +564,12 @@ const LEARN_REVIEW_SYSTEM = `너는 변형 문제 출제를 돕는 AI의 학습 
 - 표기(화학식의 \\ce, 수식의 $…$, 표의 칸 수), STEP 제목의 글자, 문장 끝 마침표처럼 서버가 맞추는 형식은 학습으로 만들지 않는다. 학습은 문제 설계와 풀이 내용만 다룬다.
 - 이 원본의 내용(실험·물질·수치 구성)에만 해당하면 scope "problem", 다른 문제에도 통하는 설계 원칙이면 "common". common이면 allSubjects: 문장에 과목 고유 개념(기체·분자량·반응식·몰, 가계도·유전자형·흥분 전도·근육 등)이 하나도 없고 어느 과목의 문제에도 그대로 쓸 수 있을 때만 true.
 - target: 문제 설계면 "problem", 해설 쓰는 방식이면 "solution", 둘 다면 "all". category: 문제 설계 "design", 수치 "numbers", 보기·선택지 "choices", 해설 쓰기 "solution" 중 하나.
-- text는 '…한다' 또는 '…하지 않는다'로 끝나는 한두 문장. 무엇을 어떻게 하는지 구체적으로 쓰고, 이번 문제의 수치나 변형마다 바뀌는 것(실험 번호, 지점 이름)을 박지 않는다.
+- text는 규칙 '한 문장', 80자 안, '…한다' 또는 '…하지 않는다'로 끝낸다. 무엇을 어떻게 하는지 구체적으로 쓰고, 이번 문제의 수치나 변형마다 바뀌는 것(실험 번호, 지점 이름)을 박지 않는다. 둘째 문장과 괄호 예시는 text에 넣지 않는다 — 예는 example에 둔다. revise의 text도 같다(고치는 항목이 길면 한 문장으로 줄인다).
+- example은 선택: before에 걸린 문제의 그 부분 한 줄(60자 안), after에 고친 모양 한 줄.
 - why에는 이 변경이 막는 결함을 한 문장으로 쓴다.
 ${FORMAT}
 반환 JSON 형식:
-{"revise":[{"id":"...","text":"...","why":"..."}],"remove":[{"id":"...","why":"..."}],"add":[{"text":"...","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"..."}]}`;
+{"revise":[{"id":"...","text":"규칙 한 문장","why":"..."}],"remove":[{"id":"...","why":"..."}],"add":[{"text":"규칙 한 문장","scope":"problem","target":"problem","category":"design","allSubjects":false,"why":"막는 결함 한 문장","example":{"before":"걸린 문제의 그 부분","after":"고친 모양"}}]}`;
 
 function learnReviewText({ material, faults, rules }) {
   return [
