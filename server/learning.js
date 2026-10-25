@@ -184,7 +184,8 @@ function migrateLearningV2(store) {
       const m = materials.get(next.source?.materialId);
       if (m?.subject) { next.subject = m.subject; next.topic = next.topic || m.topic || ''; next.tagged = 'migrated'; }
     }
-    if (next.status === 'approved' && stageOf(next) === 'generation' && isFormatLesson(next.text)) { next.status = 'pending'; next.offReason = 'format'; }
+    // A lesson about what the server lays out itself is not kept for the teacher to delete: the system drops it.
+    if (stageOf(next) === 'generation' && isFormatLesson(next.text)) { store.rules.remove(r.id); moved++; continue; }
     store.rules.put(next); moved++;
   }
   return moved;

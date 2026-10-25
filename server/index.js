@@ -40,6 +40,11 @@ function createApp(options = {}) {
   // with the subject they were learned on, lessons about notation switched off.
   const migrated2 = migrateLearningV2(store);
   if (migrated2) console.log(`[learning] ${migrated2}개 항목에 과목·종류·이력을 더했습니다.`);
+  // Lessons about what the server lays out itself were switched off and left for the teacher to delete; the system
+  // drops them (the user, 2026-10-25: no tidying list for the teacher).
+  const formatOff = store.rules.all().filter((r) => r.offReason === 'format' || (bySystem(r) && stageOf(r) === 'generation' && isFormatLesson(r.text)));
+  for (const r of formatOff) store.rules.remove(r.id);
+  if (formatOff.length) console.log(`[learning] 형식에 관한 학습 ${formatOff.length}개를 지웠습니다.`);
   let apiKey = readSecret(path.join(cfg.dataDir, 'deepseek-api-key.txt'));
   const claudeKey = readSecret(path.join(cfg.dataDir, 'anthropic-api-key.txt'));
   // Accounts (server/users.js). The first one is made on the server: node scripts/user.js add <name>.
@@ -955,8 +960,31 @@ function createApp(options = {}) {
         const text = String(data?.text || '').trim().slice(0, 1500);
         saveMerge(p.key, { decision: data?.same === true && text.length > 8 ? 'same' : 'distinct', text, why: String(data?.why || '').trim().slice(0, 300), by: 'ai' });
       }
+      // Items the AI found to say the same thing are merged at once — nothing waits for the teacher (the user,
+      // 2026-10-25). A teacher's item keeps its own words and only absorbs the system's duplicates.
+      for (const g of learningMap.clustersOf(learningMap.mergePairs(store.rules.all(), readMerges()))) {
+        try {
+          const keep = g.keeper;
+          const r = mergeRules(g.items, bySystem(keep) ? g.text : keep.text, 'ai');
+          console.log(`[learning] 같은 뜻 ${g.items.length}개를 하나로 합쳤습니다: ${r.text.slice(0, 60)}…`);
+        } catch (e) { console.log(`[learning] 묶음 합치기 실패: ${e.message}`); }
+      }
     })().catch((e) => console.log(`[learning] 정리 후보 확인 실패: ${e.message}`)).finally(() => { mergeCheck = null; });
   }
+  // Merging: the item that stays (지침 over 공통 학습 over a problem's, then the older) takes the merged sentence and
+  // keeps every original in mergedFrom; the others are removed; the pairs are settled.
+  function mergeRules(list, text, by) {
+    const keep = learningMap.keeperOfAll(list);
+    const drop = list.filter((r) => r !== keep);
+    const next = updateRule(keep, { text }, new Date(), { by: 'merge', why: `${list.length}개를 합침` });
+    next.mergedFrom = [...list.flatMap((r) => r.mergedFrom || []), ...list.map((r) => ({ id: r.id, text: r.text, from: r.source?.from || 'input', createdAt: r.createdAt }))];
+    delete next.tagged;
+    store.rules.put(next);
+    for (const r of drop) store.rules.remove(r.id);
+    for (const p of pairsAmong(list)) saveMerge(p.key, { decision: 'merged', text: next.text, by });
+    return { id: next.id, text: next.text, removed: drop.length };
+  }
+  const pairsAmong = (list) => learningMap.mergePairs(list).filter((p) => list.includes(p.a) && list.includes(p.b));
   function learningMapView(kept, effects = new Map()) {
     const all = store.rules.all();
     const jobsAll = store.jobs.all();
@@ -967,54 +995,30 @@ function createApp(options = {}) {
     const items = all.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((r) => ({
       ...itemView(r, kept), ...effectView(r, effects), scope: r.scope, subject: r.scope === 'material' ? '' : r.subject || '', topic: r.topic || '',
       materialId: r.scope === 'material' ? r.source?.materialId || '' : '', fromProblem: Boolean(r.source?.materialId),
-      category: categoryOf(r), system: bySystem(r), tagged: r.tagged || '', offReason: r.offReason || '', format: isFormatLesson(r.text),
+      category: categoryOf(r), system: bySystem(r), offReason: r.offReason || '', format: isFormatLesson(r.text),
       history: (r.history || []).slice().reverse(), uses: stageOf(r) === 'analysis' ? analysisUses(r.id) : marks.uses(r.id),
       evidence: learningMap.evidenceOf(r, jobsById), merged: (r.mergedFrom || []).length,
     }));
-    const pairs = learningMap.mergePairs(all, readMerges());
-    if (pairs.some((p) => !p.decision)) checkMergePairs();
-    // Items that say the same thing, as groups (seven lessons were sixteen pairs on 2026-10-23): one merge each.
-    const groups = learningMap.clustersOf(pairs).map((g) => ({
-      key: g.key, text: g.text, why: g.why, keeperId: g.keeper.id,
-      items: g.items.map((r) => ({ id: r.id, text: r.text, layer: layerOf(r), from: r.source?.from || 'input', createdAt: r.createdAt })),
-    }));
-    const on = all.filter((r) => r.status === 'approved');
+    // Items that may say the same thing are checked and merged by the AI in the background; the teacher is given no
+    // list to tidy (the user, 2026-10-25) — what the data decides shows on the items (history, 휴면, 검수 인용).
+    if (learningMap.mergePairs(all, readMerges()).some((p) => !p.decision)) checkMergePairs();
     return {
       items,
       // The subjects an every-problem item can be tagged with: those of the problems, and any already used.
       subjects: [...new Set([...materials.map((m) => m.subject), ...all.map((r) => r.scope !== 'material' && r.subject)].filter(Boolean))].sort(),
-      groups, checking: pairs.filter((p) => !p.decision).length,
-      // What the teacher can tidy now, each a list of ids the page opens as a selection.
-      todo: {
-        groups: groups.length,
-        // Lessons the data put to sleep (faults.sleepLessons): shown, not to be tidied — they wake by themselves.
-        dormant: all.filter((r) => r.status === 'dormant').map((r) => r.id),
-        untagged: on.filter((r) => r.scope === 'global' && r.layer !== 'guide' && bySystem(r) && !r.subject).map((r) => r.id),
-        tagged: on.filter((r) => r.tagged === 'migrated').map((r) => r.id),
-        format: all.filter((r) => stageOf(r) === 'generation' && isFormatLesson(r.text) && (r.status === 'approved' || r.offReason === 'format')).map((r) => r.id),
-      },
     };
   }
-  // Merging a group: the item that stays (지침 over 공통 학습 over a problem's, then the older) takes the merged sentence
-  // and keeps every original; the others are removed. Skipping keeps them all and does not ask again about those pairs.
+  // Merging by hand (the teacher's selection); skipping keeps the items apart and does not ask again about those pairs.
   const rulesOf = (ids) => {
     const list = [...new Set((Array.isArray(ids) ? ids : []).map(String))].map((id) => store.rules.get(id));
     if (list.length < 2 || list.some((r) => !r)) throw fail(409, '합칠 학습 중 하나가 그새 바뀌었습니다. 새로 고쳐 주세요.');
     return list;
   };
-  const pairsAmong = (list) => learningMap.mergePairs(list).filter((p) => list.includes(p.a) && list.includes(p.b));
   route('POST', /^\/api\/learning\/merge$/, async (req) => {
     const body = await readBody(req, 16 * 1024);
     const list = rulesOf(body.ids);
-    const keep = learningMap.keeperOfAll(list);
-    const drop = list.filter((r) => r !== keep);
-    const next = updateRule(keep, { text: body.text }, new Date(), { by: 'merge', why: `${list.length}개를 합침` });
-    next.mergedFrom = [...list.flatMap((r) => r.mergedFrom || []), ...list.map((r) => ({ id: r.id, text: r.text, from: r.source?.from || 'input', createdAt: r.createdAt }))];
-    delete next.tagged;
-    store.rules.put(next);
-    for (const r of drop) store.rules.remove(r.id);
-    for (const p of pairsAmong(list)) saveMerge(p.key, { decision: 'merged', text: next.text, by: 'teacher' });
-    return { id: next.id, removed: drop.length };
+    const r = mergeRules(list, body.text, 'teacher');
+    return { id: r.id, removed: r.removed };
   });
   route('POST', /^\/api\/learning\/skip$/, async (req) => {
     const list = rulesOf((await readBody(req, 4096)).ids);

@@ -68,43 +68,33 @@ test('학습 지도 over the API: the map, a group the AI read as one, merging a
     let d = (await call('GET', '/api/learning')).data.map;
     assert.equal(d.items.length, 5);
     assert.ok(d.items.every((x) => x.category === 'solution' && Array.isArray(x.history) && Array.isArray(x.evidence)));
-    assert.deepEqual(d.todo.untagged, [], 'teacher-made items are never asked for a subject');
-    // The AI checks the overlapping pairs in the background.
-    for (let i = 0; i < 100 && d.checking; i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; }
-    assert.equal(d.checking, 0);
-    assert.equal(d.groups.length, 1, JSON.stringify(d.groups));
-    const cand = d.groups[0];
-    assert.deepEqual(cand.items.map((x) => x.id).sort(), [a.id, b.id].sort());
-    assert.equal(cand.keeperId, a.id, 'the 지침 stays');
-    assert.match(cand.text, /모의 합침/);
-    const ids = cand.items.map((x) => x.id);
-    // Merging: the 지침 stays with the teacher's sentence and both originals; the other is gone.
-    assert.equal((await call('POST', '/api/learning/merge', { ids, text: '해설은 선생님 해설과 같은 구성으로 쓰고, 선생님 해설이 끝나는 자리에서 끝낸다' })).status, 200);
-    assert.equal((await call('POST', '/api/learning/merge', { ids, text: 'x x x' })).status, 409, 'already merged');
+    assert.equal(d.todo, undefined, 'the teacher is given no list to tidy');
+    // The AI checks the overlapping pairs in the background and merges the pair it reads as one at once: the 지침 stays
+    // with the teacher's own sentence and both originals; the other is gone.
+    const until = async (ok) => { for (let i = 0; i < 150 && !ok(d); i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; } return d; };
+    await until((m) => m.items.length === 4);
+    assert.equal(d.items.length, 4);
     const rules = (await call('GET', '/api/rules')).data;
     const kept = rules.find((r) => r.id === a.id);
-    assert.equal(kept.text, '해설은 선생님 해설과 같은 구성으로 쓰고, 선생님 해설이 끝나는 자리에서 끝낸다');
+    assert.equal(kept.text, a.text, 'a teacher\'s item keeps its words');
     assert.deepEqual(kept.mergedFrom.map((x) => x.text).sort(), [a.text, b.text].sort());
-    assert.deepEqual(kept.history.map((h) => [h.by, h.before]), [['merge', a.text]], 'the sentence it replaced is on the item');
+    assert.deepEqual(kept.history, [], 'its sentence did not change, so nothing is history; the merge is in mergedFrom');
     assert.ok(!rules.some((r) => r.id === b.id));
-    d = (await call('GET', '/api/learning')).data.map;
     assert.ok(d.items.find((x) => x.id === a.id).evidence.some((e) => e.includes(b.text)), 'the merged original is its evidence');
-    assert.equal(d.groups.length, 0);
     assert.ok(d.items.some((x) => x.id === c.id));
-    // Skipping: both stay and the pair is not offered again.
+    assert.equal((await call('POST', '/api/learning/merge', { ids: [a.id, b.id], text: 'x x x' })).status, 409, 'already merged');
+    // Another item that says what c says is folded into c the same way; the two that only overlap stay apart.
     await add('표는 모든 행의 칸 수를 머리 행과 같게 맞춘다');
-    for (let i = 0; i < 100 && !d.groups.length; i++) { await new Promise((r) => setTimeout(r, 30)); d = (await call('GET', '/api/learning')).data.map; }
-    assert.equal(d.groups.length, 1);
-    await call('POST', '/api/learning/skip', { ids: d.groups[0].items.map((x) => x.id) });
-    d = (await call('GET', '/api/learning')).data.map;
-    assert.deepEqual([d.groups.length, d.checking, d.items.length], [0, 0, 5]);
+    await until((m) => m.items.length === 4 && m.items.find((x) => x.id === c.id)?.merged === 2);
+    assert.equal(d.items.length, 4);
+    assert.equal(d.items.find((x) => x.id === c.id).merged, 2);
     // Several at once: a subject tag, off, and removal.
     const two = d.items.slice(0, 2).map((x) => x.id);
     assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, patch: { subject: '화학', status: 'pending' } })).data, { changed: 2 });
     d = (await call('GET', '/api/learning')).data.map;
     assert.ok(two.every((id) => { const x = d.items.find((i) => i.id === id); return x.subject === '화학' && x.status === 'pending'; }));
     assert.deepEqual((await call('POST', '/api/learning/bulk', { ids: two, remove: true })).data, { changed: 2 });
-    assert.equal((await call('GET', '/api/learning')).data.map.items.length, 3);
+    assert.equal((await call('GET', '/api/learning')).data.map.items.length, 2);
   } finally { await new Promise((r) => app.server.close(r)); }
 });
 
@@ -162,7 +152,7 @@ test('the cap is filled in priority order without skipping ahead', () => {
   assert.deepEqual(selectRules(rules, { id: 'm', subject: '생명과학' }, { maxChars: 70 }).map((x) => x.id), ['b'], 'b is newer; a does not fit, and c is not pulled forward');
 });
 
-test('the second migration tags the system\'s untagged lessons with the subject they were learned on and switches notation lessons off, once', () => {
+test('the second migration tags the system\'s untagged lessons with the subject they were learned on and drops notation lessons, once', () => {
   const { migrateLearningV2, makeRule } = require('../server/learning');
   const { openStore } = require('../server/store');
   const store = openStore(fs.mkdtempSync(path.join(os.tmpdir(), 'em-mig-')));
@@ -174,9 +164,8 @@ test('the second migration tags the system\'s untagged lessons with the subject 
   const after = Object.fromEntries(store.rules.all().map((r) => [r.id, r]));
   assert.deepEqual([after[sys.id].subject, after[sys.id].topic, after[sys.id].tagged, after[sys.id].category], ['화학', '기체', 'migrated', 'design']);
   assert.deepEqual([after[teacher.id].subject, after[teacher.id].category], ['', 'solution'], 'the teacher\'s untagged item reaches every subject as before');
-  assert.deepEqual([after[fmt.id].status, after[fmt.id].offReason], ['pending', 'format']);
-  store.rules.put({ ...after[fmt.id], status: 'approved' });
-  assert.equal(migrateLearningV2(store), 0, 'runs once per item: the teacher may switch it back on');
+  assert.equal(after[fmt.id], undefined, 'a lesson about notation is dropped, not left for the teacher to delete');
+  assert.equal(migrateLearningV2(store), 0, 'runs once per item');
 });
 
 // A proposed lesson is folded into the item that already says the same (the AI compares it with the items whose wording

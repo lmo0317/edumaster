@@ -15,7 +15,9 @@ const FINISHED = new Set(['done', 'failed', 'cancelled', 'interrupted']);
 function createJobs({ store, llm, config }) {
   const running = new Map(); // id -> AbortController
   const queue = [];
-  const concurrency = 2;
+  // Jobs run at once (a 학습 반복 runs its sets inside its own slot). Two by default for one teacher's subscription;
+  // EDUMASTER_JOB_CONCURRENCY raises it when several originals are to be made in parallel (the user, 2026-10-25).
+  const concurrency = Math.max(1, Number(process.env.EDUMASTER_JOB_CONCURRENCY) || 2);
 
   for (const job of store.jobs.all()) {
     if (!FINISHED.has(job.status)) {
