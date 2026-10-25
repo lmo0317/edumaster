@@ -1052,7 +1052,7 @@ function createApp(options = {}) {
     }
     return { changed: n };
   });
-  // 하네스 (학습 › 하네스): how results are checked and fixed, how that went on the recent sets, and the counts the teacher
+  // 하네스 (LLM › 하네스): how results are checked and fixed, how that went on the recent sets, and the counts the teacher
   // can change. A change applies to sets started after it.
   const strip = ({ match, ...c }) => c;
   route('GET', /^\/api\/harness$/, () => ({

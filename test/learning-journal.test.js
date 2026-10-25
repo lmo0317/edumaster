@@ -1,5 +1,5 @@
 'use strict';
-// 학습 › AI 학습 and 기록 (docs/learning.md §4): the system's own lessons as a journal by set and as a list ordered by what
+// 학습 › AI 자체 학습 and 기록 (docs/learning.md §4): the system's own lessons as a journal by set and as a list ordered by what
 // the record says each did; the fault data across every original.
 const test = require('node:test');
 const assert = require('node:assert/strict');

@@ -187,7 +187,7 @@ function saveLlmSettings(dataDir, patch) {
   fs.writeFileSync(path.join(dataDir, 'llm-settings.json'), JSON.stringify(next, null, 1));
   return next;
 }
-// The harness settings on the 학습 › 하네스 tab: [lowest, highest, default].
+// The harness settings on the LLM › 하네스 tab: [lowest, highest, default].
 const HARNESS_LIMITS = {
   maxRewrites: [0, 3, 2], // solution-only rewrites per design
   maxRepairs: [0, 4, 2], // problem repairs per design

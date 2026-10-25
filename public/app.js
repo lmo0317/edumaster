@@ -220,13 +220,14 @@
       else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
       else if (hash.startsWith('#/progress')) { setNav('progress'); window.EMProgress.mount(view); }
       else if (hash.startsWith('#/guide')) { setNav('guide'); await window.EMGuide.mount(view, api); }
-      else if ((m = /^#\/learn\/(rules|journal|records)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
-      // The older 학습 addresses: the harness is under LLM; 학습 지도's branches are 규칙 (the persona, the 지침), 기록 (the
-      // reading corrections) or AI 학습 (everything else).
+      else if ((m = /^#\/learn\/(persona|guides|common|teaching|ai|records)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
+      // The older 학습 addresses go to the tab that now holds what they showed: the harness is under LLM; 규칙 opens on the
+      // persona; 학습 지도's branches were the persona, the two 지침, 공통 학습, 문제별 (now 선생님 지도 학습), 읽기 교정 (in 기록).
       else if (hash.startsWith('#/learn/harness')) { location.replace('#/llm/harness'); return; }
-      else if ((m = /^#\/learn\/map(?:\/([a-z0-9-]+))?/.exec(hash))) { location.replace('#/learn/' + (!m[1] || ['persona', 'guide-a', 'guide-g'].includes(m[1]) ? 'rules' : m[1] === 'corr' ? 'records' : 'journal')); return; }
-      // The older 학습 tabs are branches of 학습 지도.
-      else if (/^#\/(problems|common|guides|lessons|rules)/.test(hash) || hash.startsWith('#/learn')) { location.replace('#/learn/rules'); return; }
+      else if (hash.startsWith('#/learn/journal')) { location.replace('#/learn/ai'); return; }
+      else if ((m = /^#\/learn\/map(?:\/([a-z0-9-]+))?/.exec(hash))) { location.replace('#/learn/' + ({ persona: 'persona', 'guide-a': 'guides', 'guide-g': 'guides', common: 'common', problems: 'teaching', corr: 'records' }[m[1] || 'persona'] || 'ai')); return; }
+      else if ((m = /^#\/(?:learn\/)?(problems|common|guides|lessons|rules)/.exec(hash))) { location.replace('#/learn/' + ({ problems: 'teaching', rules: 'persona', common: 'common', lessons: 'common', guides: 'guides' }[m[1]])); return; }
+      else if (hash.startsWith('#/learn')) { location.replace('#/learn/persona'); return; }
       else if (hash.startsWith('#/system')) { location.replace('#/llm'); return; }
       else if (hash.startsWith('#/llm/harness')) { setNav('llm'); await llmView('harness'); }
       else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView('models'); }
@@ -1306,7 +1307,7 @@
     return `${stats}<section class="panel"><h2>이 세트에 들어간 학습 ${job.rules.length}개</h2>
         ${job.rules.length ? `<ul class="lt-ul small">${job.rules.map((r) => `<li>[${where(r)}·${TARGET[r.target]}] ${inlineRich(r.text)}</li>`).join('')}</ul>` : '<p class="muted">없습니다.</p>'}</section>
       <section class="panel"><h2>이 세트를 만들며 배운 학습</h2>
-        ${learned.length ? `<ul class="lt-ul">${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''}</li>`).join('')}</ul><p class="muted small">다음 세트부터 들어갑니다. <a href="#/learn/journal">학습 › AI 학습</a>에서 고치거나 끌 수 있습니다.</p>` : '<p class="muted">새로 배운 학습은 없었습니다.</p>'}</section>
+        ${learned.length ? `<ul class="lt-ul">${learned.map((l) => `<li><span class="lt-tag">${l.scope === 'common' ? '공통 학습' : '이 문제'}</span> ${inlineRich(l.text)}${l.why ? ` <span class="muted">— ${inlineRich(l.why)}</span>` : ''}</li>`).join('')}</ul><p class="muted small">다음 세트부터 들어갑니다. <a href="#/learn/ai">학습 › AI 자체 학습</a>에서 고치거나 끌 수 있습니다.</p>` : '<p class="muted">새로 배운 학습은 없었습니다.</p>'}</section>
       ${round ? `<section class="panel"><h2>학습 반복 ${job.trainRound}번째 세트 — 검수 뒤 고친 학습</h2>
         ${round.pass ? '<p>목표에 닿아 학습을 고치지 않았습니다.</p>' : (round.learned || []).length ? `<ul class="lt-ul">${round.learned.map((c) => `<li><b>${KIND[c.kind]}</b> ${inlineRich(c.text || c.before || '')}${c.why ? ` <span class="muted">— ${inlineRich(c.why)}</span>` : ''}</li>`).join('')}</ul>` : '<p class="muted">고친 학습이 없습니다.</p>'}
         <p class="small"><a href="#/m/${job.materialId}/history">학습 반복 기록 전체 ›</a></p></section>` : ''}`;
@@ -1549,14 +1550,18 @@
   }
 
   // ------------------------------------------------------------------ 학습 (docs/learning.md §4)
-  // Three tabs for three kinds of thing. 규칙: what the teacher set — the persona, the 지침, the teacher's own lessons —
-  // a short document to edit; nothing the system wrote. AI 학습: what the system learned by itself — a journal by set
-  // (learned, rewritten, dropped, merged, asleep, awake) to review, and every system lesson ordered by what the record
-  // says it did. 기록: the fault data across every original, read-only. The harness is under LLM.
-  const LEARN_TABS = [['rules', '규칙'], ['journal', 'AI 학습'], ['records', '기록']];
+  // Six tabs, one per kind of thing (the user, 2026-10-25: "페르소나 따로 지침 따로 공통학습 따로 선생님 지도 학습 따로 AI 자체
+  // 학습 따로 기록 따로"). The first four are the teacher's — the persona; the 지침; the lessons the teacher wrote for
+  // every problem; what the teacher taught on a problem's page — one list read four ways, nothing the system wrote.
+  // AI 자체 학습 is what the system learned by itself — a journal by set and every system lesson ordered by what the
+  // record says it did. 기록 is the fault data across every original, read-only. The harness is under LLM.
+  const LEARN_TABS = [['persona', '페르소나'], ['guides', '지침'], ['common', '공통 학습'], ['teaching', '선생님 지도 학습'], ['ai', 'AI 자체 학습'], ['records', '기록']];
   const LEARN_META = {
-    rules: '선생님이 정한 것만 있습니다. 모든 분석·생성에 가장 먼저 들어가고, AI가 고치거나 끄지 않습니다.',
-    journal: 'AI가 세트를 만들고 검수를 받으며 스스로 배운 것입니다. 세트마다 무엇이 바뀌었는지 보고, 효과가 없는 것부터 검토합니다.',
+    persona: 'AI의 역할입니다. 분석·생성·검토, 모든 AI 호출의 맨 앞에 붙습니다.',
+    guides: '선생님이 정한, 반드시 지킬 것과 하면 안 될 것입니다. 모든 문제에 가장 먼저 들어가고, AI가 고치거나 끄지 않습니다.',
+    common: '여러 문제에 통하는 교훈으로 선생님이 직접 쓴 것입니다. 과목을 달면 그 과목의 문제에만 들어갑니다.',
+    teaching: '선생님이 문제 페이지에서 그 문제에 대해 가르친 것입니다. 그 문제의 세트에만 들어갑니다.',
+    ai: 'AI가 세트를 만들고 검수를 받으며 스스로 배운 것입니다. 세트마다 무엇이 바뀌었는지 보고, 효과가 없는 것부터 검토합니다.',
     records: '세트가 남긴 결함 기록을 모든 원본에 걸쳐 봅니다. 같은 종류의 결함이 줄어드는지가 학습이 되고 있다는 증거입니다.',
   };
   async function learnView(tab) {
@@ -1567,8 +1572,8 @@
     </div>`;
     $$('[data-learn-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = '#/learn/' + b.dataset.learnTab; }));
     const pane = $('#learn-pane');
-    if (tab === 'rules') await rulesView(pane);
-    else if (tab === 'journal') await journalView(pane);
+    if (RULE_PARTS[tab]) await rulesView(pane, tab);
+    else if (tab === 'ai') await journalView(pane);
     else await recordsView(pane);
   }
 
@@ -1645,9 +1650,11 @@
   };
   const lmMatches = (x) => { const q = lmUi.q.trim().toLowerCase(); return !q || x.text.toLowerCase().includes(q) || (x.topic || '').toLowerCase().includes(q) || (x.why || '').toLowerCase().includes(q); };
 
-  // 규칙: the persona, then every item the teacher wrote, in sections — 분석 지침, 생성 지침, the teacher's 공통 학습 by
-  // subject, each problem's own. Each section adds in place; a problem's own learning is added on its page.
-  async function rulesView(pane) {
+  // The teacher's four tabs read one list (/api/learning/rules) and each shows its own part: 페르소나 — the persona;
+  // 지침 — 분석 지침 and 생성 지침; 공통 학습 — the lessons the teacher wrote for every problem, by subject; 선생님 지도
+  // 학습 — what the teacher taught on a problem's page, by problem. Each part adds in place where adding belongs.
+  const RULE_PARTS = { persona: ['persona'], guides: ['guide-a', 'guide-g'], common: ['common'], teaching: ['teaching'] };
+  async function rulesView(pane, part) {
     pane.innerHTML = '<p class="muted">불러오는 중…</p>';
     const paint = async () => {
       const d = await api('GET', '/api/learning/rules');
@@ -1676,23 +1683,28 @@
       const subjects = [...new Set(['', ...d.subjects, ...lessons.map((x) => x.subject)])];
       const own = items.filter((x) => x.layer === 'problem');
       const problems = [...new Set(own.map((x) => x.materialId))];
-      pane.innerHTML = `
-        <div class="lm-rules">
-          <div class="lm-head"><p class="lm-count">선생님 항목 ${d.items.length}개${d.items.some((x) => x.status !== 'approved') ? ` · 꺼짐 ${d.items.filter((x) => x.status !== 'approved').length}` : ''}</p><input id="lm-q" class="lm-q" type="search" placeholder="규칙 찾기" value="${esc(lmUi.q)}" aria-label="규칙 찾기"></div>
-          <section class="lm-sec"><div class="lm-sec-head"><h2>페르소나</h2><p>분석·생성·검토, 모든 AI 호출의 맨 앞에 붙는 AI의 역할입니다.</p></div>
+      // What this tab counts (before the search narrows it).
+      const whole = { persona: [], guides: d.items.filter((x) => x.layer === 'guide'), common: d.items.filter((x) => x.layer === 'lesson'), teaching: d.items.filter((x) => x.layer === 'problem') }[part];
+      const sec = {
+        persona: `<section class="lm-sec"><div class="lm-sec-head"><h2>페르소나</h2><p>분석·생성·검토, 모든 AI 호출의 맨 앞에 붙는 AI의 역할입니다. 지침보다 앞에 들어갑니다.</p></div>
             <div class="lm-list"><div class="lm-item open"><span class="lm-pick"></span><div class="lm-detail lm-persona">
               <textarea id="lm-persona" rows="4" placeholder="예: 고등학교 화학 선생님의 출제를 돕는 조교로서, 학생이 읽는 문장은 교과서 말투로 쓰고 단위를 빠뜨리지 않는다.">${esc(d.persona)}</textarea>
-              <div class="lt-actions"><span class="muted small">${d.persona ? `${d.persona.length}자 · 모든 AI 호출의 맨 앞에 붙습니다` : '아직 정하지 않았습니다'}</span><span class="spacer"></span><button class="small primary" id="lm-persona-save">저장</button></div></div></div></div></section>
-          <section class="lm-sec"><div class="lm-sec-head"><h2>분석 지침 <span class="n">${guides('analysis').length}</span></h2><p>원본을 읽고 STEP으로 정리할 때 반드시 지킬 것입니다.</p></div>
-            <div class="lm-list">${list(guides('analysis'), '아직 없습니다.')}</div>${add('guide-a', '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.', '분석 지침에 넣습니다 (모든 문제에 가장 먼저 들어갑니다)')}</section>
-          <section class="lm-sec"><div class="lm-sec-head"><h2>생성 지침 <span class="n">${guides('generation').length}</span></h2><p>변형 문제를 만들 때 반드시 지킬 것입니다. 검수자도 이것을 기준으로 봅니다.</p></div>
-            <div class="lm-list">${list(guides('generation'), '아직 없습니다.')}</div>${add('guide-g', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.', '생성 지침에 넣습니다 (모든 문제에 가장 먼저 들어갑니다)')}</section>
-          <section class="lm-sec"><div class="lm-sec-head"><h2>선생님이 쓴 공통 학습 <span class="n">${lessons.length}</span></h2><p>여러 문제에 통하는 교훈으로 선생님이 직접 쓴 것입니다. 과목을 달면 그 과목의 문제에만 들어갑니다. AI가 같은 뜻의 학습을 배우면 이 항목에 흡수됩니다.</p></div>
+              <div class="lt-actions"><span class="muted small">${d.persona ? `${d.persona.length}자 · 모든 AI 호출의 맨 앞에 붙습니다` : '아직 정하지 않았습니다'}</span><span class="spacer"></span><button class="small primary" id="lm-persona-save">저장</button></div></div></div></div></section>`,
+        'guide-a': `<section class="lm-sec"><div class="lm-sec-head"><h2>분석 지침 <span class="n">${guides('analysis').length}</span></h2><p>원본을 읽고 STEP으로 정리할 때 반드시 지킬 것입니다.</p></div>
+            <div class="lm-list">${list(guides('analysis'), '아직 없습니다.')}</div>${add('guide-a', '예: 연필·색 펜 필기는 문제 조건에 넣지 않는다.', '분석 지침에 넣습니다 (모든 문제에 가장 먼저 들어갑니다)')}</section>`,
+        'guide-g': `<section class="lm-sec"><div class="lm-sec-head"><h2>생성 지침 <span class="n">${guides('generation').length}</span></h2><p>변형 문제를 만들 때 반드시 지킬 것입니다. 검수자도 이것을 기준으로 봅니다.</p></div>
+            <div class="lm-list">${list(guides('generation'), '아직 없습니다.')}</div>${add('guide-g', '예: 풀이에 쓰이지 않는 조건이나 서술을 넣지 않는다.', '생성 지침에 넣습니다 (모든 문제에 가장 먼저 들어갑니다)')}</section>`,
+        common: `<section class="lm-sec"><div class="lm-sec-head"><h2>공통 학습 <span class="n">${lessons.length}</span></h2><p>여러 문제에 통하는 교훈으로 선생님이 직접 쓴 것입니다. 과목을 달면 그 과목의 문제에만 들어갑니다. AI가 같은 뜻의 학습을 배우면 이 항목에 흡수됩니다. AI가 스스로 배운 것은 AI 자체 학습 탭에 있습니다.</p></div>
             ${subjects.map((s) => { const xs = lessons.filter((x) => (x.subject || '') === s); return xs.length ? `<div class="lm-cat">${s ? esc(s) : '모든 과목'} <span class="n">${xs.length}</span></div><div class="lm-list">${list(xs, '')}</div>` : ''; }).join('') || '<div class="lm-list"><p class="lm-empty">아직 없습니다.</p></div>'}
             <div class="lm-add"><textarea data-add="lesson" rows="2" placeholder="예: 수는 계산기 없이 풀리게 작은 정수로 잡는다."></textarea>
-              <div class="lt-actions"><label class="fb-target-label">과목</label><select id="lm-add-subject" class="lm-move">${lmOptions(d.subjects, '', '모든 과목')}</select><label class="fb-target-label">단계</label><select id="lm-add-stage" class="lm-move"><option value="generation">생성</option><option value="analysis">분석</option></select><label class="fb-target-label">종류</label><select id="lm-add-cat" class="lm-move">${lmCatOptions('design')}</select><span class="spacer"></span><button class="small primary" data-add-go="lesson">추가</button></div></div></section>
-          <section class="lm-sec"><div class="lm-sec-head"><h2>문제별 학습 <span class="n">${own.length}</span></h2><p>한 문제에만 들어가는, 선생님이 그 문제 페이지에서 쓴 것입니다. 새 학습은 문제 페이지에서 결과를 보며 넣습니다.</p></div>
-            ${problems.map((id) => `<div class="lm-cat"><a href="#/m/${id}">${esc(byId.get(own.find((x) => x.materialId === id).id).materialTitle || '삭제된 문제')}</a> <span class="n">${own.filter((x) => x.materialId === id).length}</span></div><div class="lm-list">${list(own.filter((x) => x.materialId === id), '')}</div>`).join('') || '<div class="lm-list"><p class="lm-empty">아직 없습니다.</p></div>'}</section>
+              <div class="lt-actions"><label class="fb-target-label">과목</label><select id="lm-add-subject" class="lm-move">${lmOptions(d.subjects, '', '모든 과목')}</select><label class="fb-target-label">단계</label><select id="lm-add-stage" class="lm-move"><option value="generation">생성</option><option value="analysis">분석</option></select><label class="fb-target-label">종류</label><select id="lm-add-cat" class="lm-move">${lmCatOptions('design')}</select><span class="spacer"></span><button class="small primary" data-add-go="lesson">추가</button></div></div></section>`,
+        teaching: `<section class="lm-sec"><div class="lm-sec-head"><h2>선생님 지도 학습 <span class="n">${own.length}</span></h2><p>선생님이 문제 페이지에서 그 문제에 대해 가르친 것입니다. 그 문제의 세트에만 들어갑니다. 새 학습은 문제 페이지에서 결과를 보며 넣고, 여기서는 문제별로 모아 보고 고칩니다.</p></div>
+            ${problems.map((id) => `<div class="lm-cat"><a href="#/m/${id}">${esc(byId.get(own.find((x) => x.materialId === id).id).materialTitle || '삭제된 문제')}</a> <span class="n">${own.filter((x) => x.materialId === id).length}</span></div><div class="lm-list">${list(own.filter((x) => x.materialId === id), '')}</div>`).join('') || '<div class="lm-list"><p class="lm-empty">아직 없습니다.</p></div>'}</section>`,
+      };
+      pane.innerHTML = `
+        <div class="lm-rules">
+          ${part === 'persona' ? '' : `<div class="lm-head"><p class="lm-count">선생님 항목 ${whole.length}개${whole.some((x) => x.status !== 'approved') ? ` · 꺼짐 ${whole.filter((x) => x.status !== 'approved').length}` : ''}</p><input id="lm-q" class="lm-q" type="search" placeholder="찾기" value="${esc(lmUi.q)}" aria-label="찾기"></div>`}
+          ${RULE_PARTS[part].map((k) => sec[k]).join('')}
         </div>`;
       lmSearch(pane, paint);
       lmBind(pane, byId, paint, {
@@ -1701,7 +1713,7 @@
             const to = e.target.value;
             if (!to) return;
             await api('PUT', '/api/rules/' + x.id, to === 'problem' ? { scope: 'material' } : { scope: 'global', layer: to });
-            toast(`${{ guide: '지침', lesson: '공통 학습', problem: '이 문제의 학습' }[to]}으로 옮겼습니다.`); await paint();
+            toast(`${{ guide: '지침', lesson: '공통 학습', problem: '선생님 지도 학습' }[to]}으로 옮겼습니다. 그 탭에서 볼 수 있습니다.`); await paint();
           }));
         },
       });
@@ -2078,7 +2090,7 @@
         <div class="lt-sec-head"><h2>모델</h2><p>고른 모델이 <b>기본 모델</b>이 되어 문제 분석·생성에서 먼저 선택됩니다.</p></div>
         <div class="panel lt-list" id="lt-models"><div class="lt-row lt-plain"><span class="muted">불러오는 중…</span></div></div>
       </section>
-      <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/learn/rules">학습 › 규칙</a>에서 관리합니다.</p>
+      <p class="muted small">AI의 페르소나와 반드시 지킬 규칙은 <a href="#/learn/persona">학습 › 페르소나</a>와 <a href="#/learn/guides">지침</a>에서 관리합니다.</p>
     </div>`;
     $$('[data-llm-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = b.dataset.llmTab === 'models' ? '#/llm' : '#/llm/harness'; }));
     const won = (usd) => `약 ${Math.round(usd * 1400).toLocaleString()}원`;
