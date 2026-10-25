@@ -493,6 +493,8 @@ function createApp(options = {}) {
     // Everything that belongs to the problem goes with it: its sets (and analyses) and its own learning. Learning
     // moved up to 공통 학습 or 지침 stays.
     const own = store.rules.all().filter((r) => r.scope === 'material' && r.source?.materialId === id);
+    // The sets' fault records outlive them, as when a set is deleted on its own (docs/learning.md, 결함 기록 · 버리기).
+    for (const j of jobs) if (j.type === 'generate') faults.archive(cfg.dataDir, j, setCheck.readCheck(cfg.dataDir, j.id));
     for (const j of jobs) store.jobs.remove(j.id);
     for (const r of own) store.rules.remove(r.id);
     store.materials.remove(id);
