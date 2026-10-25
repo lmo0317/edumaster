@@ -31,7 +31,7 @@ async function start() {
     }
     throw new Error('job timeout');
   };
-  return { app, base, call, waitJob, close: () => new Promise((r) => app.server.close(r)), dataDir };
+  return { app, base, call, waitJob, close: () => new Promise((r) => app.server.close(r)), dataDir, get cookie() { return cookie; } };
 }
 
 test('full flow with mock model: analyze → edit → generate → verify/repair → feedback → regenerate', async () => {
@@ -241,7 +241,18 @@ test('model comparison list and one comparison', async () => {
     await s.call('POST', '/api/login', { username: 'admin', password: 'test-pass-1' });
     const cmpList = (await s.call('GET', '/api/compare')).data;
     assert.ok(Array.isArray(cmpList));
-    if (cmpList.length) { const one = (await s.call('GET', '/api/compare/' + cmpList[0].id)).data; assert.ok(one.original.problemImage.startsWith('data:image/') && one.models.length); }
+    if (cmpList.length) {
+      const one = (await s.call('GET', '/api/compare/' + cmpList[0].id)).data;
+      assert.ok(one.models.length);
+      // The scans are addresses, not inline data: the bundle must stay small enough for a phone (2026-10-25).
+      assert.ok(!JSON.stringify(one).includes('data:image/'), 'no inline image in the bundle');
+      assert.equal(one.original.problemImage, `api/compare/${one.id}/image/original-problem`);
+      const img = await fetch(`${s.base}/api/compare/${one.id}/image/original-problem`, { headers: { cookie: s.cookie } });
+      assert.equal(img.status, 200);
+      assert.match(img.headers.get('content-type'), /^image\//);
+      assert.ok(Number(img.headers.get('content-length')) > 1000, 'the scan itself');
+      assert.equal((await fetch(`${s.base}/api/compare/${one.id}/image/round9-problem`, { headers: { cookie: s.cookie } })).status, 404);
+    }
     assert.equal((await s.call('GET', '/api/compare/nope')).status, 404);
   } finally { await s.close(); }
 });
@@ -256,6 +267,10 @@ test('the public comparison page needs no login and exposes only the comparison'
     const b = await pub.json();
     assert.ok(b.overview && b.models.length, 'the whole comparison');
     assert.equal(b.feedback?.quote || '', '', 'the colleague\'s message stays private');
+    assert.ok(!JSON.stringify(b).includes('data:image/'), 'the public bundle carries addresses for its scans too');
+    assert.equal(b.original.problemImage, 'api/public/compare/chem-molar-mass/image/original-problem');
+    assert.equal((await fetch(s.base + '/api/public/compare/chem-molar-mass/image/original-problem')).status, 200, 'a scan needs no login');
+    assert.equal((await fetch(s.base + '/api/public/compare/other/image/original-problem')).status, 404);
     assert.equal((await fetch(s.base + '/api/public/compare/other/pdf/relay')).status, 404);
     assert.equal((await fetch(s.base + '/api/compare/chem-molar-mass')).status, 401, 'the app route still needs login');
     assert.equal((await fetch(s.base + '/api/materials')).status, 401);

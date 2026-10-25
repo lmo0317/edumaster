@@ -865,10 +865,40 @@ function createApp(options = {}) {
     fs.createReadStream(file).pipe(res);
     return undefined;
   }
-  function compareBundle(id) {
+  // The original's scans (its problem and solution, kept again under each round made of another original) leave the
+  // bundle as addresses and are served by compareImage: inline they were 7.9 of the JSON's 8.2 MB, and a phone on a
+  // mobile network dropped the download three times before the page could show anything (2026-10-25, nginx log:
+  // 4.0 MB, 1.4 MB and 0.3 MB of 8.5 MB received). The decoded scans are kept in memory per bundle file version.
+  const IMAGE_FIELDS = ['problemImage', 'solutionImage'];
+  const imageHolders = (bundle) => [['original', bundle.original], ...[2, 3, 4, 5].map((n) => [`round${n}`, bundle[`round${n}`]?.original])].filter(([, o]) => o && typeof o === 'object');
+  const imageCache = new Map();
+  function compareImage(res, id, key) {
+    const file = path.join(compareDir, `${id}.json`);
+    if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');
+    const mtimeMs = fs.statSync(file).mtimeMs;
+    let images = imageCache.get(id);
+    if (!images || images.mtimeMs !== mtimeMs) {
+      images = { mtimeMs, byKey: new Map() };
+      for (const [name, o] of imageHolders(JSON.parse(fs.readFileSync(file, 'utf8')))) {
+        for (const f of IMAGE_FIELDS) {
+          const m = /^data:(image\/[a-z+.-]+);base64,(.*)$/s.exec(o[f] || '');
+          if (m) images.byKey.set(`${name}-${f.replace('Image', '')}`, { type: m[1], buf: Buffer.from(m[2], 'base64') });
+        }
+      }
+      imageCache.set(id, images);
+    }
+    const img = images.byKey.get(key);
+    if (!img) throw fail(404, '이미지를 찾지 못했습니다.');
+    res.writeHead(200, { 'Content-Type': img.type, 'Content-Length': img.buf.length, 'Cache-Control': 'public, max-age=86400', ...security });
+    res.end(img.buf);
+    return undefined;
+  }
+  const IMAGE_KEY = '(original|round[2-5])-(problem|solution)';
+  function compareBundle(id, imageBase = 'api/compare') {
     const file = path.join(compareDir, `${id}.json`);
     if (!fs.existsSync(file)) throw fail(404, '비교 자료를 찾지 못했습니다.');
     const bundle = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const [name, o] of imageHolders(bundle)) for (const f of IMAGE_FIELDS) if (typeof o[f] === 'string' && o[f].startsWith('data:')) o[f] = `${imageBase}/${id}/image/${name}-${f.replace('Image', '')}`;
     // How each model met the teacher's written feedback (a reviewed judgement kept next to the bundle).
     const feedback = path.join(compareDir, `${id}.feedback.json`);
     if (fs.existsSync(feedback)) bundle.feedback = JSON.parse(fs.readFileSync(feedback, 'utf8'));
@@ -895,17 +925,22 @@ function createApp(options = {}) {
     return bundle;
   }
   route('GET', /^\/api\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([2-5]))?$/, (req, res, [id, key, round]) => comparePdf(res, id, key, round || ''));
+  route('GET', new RegExp(`^/api/compare/([a-z0-9-]+)/image/${IMAGE_KEY}$`), (req, res, [id, name, which]) => compareImage(res, id, `${name}-${which}`));
   route('GET', /^\/api\/compare\/([a-z0-9-]+)$/, (req, res, [id]) => compareBundle(id));
   // The public copy of this page (compare.html): the whole comparison, no login and nothing else of the system.
   // The colleague's message the checklist was built from stays private; the checklist itself is shown.
   const PUBLIC_COMPARE = 'chem-molar-mass';
   route('GET', /^\/api\/public\/compare$/, () => {
-    const bundle = compareBundle(PUBLIC_COMPARE);
+    const bundle = compareBundle(PUBLIC_COMPARE, 'api/public/compare');
     if (bundle.feedback) bundle.feedback = { ...bundle.feedback, quote: '' };
     if (bundle.round2?.feedback) bundle.round2.feedback = { ...bundle.round2.feedback, quote: '' };
     if (bundle.round3?.feedback) bundle.round3.feedback = { ...bundle.round3.feedback, quote: '' };
     for (const n of [4, 5]) if (bundle[`round${n}`]?.feedback) bundle[`round${n}`].feedback = { ...bundle[`round${n}`].feedback, quote: '' };
     return bundle;
+  }, { open: true });
+  route('GET', new RegExp(`^/api/public/compare/([a-z0-9-]+)/image/${IMAGE_KEY}$`), (req, res, [id, name, which]) => {
+    if (id !== PUBLIC_COMPARE) throw fail(404, '이미지를 찾지 못했습니다.');
+    return compareImage(res, id, `${name}-${which}`);
   }, { open: true });
   route('GET', /^\/api\/public\/compare\/([a-z0-9-]+)\/pdf\/(claude-cli|opus-haiku|opus-qwen|opus-qwen-sys|deepseek|qwen38q4|qwen36|gemma12)(?:-r([2-5]))?$/, (req, res, [id, key, round]) => {
     if (id !== PUBLIC_COMPARE) throw fail(404, 'PDF를 찾지 못했습니다.');

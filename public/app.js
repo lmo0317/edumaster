@@ -1539,6 +1539,7 @@
   // ------------------------------------------------------------------ model comparison
   // The same molar-mass original made into a problem set by each model: what worked, what did not, the PDF.
   async function compareView(id) {
+    view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">불러오는 중…</div>';
     const list = await api('GET', '/api/compare');
     if (!list.length) { view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">아직 비교 자료가 없습니다.</div>'; return; }
     const b = await api('GET', '/api/compare/' + (id || list[0].id));
