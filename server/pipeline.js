@@ -18,7 +18,7 @@ const answerNumber = (v, count) => {
   const value = circled >= 0 ? circled + 1 : n;
   return value >= 1 && value <= count ? value : 0;
 };
-const stripChoiceNumber = (c) => str(c, 2000).replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/, '');
+const stripChoiceNumber = (c) => str(c).replace(/^\s*(?:[①②③④⑤⑥⑦⑧⑨]|\(?[1-9]\)|[1-9][.)])\s*/, '');
 
 // A line break a model wrote as the two letters \n (Haiku 5.5's final in reaction-density 3차, 2026-10-18: the equation,
 // the sentences and the table ran on one line). Inside $…$ a LaTeX command (\ne, \nu) goes on with a letter, and stays.
@@ -26,10 +26,10 @@ const breaks = (t) => t.split(/(\$\$?[^$]*\$\$?)/).map((seg) => (seg.startsWith(
 
 function normalizeProblem(p) {
   const choices = arr(p?.choices).map(stripChoiceNumber).filter(Boolean).slice(0, 9);
-  let text = breaks(str(p?.text, 12000));
+  let text = breaks(str(p?.text));
   // Choices belong in the choices array only; drop "① … ② …" lines copied into the body as well.
   if (choices.length > 1) text = text.split('\n').filter((line) => !(/^\s*①/.test(line) && line.includes('②'))).join('\n').trim();
-  return { text, choices, answer: answerNumber(p?.answer, choices.length), figure: str(p?.figure, 4000) };
+  return { text, choices, answer: answerNumber(p?.answer, choices.length), figure: str(p?.figure) };
 }
 
 const romanLabels = (t) => t.replace(/(?<![A-Za-z\{_^])(IV|III|II|I)(?=[가-힣~,·)\s]|$)/g, (m) => ROMAN[m]);
@@ -40,8 +40,8 @@ function normalizeMaterial(data) {
   if (problem.text.length < 5) throw Object.assign(new Error('문제 본문을 읽지 못했습니다.'), { status: 422 });
   const steps = arr(data?.steps).map((s) => ({
     marker: str(s?.marker, 40),
-    title: str(s?.title, 300), purpose: str(s?.purpose, 1000), technique: str(s?.technique, 1500),
-    work: str(s?.work, 8000), result: str(s?.result, 1500),
+    title: str(s?.title, 1000), purpose: str(s?.purpose, 4000), technique: str(s?.technique, 4000),
+    work: str(s?.work), result: str(s?.result, 4000),
   })).filter((s) => s.title || s.work).slice(0, 10);
   // A problem that numbers its experiments Ⅰ~Ⅳ: a solution read with Latin "I에서" is the same label, and the solution
   // judges marked every STEP title of a set down for the variant's "Ⅰ에서" (molar-mass round 5, 2026-10-11).
@@ -51,12 +51,12 @@ function normalizeMaterial(data) {
     subject: str(data?.subject, 40),
     topic: str(data?.topic, 120),
     problem,
-    annotations: arr(data?.annotations).map((a) => str(a, 500)).filter(Boolean).slice(0, 20),
+    annotations: arr(data?.annotations).map((a) => str(a, 2000)).filter(Boolean).slice(0, 20),
     solutionSource: data?.solutionSource === 'ai' ? 'ai' : 'provided',
     steps,
-    techniques: arr(data?.techniques).map((t) => str(t, 500)).filter(Boolean).slice(0, 12),
-    finalCheck: str(data?.finalCheck, 4000),
-    uncertainties: arr(data?.uncertainties).map((u) => str(u, 500)).filter(Boolean).slice(0, 20),
+    techniques: arr(data?.techniques).map((t) => str(t, 2000)).filter(Boolean).slice(0, 12),
+    finalCheck: str(data?.finalCheck),
+    uncertainties: arr(data?.uncertainties).map((u) => str(u, 2000)).filter(Boolean).slice(0, 20),
     stepMarkers: [...new Set(arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean))].slice(0, 10),
     solutionStepCount: Number.parseInt(data?.solutionStepCount, 10) || 0,
     sourceVerification: data?.verification && typeof data.verification === 'object' ? data.verification : (data?.sourceVerification || null),
@@ -138,7 +138,7 @@ function mergeGroups(steps, groups) {
     return {
       marker: part[0].marker,
       // The first STEP of a marker group usually carries the solution's printed step heading.
-      title: str(g.title, 300) || part[0].title,
+      title: str(g.title, 1000) || part[0].title,
       purpose: join('purpose', ' / '),
       technique: join('technique', '\n'),
       work: join('work', '\n\n'),
@@ -161,7 +161,7 @@ async function proposeStepAlignment({ llm, budget, jobId, signal }, material) {
       purpose: 'regroup', jobId, budget, signal, effort: 'off', maxTokens: 3000,
       system: prompts.REGROUP_SYSTEM, text: prompts.regroupText(steps, target, material.stepMarkers),
     });
-    groups = arr(data?.groups).map((g) => ({ steps: arr(g?.steps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0), title: str(g?.title, 300) }));
+    groups = arr(data?.groups).map((g) => ({ steps: arr(g?.steps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0), title: str(g?.title, 1000) }));
   }
   if (!validGroups(groups, steps.length, target)) {
     throw Object.assign(new Error('STEP을 해설 단계에 맞게 묶지 못했습니다. 수정 화면에서 "위 STEP과 합치기"로 직접 합쳐 주세요.'), { status: 422 });
@@ -205,8 +205,8 @@ const ROMAN = { I: 'Ⅰ', II: 'Ⅱ', III: 'Ⅲ', IV: 'Ⅳ' };
 const stepTitle = (t) => str(t, 300).replace(/^\s*STEP\s*\d+\s*[.:)·]\s*/i, '').replace(/(^|[^A-Za-z])(IV|III|II|I)(?=$|[^A-Za-z])/g, (m, pre, r) => pre + ROMAN[r]);
 function normalizeSolution(solution) {
   return {
-    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: breaks(str(s?.work, 8000)) })).filter((s) => s.work).slice(0, 12),
-    summary: str(solution?.summary, 1000),
+    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: breaks(str(s?.work)) })).filter((s) => s.work).slice(0, 12),
+    summary: str(solution?.summary, 4000),
   };
 }
 
@@ -469,7 +469,7 @@ async function printedProblemReread(ctx, result, images) {
       if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
       break;
     }
-    const text = str(data?.text, 8000);
+    const text = str(data?.text);
     const after = words(text);
     const shared = [...after].filter((w) => before.has(w)).length;
     // Same problem: most of the re-read's words were in the first transcription, and it is not a fragment.
@@ -494,7 +494,7 @@ async function printedProblemReread(ctx, result, images) {
 
 function useText(result, text, data, removed) {
   result.problem.text = text;
-  if (str(data?.figure, 3000)) result.problem.figure = str(data.figure, 3000);
+  if (str(data?.figure)) result.problem.figure = str(data?.figure);
   result.proofread.push(`문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 ${removed.join(', ')}이(가) 빠진 본문으로 교체`);
 }
 
@@ -534,6 +534,16 @@ async function sourceChecks(material) {
   } else {
     checks.push({ id: 'source-calculation', label: '원본 정답 검산', state: 'unknown', evidence: '분석 결과에 검산 프로그램이 없습니다.' });
   }
+  // Math left open in the transcription ($ without its pair) breaks the rendering of everything after it and reaches
+  // every variant's solution: the same check a generated problem gets (harness.js), named by field.
+  const open = (t) => (String(t || '').replace(/\\\$/g, '').match(/\$/g) || []).length % 2 === 1;
+  const unpaired = [
+    ...(open(material.problem.text) ? ['문제 본문'] : []), ...(open(material.problem.figure) ? ['그림 설명'] : []),
+    ...(material.problem.choices || []).flatMap((c, i) => (open(c) ? [`선택지 ${i + 1}`] : [])),
+    ...(material.steps || []).flatMap((st, i) => ['title', 'work', 'result'].filter((k) => open(st[k])).map((k) => `STEP ${i + 1} ${{ title: '제목', work: '풀이', result: '결론' }[k]}`)),
+  ];
+  checks.push({ id: 'source-math', label: '수식 기호 짝', state: unpaired.length ? 'fail' : 'pass',
+    evidence: unpaired.length ? `${unpaired.join(', ')}에 $ 기호의 짝이 맞지 않습니다. 수식이 닫히지 않으면 그 뒤 글이 모두 수식으로 표시됩니다.` : '' });
   // A ㄱㄴㄷ problem whose solution judges each statement (|보기 분석|): the transcription must keep those judgments in
   // the last STEP, or every variant solution is compared with a teacher solution that has none (2026-10-05: Qwen's
   // C38 analysis dropped them; the writer then added judgments and the reviewer called them extra).
@@ -1661,9 +1671,9 @@ async function learnFromSet(ctx) {
   // The kinds of fault this set's lessons come from: what wakes a lesson the data put to sleep (faults.wakeLessons).
   const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   for (const x of arr(data?.items).slice(0, 3)) {
-    const text = str(x?.text, 600);
+    const text = str(x?.text, 2000);
     if (text.length < 8 || existing.includes(text)) continue;
-    const change = await keepLesson(ctx, store, draftLesson(x, text, material, { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto', faultKeys }), { why: str(x?.why, 300), jobId: job.id, by: 'auto' });
+    const change = await keepLesson(ctx, store, draftLesson(x, text, material, { materialId: job.materialId, jobId: job.id, label: job.title, from: 'auto', faultKeys }), { why: str(x?.why, 1000), jobId: job.id, by: 'auto' });
     if (change) learned.push(change);
   }
   job.learned = learned;
@@ -1681,7 +1691,7 @@ const summary = (changed) => `더함 ${changed.filter((c) => c.kind === 'add').l
 function draftLesson(x, text, material, source) {
   const common = x?.scope === 'common';
   return makeRule({
-    text, why: str(x?.why, 300), example: x?.example && typeof x.example === 'object' ? { before: str(x.example.before, 300), after: str(x.example.after, 300) } : undefined,
+    text, why: str(x?.why, 1000), example: x?.example && typeof x.example === 'object' ? { before: str(x.example.before, 1000), after: str(x.example.after, 1000) } : undefined,
     stage: 'generation', target: ['problem', 'solution', 'all'].includes(x?.target) ? x.target : 'all',
     category: CATEGORIES.includes(x?.category) ? x.category : undefined,
     scope: common ? 'global' : 'material', layer: 'lesson',
@@ -1712,7 +1722,7 @@ async function keepLesson(ctx, store, draft, { why, jobId, by }) {
       if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) return null;
       break;
     }
-    const merged = str(data?.text, 600);
+    const merged = str(data?.text, 2000);
     if (data?.same !== true || merged.length < 8) continue;
     if (!editable(r)) { ctx.log(`이미 있는 학습과 같아 두지 않습니다: ${r.text.slice(0, 60)}…`); return null; }
     if (merged === r.text) return null;
@@ -1742,24 +1752,24 @@ async function learnFromReview(ctx, material, set, all) {
   const own = (id) => { const r = ctx.store.rules.get(str(id, 40)); return r && editable(r) ? r : null; };
   for (const x of arr(data?.revise).slice(0, 5)) {
     const r = own(x?.id);
-    const text = str(x?.text, 600);
+    const text = str(x?.text, 2000);
     if (!r || text.length < 8 || text === r.text) continue;
     if (isFormatLesson(text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${text.slice(0, 60)}…`); continue; }
-    ctx.store.rules.put(updateRule(r, { text, ...(str(x?.why, 300) ? { why: str(x?.why, 300) } : {}) }, new Date(), { why: str(x?.why, 300), jobId: set.id, by: 'review' }));
-    changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 300) });
+    ctx.store.rules.put(updateRule(r, { text, ...(str(x?.why, 1000) ? { why: str(x?.why, 1000) } : {}) }, new Date(), { why: str(x?.why, 1000), jobId: set.id, by: 'review' }));
+    changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 1000) });
   }
   for (const x of arr(data?.remove).slice(0, 5)) {
     const r = own(x?.id);
     if (!r) continue;
     ctx.store.rules.remove(r.id);
-    changed.push({ kind: 'remove', id: r.id, before: r.text, why: str(x?.why, 300) });
+    changed.push({ kind: 'remove', id: r.id, before: r.text, why: str(x?.why, 1000) });
   }
   const existing = new Set(rules.map((r) => r.text));
   const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   for (const x of arr(data?.add).slice(0, 3)) {
-    const text = str(x?.text, 600);
+    const text = str(x?.text, 2000);
     if (text.length < 8 || existing.has(text)) continue;
-    const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review', faultKeys }), { why: str(x?.why, 300), jobId: set.id, by: 'review' });
+    const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review', faultKeys }), { why: str(x?.why, 1000), jobId: set.id, by: 'review' });
     if (change) changed.push(change);
   }
   ctx.log(changed.length ? `학습 ${changed.length}곳을 고쳤습니다 (${summary(changed)})` : '고칠 학습이 없습니다');

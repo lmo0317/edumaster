@@ -655,3 +655,20 @@ test('low notes left after the analysis review rounds are fixed once more and do
   assert.equal(analysisPassed({ verdict: 'ok' }), true);
   assert.equal(analysisPassed({ verdict: 'issues', issues: [low('x')] }), false);
 });
+
+// 2026-10-26: every field a model returns as content was cut at a cap (a STEP's work at 8,000 letters, a fix at 400), and
+// a cut loses the closing $ or the last sentence without a word. Content is kept whole; the transcription is checked for
+// unpaired $ as a generated problem is.
+test('a model\'s content is stored whole and unpaired math in the transcription is a failed check', async () => {
+  const { normalizeMaterial, sourceChecks } = require('../server/pipeline');
+  const work = ('$x+2y=54$ … ⓐ 이고, ⓐ~ⓒ 식을 연립해서 풀면 $x=16, y=19, z=14$이다. ').repeat(200);
+  assert.ok(work.length > 8000);
+  const m = normalizeMaterial({ problem: { text: '표는 기체 (가)~(다)에 대한 자료이다.', choices: ['ㄱ', 'ㄴ'], answer: 1 }, steps: [{ title: 'S1', work }] });
+  assert.equal(m.steps[0].work.length, work.trim().length, 'the STEP is not cut');
+  const checks = await sourceChecks({ problem: { text: '표는 $t$℃', figure: '', choices: [] }, steps: [{ title: 'S', work: '값은 $=1.5\\times\\frac{6}{3}\nㄴ. 다음 (○)', result: '' }] });
+  const math = checks.find((c) => c.id === 'source-math');
+  assert.equal(math.state, 'fail');
+  assert.match(math.evidence, /STEP 1 풀이에 \$ 기호의 짝이 맞지 않습니다/);
+  const fine = await sourceChecks({ problem: { text: '표는 $t$℃', figure: '', choices: [] }, steps: [{ title: 'S', work: '값은 $x=1$이다.', result: '' }] });
+  assert.equal(fine.find((c) => c.id === 'source-math').state, 'pass');
+});
