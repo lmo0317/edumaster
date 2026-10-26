@@ -35,6 +35,9 @@ const isFormula = (f) => /[0-9₀-₉]|\((?:g|l|s|aq)\)$/.test(f) && (subDigits(
 // Outside chemistry a capital with a count is a quantity, not a formula: 생명 E37's force F₂ became $\ce{F2}$ in a STEP
 // title (학습 반복, 2026-10-23, Gemini). There a letter with a subscript (F₁, t₂) is written as math, $F_1$.
 function notation(text, known = [], { formulas = true } = {}) {
+  // Unpaired $ (an opened formula never closed) would turn every later Korean word into \text{…}; the field is left as
+  // it is and checkFormat names the fault.
+  if ((String(text ?? '').replace(/\\\$/g, '').match(/\$/g) || []).length % 2) return String(text ?? '');
   return josa(String(text ?? '').split(/(\$\$?[^$]*\$\$?)/).map((part, i) => (i % 2 ? mathPart(part, formulas)
     : formulas ? bareFormulas(part, Array.isArray(known) ? known : []).replace(FORMULA, (all, f) => (isFormula(f) ? `$\\ce{${subDigits(f)}}$` : all))
       : part.replace(/(?<![A-Za-z0-9\\{}_^$])([A-Za-z])([₀-₉]+)(?![A-Za-z0-9₀-₉])/g, (all, l, d) => `$${l}_${d.length > 1 ? `{${subDigits(d)}}` : subDigits(d)}$`))).join(''));
@@ -79,6 +82,8 @@ function josa(text) {
     .replace(/([0-9₀-₉])(\}?\$?)(으로|로|은|는|이|가|을|를|과|와)(?![가-힣])/g, (all, d, close, p, at, s) => {
       // A count in a formula is read in English ($\ce{XY3}$ 엑스와이쓰리): left as written.
       const before = s.slice(0, at + 1);
+      // A valence (3가 양이온, 1가 알코올) is not a particle.
+      if (p === '가' && /^\s+(?:양이온|음이온|알코올|산|염기|아민|알켄|페놀)/.test(s.slice(at + all.length))) return all;
       // A fraction is read denominator first (\frac{1}{3} 삼분의 일): left as written too.
       if (/\\ce\{[^}]*$/.test(before) || /[A-Z][0-9₀-₉]+$/.test(before) || /\\[dt]?frac\{[^}]*\}\{[^}]*$/.test(before)) return all;
       const digit = SUB_DIGIT.includes(d) ? SUB_DIGIT.indexOf(d) : Number(d);
@@ -135,8 +140,13 @@ function helperVariables(text) {
 // line ("[선택지 분석] $b=3$, $x=15$, … $=\\frac{2}{5}$이다.", molar mass read on 2026-10-26), and that whole line put
 // into every variant was the one fault of four sets in a row (78·79, the 학습 반복 rewording a lesson each time).
 // The heading is the line up to its closing bracket or bar; what follows it stays where it is.
+// Only a line that starts as the heading is one ("| 선택지 분석 |", "[선택지 분석] …", "선택지 분석:"); a sentence that
+// uses the words ("선택지 분석을 하면 …") is not.
+const HEADING_LINE = /^[\[［|【*\s]*선택지\s*분석(?:\s*[\]］|】*:：]+|\s*$)/;
 const choiceHeading = (line) => {
-  const m = String(line || '').trim().match(/^(.*?선택지\s*분석(?:\s*[\]|】)」*]+)?)\s*(.*)$/);
+  const t = String(line || '').trim();
+  if (!HEADING_LINE.test(t)) return null;
+  const m = t.match(/^(.*?선택지\s*분석(?:\s*[\]］|】*:：]+)?)\s*(.*)$/);
   return m ? { head: m[1].trim(), rest: m[2].trim() } : null;
 };
 function teacherChoiceHeading(material, item) {
@@ -148,7 +158,7 @@ function teacherChoiceHeading(material, item) {
   const lines = String(last.work).split('\n');
   // A heading the writer gave in its own form ("선택지 분석" for "| 선택지 분석 |") is the teacher's heading; what the
   // writer put after it on the line is its own and stays.
-  const own = lines.findIndex((l) => /선택지\s*분석/.test(l));
+  const own = lines.findIndex((l) => choiceHeading(l));
   if (own >= 0) {
     const mine = choiceHeading(lines[own]);
     const next = mine.rest ? `${box} ${mine.rest}` : box;
@@ -185,6 +195,23 @@ function frameRegex(frame) {
 function frameFixed(frame) {
   return frameLine(String(frame).replace(/《[^《》]{1,20}》/g, '')).replace(/[\s$\\{}()^_.,]/g, '').length;
 }
+// A frame is the teacher's sentence with the problem's values as slots. One whose fixed text still carries a value —
+// "따라서 $x=15$이고 $b=3$이다.", "$\frac{w}{15}$ mol", "20 g", "②가 정답이다", a $ left open — would put the original's
+// number into every variant that fills it (the class of the 2026-10-26 molar-mass fault, where the teacher's closing
+// line went into every solution). Such a frame is not kept: the writer writes that line itself and the review judges
+// it. A count that is part of the method (2배, 2k, 식 (1), 계수는 각각 2) is not a value.
+const VALUE_IN_FIXED = [
+  /[①②③④⑤]/,
+  /=\s*\$?\s*-?\d+(?:\.\d+)?\s*(?:\$|$|[가-힣,;.)\s])/,
+  /\\[dt]?frac\{\s*(?:-?\d+(?:\.\d+)?|[a-zA-Z]{1,2})\s*\}\{\s*-?\d+(?:\.\d+)?\s*\}/,
+  /\d+(?:\.\d+)?\s*[a-z]?\s*\$?\s*(?:g|mol|L|mL|cm|mm|μm|\\mu ?m|%|℃|°C|kJ|J|atm|Pa)(?![A-Za-z])/,
+];
+function carriesValue(frame) {
+  const fixed = String(frame).replace(/《[^《》]{1,20}》/g, ' ');
+  if ((fixed.replace(/\\\$/g, '').match(/\$/g) || []).length % 2) return true;
+  return VALUE_IN_FIXED.some((re) => re.test(fixed));
+}
+
 /** The extracted frames kept: those that match a line of their own STEP of the teacher's solution. */
 function validateFrames(material, extracted) {
   const out = [];
@@ -214,7 +241,7 @@ function validateFrames(material, extracted) {
     };
     // In the order of the teacher's lines, so [틀 n-k] runs down the STEP as the teacher wrote it.
     const at = (f) => lines.findIndex((l) => frameRegex(f).test(l));
-    const frames = [...new Set((s.frames || []).map(frameLine).map(unique))].filter((f) => f && frameFixed(f) >= 6 && at(f) >= 0).sort((a, b) => at(a) - at(b));
+    const frames = [...new Set((s.frames || []).map(frameLine).map(unique))].filter((f) => f && frameFixed(f) >= 6 && at(f) >= 0 && !carriesValue(f)).sort((a, b) => at(a) - at(b));
     if (frames.length) out.push({ step: i + 1, frames, lines: lines.length, covered: lines.filter((l) => frames.some((f) => frameRegex(f).test(l))).length });
   }
   return out;
@@ -264,7 +291,8 @@ function frameFindings(material, item, limit = 8) {
  * out themselves stay as written. Returns what it could not fill (a frame number that does not exist, a slot with no
  * value) — content for the writer, never wording.
  */
-const FRAME_REF = /^\s*\[틀\s*(\d+)\s*[-–.]\s*(\d+)\]\s*(.*)$/;
+// Full-width brackets, bold marks and a trailing \r are the writer's spellings of the same reference.
+const FRAME_REF = /^\s*(?:\*\*)?\s*[\[［]\s*틀\s*(\d+)\s*[-–.]\s*(\d+)\s*[\]］]\s*(?:\*\*)?\s*(.*?)\s*$/;
 // Frames are kept without \ce (frameLine), so a species the teacher writes as "$\ce{A(s)}$" goes back in that form
 // outside the frame's $…$ (reaction-density, 2026-10-16: every set wrote "A(s)" and the judge failed the notation).
 function teacherCe(material, text) {
@@ -278,7 +306,7 @@ function renderFrames(material, item) {
   const missing = [];
   const frames = material.frames || [];
   for (const step of item.solution?.steps || []) {
-    const lines = String(step.work || '').split('\n').map((line) => {
+    const lines = String(step.work || '').replace(/\r/g, '').split('\n').map((line) => {
       const m = FRAME_REF.exec(line);
       if (!m) return line;
       const frame = frames.find((f) => f.step === Number(m[1]))?.frames[Number(m[2]) - 1];
@@ -338,7 +366,11 @@ function stepTitle(original, mine) {
   if (parts.length < 2) return o;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*');
   const m = new RegExp(`^${parts.map(esc).join(`\\s*(${TITLE_RUN.source})\\s*`)}$`).exec(plainTitle(mine));
-  if (!m || (o.match(TITLE_RUN) || []).length !== parts.length - 1) return o;
+  // The teacher's title names the original's containers and values ("(가)~(다)", "20 g"); when the writer's title does
+  // not line up with it, those would go into a problem that has other ones, so the writer's title stays and the title
+  // check reports the difference in words (2026-10-26 audit).
+  const foreign = /[ⅠⅡⅢⅣⅤ]|\([가-하]\)|[㉠-㉭㉮-㉻ⓐ-ⓩⒶ-Ⓩ]|\d+(?:\.\d+)?\s*(?:g|mol|L|mL|cm|μm|%|℃)(?![A-Za-z가-힣])/.test(o);
+  if (!m || (o.match(TITLE_RUN) || []).length !== parts.length - 1) return foreign ? String(mine) : o;
   let k = 1;
   // The plain form reads t₁ and $t_1$ as t1; the title writes it as the teacher's title does.
   // An index alone (F₁'s ₁, read F1) is written the teacher's way too (생명 E37, 2026-10-23).
@@ -360,15 +392,18 @@ function answerLine(item) {
   if (!(n >= 1 && n <= 5) || choice == null) return;
   const mark = '①②③④⑤'[n - 1];
   const shown = String(choice).trim().replace(/^\$\s*(-?[\d.]+)\s*\$$/, '$1');
+  // A choice that is a sentence ("반응 후 남은 기체는 A이다.") is not repeated after the mark.
+  const line = (shown.match(/[가-힣]/g) || []).length >= 6 ? `${mark}이다.` : `${mark} ${shown}이다.`;
   const steps = item.solution?.steps || [];
   for (const step of steps) {
-    step.work = String(step.work || '').replace(/^(.*?정답은\s*)([①②③④⑤])(.*)$/gm, (all, head, had, rest) => (
-      /^\s*(이다|입니다)/.test(rest) ? `${head}${mark}${rest}` : `${head}${mark} ${shown}이다.`));
+    // A table row is left alone; a line's closing bold marks stay.
+    step.work = String(step.work || '').split('\n').map((l) => (/^\s*\|/.test(l) ? l : l.replace(/^(.*?정답은\s*)([①②③④⑤])(.*?)(\*\*)?\s*$/, (all, head, had, rest, bold) => (
+      /^\s*(이다|입니다)/.test(rest) ? `${head}${mark}${rest}${bold || ''}` : `${head}${line}${bold || ''}`)))).join('\n');
   }
   // A solution that ends without it gets it at the end of its last STEP: Opus's STEP 1~2 practice ended on its reaction
   // table (reaction-density 3차, 2026-10-18, Claude's review), its teacher's answer line being in STEP 3.
   const last = steps[steps.length - 1];
-  if (last && !steps.some((s) => /정답은\s*[①②③④⑤]/.test(s.work || ''))) last.work = `${String(last.work || '').trimEnd()}\n정답은 ${mark} ${shown}이다.`;
+  if (last && !steps.some((s) => /정답은\s*[①②③④⑤]/.test(s.work || ''))) last.work = `${String(last.work || '').trimEnd()}\n정답은 ${line}`;
 }
 
 /** Original STEPs a stage uses (1-based). */
@@ -502,6 +537,7 @@ function formatIssues(text) {
 function checkFormat(item) {
   const issues = [
     ...formatIssues(item.problem.text).map((m) => '문제: ' + m),
+    ...formatIssues(item.problem.figure || '').map((m) => '그림 설명: ' + m),
     ...item.problem.choices.flatMap((c, i) => formatIssues(c).map((m) => `${i + 1}번 보기: ${m}`)),
     ...(item.solution?.steps || []).flatMap((st) => formatIssues(st.work).map((m) => `해설 STEP ${st.step}: ${m}`)),
   ];
@@ -653,8 +689,43 @@ function checkCleanNumbers(item) {
     bad.length ? `계산기 없이 다루기 어려운 수가 문제에 있습니다: ${bad.slice(0, 5).join(', ')}. 작은 정수나 분모가 작은 분수가 되게 수치를 다시 잡아야 합니다.` : '')];
 }
 
+/** A frame reference the renderer could not turn into a sentence ([틀 2-1] with a value missing, a frame number that does
+ * not exist) must not reach the student: the line is a hard fault, not a wording note. */
+function checkFramesFilled(item) {
+  const left = (item.solution?.steps || []).flatMap((st) => String(st.work || '').split('\n')
+    .filter((l) => /[\[［]\s*틀\s*\d+/.test(l) || (!/\$/.test(l) && /^[^=;|]{1,20}=[^;=|]{1,60};\s*[^=;|]{1,20}=/.test(l)))
+    .map((l) => `STEP ${st.step}: ${l.trim().slice(0, 80)}`));
+  return [result('frames', '해설 문장 틀 채움', !left.length, left.length ? `틀 참조가 문장으로 바뀌지 않고 남았습니다: ${left.slice(0, 3).join(' / ')}` : '', 'hard')];
+}
+
+// A letter the problem introduces ($aw$ in a table cell, $x$ in the question) that the solution never uses is a
+// decoration the student has to wonder about (Gemini on molar mass, 2026-10-26: "$aw$로 숨겼으나 … 풀이에 불필요한
+// 조건"): every such letter must be used in the solution.
+// One or two lowercase letters standing alone ($x$, $aw$ = a·w); a unit (cm, kg) is not a letter.
+const PROBLEM_LETTER = /(?<![A-Za-z\\{_^])([a-z]{1,2})(?![A-Za-z}])/g;
+const UNIT_WORDS = new Set(['cm', 'mm', 'kg', 'mg', 'nm', 'ms', 'pm', 'km', 'dm', 'hr', 'ml']);
+function problemLetters(problem, { mathOnly = true } = {}) {
+  const parts = [problem?.text, problem?.figure, ...(problem?.choices || [])].map((t) => String(t || ''));
+  const text = (mathOnly ? parts.map((t) => (t.match(/\$[^$]*\$/g) || []).join(' ')) : parts).join(' ')
+    .replace(/\\(?:ce|text|mathrm|operatorname)\s*\{[^{}]*\}/g, ' ').replace(/\([a-z]{1,2}\)/g, ' ');
+  return [...new Set([...text.matchAll(PROBLEM_LETTER)].map((m) => m[1]).filter((w) => !UNIT_WORDS.has(w)).flatMap((w) => [...w]))];
+}
+function checkUnusedLetters(material, item) {
+  // The original's own letters (its w, its x, wherever its reading wrote them) are the family's; the letters the
+  // variant adds are what must be used.
+  const inherited = new Set(problemLetters(material?.problem, { mathOnly: false }));
+  const letters = problemLetters(item.problem).filter((v) => !inherited.has(v));
+  if (!letters.length) return [];
+  const solution = (item.solution?.steps || []).map((s) => s.work).join('\n');
+  const unused = letters.filter((v) => !hasLetter(solution, v));
+  return [result('unused-letter', '문제의 문자가 풀이에 쓰임', !unused.length,
+    unused.length ? `문제가 도입한 문자 ${unused.join(', ')}가 해설 어디에도 쓰이지 않습니다. 묻는 값이나 계산에 쓰이게 하거나 수치로 바꿔야 합니다.` : `문자 ${letters.join(', ')} 모두 해설에 쓰임`)];
+}
+
 function inspectItem(material, item, mode) {
   return [
+    ...checkFramesFilled(item),
+    ...checkUnusedLetters(material, item),
     ...checkChoices(material, item),
     ...checkOxConsistency(material, item),
     ...checkHelpers(material, item),
@@ -750,4 +821,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { notation, notateItem, notateMaterial, stepTitle, uncoveredLines, renderFrames, validateFrames, frameFindings, frameRegex, teacherChoiceHeading, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { notation, notateItem, notateMaterial, stepTitle, uncoveredLines, renderFrames, validateFrames, carriesValue, frameFindings, frameRegex, teacherChoiceHeading, checkFramesFilled, checkUnusedLetters, problemLetters, checkFormat, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

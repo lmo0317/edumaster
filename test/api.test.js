@@ -633,7 +633,8 @@ test('a set\'s Claude·Gemini review (data/reviews/<set id>.json) is shown on it
     const job = await s.waitJob((await s.call('POST', '/api/generations', { materialId: id, mode: 'integrated' })).data.jobId);
     assert.equal((await s.call('GET', `/api/jobs/${job.id}/check`)).data.check, null);
     assert.equal((await s.call('GET', `/api/materials/${id}`)).data.jobs.find((j) => j.id === job.id).check, null);
-    const item = (index, verdict, answerOk = true) => ({ index, label: job.items[index].label, verdict, answerOk, issues: [] });
+    const FULL = Object.fromEntries(require('../server/final-review').ITEM_NAMES.map((n) => [n, 'ok']));
+    const item = (index, verdict, answerOk = true) => ({ index, label: job.items[index].label, verdict, answerOk, myAnswer: String(job.items[index].problem?.answer || 1), checks: FULL, issues: [] });
     fs.mkdirSync(path.join(s.dataDir, 'reviews'));
     fs.writeFileSync(path.join(s.dataDir, 'reviews', `${job.id}.json`), JSON.stringify({ ...require('../server/set-check').checkRecord(job.material, job), at: '2026-10-20T00:00:00Z', done: true, reviews: {
       'claude-cli': { seconds: 60, review: { analysis: { verdict: 'ok', issues: [] }, items: [item(0, 'use'), item(1, 'use'), item(2, 'fix', false)], summary: '' } },

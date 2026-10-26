@@ -27,7 +27,8 @@ const tmpStore = (rulesList = [], jobsList = []) => {
   return { dataDir, rules: col(rulesList), jobs: col(jobsList), materials: { get: () => ({ id: 'm1', subject: '생명과학', topic: '감수 분열' }) } };
 };
 const lessonOf = (id, text, from, extra = {}) => ({ id, text, status: 'approved', stage: 'generation', scope: 'global', layer: 'lesson', subject: '생명과학', createdAt: '2026-10-01T00:00:00Z', source: { from, ...extra }, history: [] });
-const okItem = (index, label) => ({ index, label, answerOk: true, markedAnswer: 1, myAnswer: '1', verdict: 'use', checks: {}, issues: [] });
+const FULL = Object.fromEntries(require('../server/final-review').ITEM_NAMES.map((n) => [n, 'ok']));
+const okItem = (index, label) => ({ index, label, answerOk: true, markedAnswer: 1, myAnswer: '1', verdict: 'use', checks: FULL, issues: [] });
 const badItem = (index, label, detail) => ({ ...okItem(index, label), verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail }] });
 
 test('a problem both reviewers passed in the set review is an example for the next writer; a failed, unreviewed or stale one is not', () => {

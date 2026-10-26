@@ -156,8 +156,12 @@ test('a STEP title is the teacher\'s with the labels the problem has; anything e
   const { stepTitle } = require('../server/harness');
   assert.equal(stepTitle('(가)~(다)에 들어 있는 기체의 양(mol)을 구한다.', '(가)와 (나)에 들어 있는 기체의 양(mol)을 구한다'), '(가)와 (나)에 들어 있는 기체의 양(mol)을 구한다.');
   assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ 에서 반응한 A의 질량을 구한다.'), 'Ⅱ에서 반응한 A의 질량을 구한다.');
-  assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ에서 반응한 B의 질량'), 'Ⅰ에서 반응한 A의 질량을 구한다.');
-  assert.equal(stepTitle('원소 X~Z의 원자량과 X₂의 분자량을 구한다.', '원자량'), '원소 X~Z의 원자량과 X₂의 분자량을 구한다.');
+  // The teacher's title names the original's containers and values; one the writer's does not line up with is not put
+  // over the writer's (the title check reports the wording), so Ⅰ, (다) or "20 g" never go into a problem without them.
+  assert.equal(stepTitle('Ⅰ에서 반응한 A의 질량을 구한다.', 'Ⅱ에서 반응한 B의 질량'), 'Ⅱ에서 반응한 B의 질량');
+  assert.equal(stepTitle('원소 X~Z의 원자량과 X₂의 분자량을 구한다.', '원자량'), '원소 X~Z의 원자량과 X₂의 분자량을 구한다.', 'no container or value in it: the teacher\'s words');
+  assert.equal(stepTitle('반응 전 질량 20 g에서 (가)~(다)의 몰수 구하기', '반응 전 질량이 같을 때 (가)와 (나)의 몰수 구하기'), '반응 전 질량이 같을 때 (가)와 (나)의 몰수 구하기');
+  assert.equal(stepTitle('기체의 몰수를 구한다.', '아무 제목'), '기체의 몰수를 구한다.', 'a title with no labels or values is the teacher\'s as before');
   // Members, parts and moments are the problem's too (L64, E38 2026-10-22).
   assert.equal(stepTitle('㉣~㉥과 구성원 3, 4, 8 매칭하기', '㉣~㉥과 구성원 3, 4, 7 매칭하기'), '㉣~㉥과 구성원 3, 4, 7 매칭하기');
   assert.equal(stepTitle('구성원 ㉠ 추론 및 유전 형질 (나) 분석하기', '구성원 ㉢ 추론 및 유전 형질 (나) 분석하기'), '구성원 ㉢ 추론 및 유전 형질 (나) 분석하기');

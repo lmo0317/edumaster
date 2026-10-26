@@ -18,7 +18,8 @@ const { makeRule } = require('../server/learning');
 const clone = x => JSON.parse(JSON.stringify(x));
 const mat = () => ({ id: newId(), status: 'ready', title: 'Review fixture', subject: '수학', topic: '덧셈', createdAt: new Date().toISOString(), problem: { text: 'OLD SOURCE 1+1의 값은?', choices: ['1','2','3','4','5'], answer: 2 }, steps: [{ title: '덧셈하기', work: 'OLD WORK 1+1=2이다.' }], images: {} });
 const item = (index=0) => ({ index, label: index ? '최종 문제' : 'STEP 1 연습', stage: index ? {kind:'twin'} : {kind:'upto',upto:1}, status:'passed', problem:{text:'OLD VARIANT 2+2의 값은?', choices:['1','2','3','4','5'],answer:4}, solution:{steps:[{step:1,title:'덧셈하기',work:'2+2=4이다.'}]}, attempts:[] });
-const good = label => ({label,verdict:'use',answerOk:true,markedAnswer:4,myAnswer:'4',checks:{'정답':'ok'},issues:[]});
+const FULL = Object.fromEntries(review.ITEM_NAMES.map((n) => [n, 'ok']));
+const good = label => ({label,verdict:'use',answerOk:true,markedAnswer:4,myAnswer:'4',checks:FULL,issues:[]});
 
 test('large intermediate reciprocals reach final review without forcing a numerical redesign', async () => {
   const m = mat();
@@ -83,13 +84,13 @@ test('reviewing an old set uses its generation source snapshot',async()=>{
   }finally{await s.close();}
 });
 test('reversed review items target the matching problem for remake',()=>{
-  const record={set:{items:[{index:0,label:'STEP 1 연습'},{index:1,label:'최종 문제'}]},reviews:{'claude-cli':{review:{items:[{label:'최종 문제',verdict:'fix',answerOk:false,issues:[{severity:'high',rule:'정답',detail:'최종 문제 정답 오류'}]},good('STEP 1 연습')]}}}};
+  const record={set:{items:[{index:0,label:'STEP 1 연습'},{index:1,label:'최종 문제'}]},reviews:{'claude-cli':{review:{items:[{...good('최종 문제'),verdict:'fix',answerOk:false,issues:[{severity:'high',rule:'정답',detail:'최종 문제 정답 오류'}]},good('STEP 1 연습')]}}}};
   assert.equal(sets.failing(record)[0].index,1);assert.equal(sets.failing(record)[0].label,'최종 문제');
 });
 // bio-k61 (2026-10-23): the same final passed the set review in round 3 and was failed in round 4 by the same reviewer.
 test('a settled problem (passed earlier, carried over unchanged) is not failed by a later round\'s verdict',()=>{
   const record={set:{items:[{index:0,label:'STEP 1 연습'},{index:1,label:'최종 문제'}]},checklist:{models:{'claude-cli':{score:94},'agy-cli':{score:100}}},
-    reviews:{'claude-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[{label:'최종 문제',verdict:'fix',answerOk:true,issues:[{severity:'mid',rule:'학습',detail:'숨긴 칸이 STEP 1에서 정해진다'}]},good('STEP 1 연습')]}},'agy-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[good('최종 문제'),good('STEP 1 연습')]}}}};
+    reviews:{'claude-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[{...good('최종 문제'),verdict:'fix',issues:[{severity:'mid',rule:'학습',detail:'숨긴 칸이 STEP 1에서 정해진다'}]},good('STEP 1 연습')]}},'agy-cli':{review:{analysis:{verdict:'ok',issues:[]},items:[good('최종 문제'),good('STEP 1 연습')]}}}};
   assert.equal(sets.failing(record).length,1);
   assert.deepEqual(sets.failing(record,new Set([1])),[]);
   assert.equal(sets.reaches(record,90),false);

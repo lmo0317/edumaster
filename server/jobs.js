@@ -242,6 +242,17 @@ function createJobs({ store, llm, config }) {
         ctx.save();
         if (pass) { t.reached = true; ctx.log(`목표(${t.target}점)에 도달했습니다`); return; }
         if (r + 1 >= t.maxRounds) break;
+        // A fault that comes back whole after the learning was changed for it is not the learning's to fix (molar mass,
+        // 2026-10-26: one lesson reworded four rounds for a line the code put into every solution, 310 calls): two
+        // rounds in a row whose faults are four fifths recurrences of this original, each after a learning change,
+        // stop the repeat for the teacher with the reason on the record.
+        const stuck = (rd) => rd?.faultStats && rd.faultStats.faults >= 3 && rd.faultStats.own / rd.faultStats.faults >= 0.8;
+        if (r >= 2 && stuck(round) && stuck(t.rounds[r - 1]) && t.rounds[r - 1].learned?.length && t.rounds[r - 2].learned?.length) {
+          t.reached = false;
+          t.stopReason = `학습을 고친 뒤에도 같은 결함이 두 세트 연속 되풀이됨 (이 원본에서 ${round.faultStats.own}/${round.faultStats.faults}건)`;
+          ctx.log(`${t.stopReason}. 학습으로 고쳐지지 않는 결함이라 멈춥니다 — 시스템(하네스·지침) 점검이 필요합니다.`);
+          return;
+        }
         // The analysis the reviewers fault is fixed against the original's images; everything else goes into learning.
         if (issues.length) round.analysisFixed = await pipeline.fixAnalysis(ctx, store.materials.get(t.materialId), issues);
         round.learned = await pipeline.learnFromReview(ctx, store.materials.get(t.materialId), set, fails.flatMap((f) => f.faults.map((text) => ({ label: f.label, text }))));

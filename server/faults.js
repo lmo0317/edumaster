@@ -185,7 +185,7 @@ function forItem(records, material, item, { limit = 8, maxChars = 3600, window =
   const out = [];
   let chars = 0;
   for (const { g, tier: t } of scored) {
-    const entry = { where: WHERE[t], own: t === 3, rule: g.rule, detail: g.detail.slice(0, 400), label: g.label, sets: g.sets.size, count: g.n, materials: g.materials.size, sameStage: g.stages.has(sk), fixed: g.fixed, reviewers: [...g.reviewers], example: t === 3 ? g.example : null };
+    const entry = { where: WHERE[t], own: t === 3, rule: g.rule, detail: g.detail.slice(0, 2000), label: g.label, sets: g.sets.size, count: g.n, materials: g.materials.size, sameStage: g.stages.has(sk), fixed: g.fixed, reviewers: [...g.reviewers], example: t === 3 ? g.example : null };
     const size = entry.detail.length + (entry.example ? Math.min(240, entry.example.problem.length) + Math.min(240, entry.example.after.length) : 0) + 40;
     if (out.length >= limit || chars + size > maxChars) break;
     out.push(entry); chars += size;

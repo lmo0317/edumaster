@@ -10,7 +10,7 @@ const faultsData = require('./faults');
 
 // Models sometimes write $b$ inside \ce{...}, which breaks rendering: drop the inner dollars.
 const fixMath = (s) => s.replace(/\\ce\{([^{}]*)\}/g, (m, body) => (body.includes('$') ? `\\ce{${body.replace(/\$/g, '')}}` : m));
-const str = (v, max = 20000) => fixMath(String(v ?? '').trim()).slice(0, max);
+const str = (v, max = 20000) => fixMath(String(v ?? '').replace(/\r\n?/g, '\n').trim()).slice(0, max);
 const arr = (v) => (Array.isArray(v) ? v : []);
 const answerNumber = (v, count) => {
   const n = Number.parseInt(String(v ?? '').replace(/[^0-9]/g, ''), 10) || 0;
@@ -40,8 +40,8 @@ function normalizeMaterial(data) {
   if (problem.text.length < 5) throw Object.assign(new Error('문제 본문을 읽지 못했습니다.'), { status: 422 });
   const steps = arr(data?.steps).map((s) => ({
     marker: str(s?.marker, 40),
-    title: str(s?.title, 1000), purpose: str(s?.purpose, 4000), technique: str(s?.technique, 4000),
-    work: str(s?.work), result: str(s?.result, 4000),
+    title: str(s?.title, 1000), purpose: str(s?.purpose), technique: str(s?.technique),
+    work: str(s?.work), result: str(s?.result),
   })).filter((s) => s.title || s.work).slice(0, 10);
   // A problem that numbers its experiments Ⅰ~Ⅳ: a solution read with Latin "I에서" is the same label, and the solution
   // judges marked every STEP title of a set down for the variant's "Ⅰ에서" (molar-mass round 5, 2026-10-11).
@@ -189,10 +189,13 @@ function applyFixes(material, fixes) {
   // review of the fixed analysis then failed on what the cut had made. A fix that leaves the math unclosed is refused.
   const unclosed = (s) => (s.match(/\$/g) || []).length % 2 === 1;
   for (const fix of fixes) {
-    const wrong = str(fix?.wrong, 400); const right = str(fix?.right, 4000);
-    if (!wrong || wrong === right) continue;
+    // Neither side is cut (a 'wrong' cut at 400 letters matched its first 400 and left the rest of the old passage
+    // after the new one, 2026-10-26 audit); a fix with nothing to find is reported, not dropped.
+    const wrong = str(fix?.wrong); const right = str(fix?.right);
+    const note = `${fix?.field || ''}: "${wrong.slice(0, 400)}${wrong.length > 400 ? '…' : ''}" → "${right.slice(0, 400)}${right.length > 400 ? '…' : ''}"${fix?.reason ? ' (' + str(fix.reason, 200) + ')' : ''}`;
+    if (!wrong) { unresolved.push('교정 제안(고칠 글자가 비어 있어 적용 못 함) ' + note); continue; }
+    if (wrong === right) continue;
     const ref = fieldRef(String(fix?.field || ''));
-    const note = `${fix.field}: "${wrong}" → "${right}"${fix.reason ? ' (' + str(fix.reason, 200) + ')' : ''}`;
     if (!ref || ref[0][ref[1]].split(wrong).length !== 2) { unresolved.push('교정 제안(자동 적용 못 함) ' + note); continue; }
     const next = ref[0][ref[1]].replace(wrong, right);
     if (unclosed(next) && !unclosed(ref[0][ref[1]])) { unresolved.push('교정 제안(수식 기호 $의 짝이 맞지 않아 적용 못 함) ' + note); continue; }
@@ -203,10 +206,16 @@ function applyFixes(material, fixes) {
 
 const ROMAN = { I: 'Ⅰ', II: 'Ⅱ', III: 'Ⅲ', IV: 'Ⅳ' };
 const stepTitle = (t) => str(t, 300).replace(/^\s*STEP\s*\d+\s*[.:)·]\s*/i, '').replace(/(^|[^A-Za-z])(IV|III|II|I)(?=$|[^A-Za-z])/g, (m, pre, r) => pre + ROMAN[r]);
+/** The STEP number a model gives, as a number: "STEP 2", "2.", 2; 0 when it gives none. */
+const stepNumber = (v) => Number.parseInt((String(v ?? '').match(/\d+/) || [])[0], 10) || 0;
 function normalizeSolution(solution) {
+  // A number not given is the position; a number given twice keeps its first STEP; the order is the teacher's. Every
+  // lookup by number (titles, frames, the range) then finds one STEP (2026-10-26 audit: step 0 was "in range" always).
+  const steps = arr(solution?.steps).map((s, k) => ({ step: stepNumber(s?.step), title: stepTitle(s?.title), work: breaks(str(s?.work)), k })).filter((s) => s.work).map((s, k) => ({ ...s, step: s.step || k + 1 }));
+  const seen = new Set();
   return {
-    steps: arr(solution?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, title: stepTitle(s?.title), work: breaks(str(s?.work)) })).filter((s) => s.work).slice(0, 12),
-    summary: str(solution?.summary, 4000),
+    steps: steps.filter((s) => !seen.has(s.step) && seen.add(s.step)).sort((a, b) => a.step - b.step || a.k - b.k).map(({ k, ...s }) => s).slice(0, 12),
+    summary: str(solution?.summary),
   };
 }
 
@@ -214,13 +223,17 @@ function normalizeGenerated(data) {
   const problem = normalizeProblem(data?.problem);
   if (problem.text.length < 5) throw Object.assign(new Error('모델이 문제 본문을 만들지 않았습니다.'), { status: 422 });
   if (problem.choices.length && !problem.answer) throw Object.assign(new Error('모델이 정답 번호를 주지 않았습니다.'), { status: 422 });
+  const solution = normalizeSolution(data?.solution);
+  const numbers = arr(data?.solution?.steps).filter((s) => str(s?.work)).map((s) => stepNumber(s?.step)).filter(Boolean);
+  if (data?.solution !== undefined && !solution.steps.length) throw Object.assign(new Error('모델이 해설을 쓰지 않았습니다.'), { status: 422 });
+  if (new Set(numbers).size !== numbers.length) throw Object.assign(new Error('모델이 해설 STEP 번호를 겹쳐 썼습니다.'), { status: 422 });
   return {
     problem,
-    solution: normalizeSolution(data?.solution),
+    solution,
     usesSteps: arr(data?.usesSteps).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0).slice(0, 12),
-    designNote: str(data?.designNote, 3000),
+    designNote: str(data?.designNote),
     // One note per rule given; a cap below the rules loaded (40) dropped the last notes of every problem.
-    appliedRules: arr(data?.appliedRules).map((r) => ({ id: str(r?.id, 40), how: str(r?.how, 600) })).filter((r) => r.id).slice(0, 100),
+    appliedRules: arr(data?.appliedRules).map((r) => ({ id: str(r?.id, 40), how: str(r?.how, 2000) })).filter((r) => r.id).slice(0, 100),
     verificationSpec: data?.verification && typeof data.verification === 'object' ? data.verification : null,
   };
 }
@@ -278,9 +291,11 @@ async function analyzeMaterial(ctx, material) {
       purpose: 'proofread', jobId: ctx.job.id, budget, signal, vision: true, effort: 'low', maxTokens: 32000,
       system: prompts.PROOFREAD_SYSTEM, text: withHint(prompts.proofreadText(fields)), images,
     });
-    const { applied, unresolved } = applyFixes(result, arr(check?.fixes).slice(0, 30));
+    const proposed = arr(check?.fixes);
+    const { applied, unresolved } = applyFixes(result, proposed.slice(0, 100));
     result.proofread = applied;
     result.uncertainties.push(...unresolved);
+    if (proposed.length > 100) result.uncertainties.push(`교정 제안이 ${proposed.length}건이어서 100건까지만 적용했습니다. 원본과 대조해 주세요.`);
     result.solutionStepCount = Number.parseInt(check?.solutionStepCount, 10) || result.solutionStepCount;
   } catch (e) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
@@ -493,6 +508,16 @@ async function printedProblemReread(ctx, result, images) {
 }
 
 function useText(result, text, data, removed) {
+  // A re-read that lost a line of the first reading (a condition, a "(단, …)") still replaces it when most words
+  // match; the lost line is reported for the teacher (2026-10-26 audit).
+  const tokens = (l) => new Set(String(l).replace(/\$[^$]*\$/g, ' ').match(/[가-힣]{2,}|[A-Za-z]{2,}|\d+/g) || []);
+  const lines = (t) => String(t || '').split('\n').map((l) => l.trim()).filter((l) => l && !/^\|/.test(l));
+  const after = lines(text).map(tokens);
+  const gone = lines(result.problem.text).filter((l) => (l.match(/[가-힣]/g) || []).length >= 6).filter((l) => {
+    const a = tokens(l);
+    return a.size && !after.some((b) => [...a].filter((w) => b.has(w)).length / a.size >= 0.5);
+  });
+  if (gone.length) result.uncertainties.push(`문제 본문 재판독에서 처음 판독의 줄이 빠졌습니다. 원본과 대조해 주세요: ${gone.map((l) => l.slice(0, 60)).join(' / ')}`);
   result.problem.text = text;
   if (str(data?.figure)) result.problem.figure = str(data?.figure);
   result.proofread.push(`문제 본문 재판독(인쇄된 글자만): 해설에서 구하는 값 ${removed.join(', ')}이(가) 빠진 본문으로 교체`);
@@ -522,6 +547,10 @@ async function fixSourceVerification(ctx, result, error) {
 /** Checks on the transcribed original (v1 source-calculation / source-quantity, generalized). */
 async function sourceChecks(material) {
   const checks = [];
+  // "answer": "3, 12g" reads as 0 and went through as 정답 0번, the code check skipping the comparison (2026-10-26 audit).
+  if ((material.problem.choices || []).length && !(material.problem.answer >= 1)) {
+    checks.push({ id: 'source-answer', label: '원본 정답 표시', state: 'fail', evidence: '선택지는 있는데 원본의 정답 번호를 읽지 못했습니다. 정답 번호를 확인해 주세요.' });
+  }
   if (material.sourceVerification) {
     const r = await codeCheck(material.sourceVerification, { answer: material.problem.answer, choiceCount: material.problem.choices.length });
     // A program that does not run says nothing about the transcribed numbers: report it as unverified.
@@ -594,17 +623,17 @@ async function blindSolve(ctx, item, material, rules, compareOriginal) {
   const choiceCount = item.problem.choices.length;
   return {
     answer: answerNumber(data?.answer, choiceCount || 99),
-    answerValue: str(data?.answerValue, 300),
+    answerValue: str(data?.answerValue, 1000),
     confident: data?.confident !== false,
-    solution: str(data?.solution, 6000),
+    solution: str(data?.solution),
     stepsUsed: arr(data?.stepsUsed).map((n) => Number.parseInt(n, 10)).filter((n) => n > 0),
-    shortcuts: arr(data?.shortcuts).map((c) => ({ step: Number.parseInt(c?.step, 10) || 0, how: str(c?.how, 400) })).filter((c) => c.step > 0 && c.how).slice(0, 6),
-    issues: arr(data?.issues).map((i) => ({ type: str(i?.type, 30) || 'other', detail: str(i?.detail, 600) })).filter((i) => i.detail).slice(0, 10),
+    shortcuts: arr(data?.shortcuts).map((c) => ({ step: Number.parseInt(c?.step, 10) || 0, how: str(c?.how, 2000) })).filter((c) => c.step > 0 && c.how).slice(0, 6),
+    issues: arr(data?.issues).map((i) => ({ type: str(i?.type, 30) || 'other', detail: str(i?.detail, 2000) })).filter((i) => i.detail).slice(0, 10),
     // Kept rules by id only, like the solution review: a note for every kept rule was 44% of the solver's answer.
     rules: judgedRules(data?.rules),
-    conditions: arr(data?.conditions).map((c) => ({ text: str(c?.text, 300), used: c?.used !== false })).filter((c) => c.text).slice(0, 30),
+    conditions: arr(data?.conditions).map((c) => ({ text: str(c?.text, 1000), used: c?.used !== false })).filter((c) => c.text).slice(0, 30),
     variation: ['numbers-only', 'structural'].includes(data?.variation) ? data.variation : 'n/a',
-    variationNote: str(data?.variationNote, 600),
+    variationNote: str(data?.variationNote, 2000),
   };
 }
 
@@ -625,7 +654,7 @@ async function reviewSolution(ctx, item, material, rules) {
   // Only what deviates comes back with words: the STEPs with issues, the rules broken (kept ones by id), which keeps
   // the reviewer's answer short (2026-10-03: review and rewrite were about half of a set's tokens).
   return {
-    steps: arr(data?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, ok: s?.ok === true ? true : !arr(s?.issues).length, issues: arr(s?.issues).map((x) => str(x, 400)).filter(Boolean).slice(0, 6) })),
+    steps: arr(data?.steps).map((s) => ({ step: Number.parseInt(s?.step, 10) || 0, ok: s?.ok === true ? true : !arr(s?.issues).length, issues: arr(s?.issues).map((x) => str(x, 2000)).filter(Boolean).slice(0, 6) })),
     rules: judgedRules(data?.rules),
   };
 }
@@ -665,8 +694,11 @@ async function finalGate(ctx, item, material, prior, hints = []) {
       text: finalReview.itemReviewText(material, item, prior, hints, known),
       images: originalImages(ctx.store, material),
     });
-    const review = (data?.items || [])[0] || null;
-    let faults = finalReview.itemFaults(data, { advisory });
+    const review = finalReview.matchItem(data, item) || null;
+    // The verdict must be about this problem: the prompt shows the earlier problems of the set too, and a review that
+    // answers about one of them (its index or label) is asked again rather than taken (2026-10-26 audit).
+    const mismatch = ['최종 검수가 이 문항(index·label)의 판정을 돌려주지 않았습니다. 다시 검수해야 합니다.'];
+    let faults = review ? finalReview.itemFaults({ ...data, items: [review] }, { advisory, answer: item.problem?.answer }) : mismatch;
     // What it found goes into the log: a 39-minute regeneration failed on 2026-10-23 with seven '1건 — 고침' lines and no way to tell what.
     ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침: ${faults.map((f) => f.replace(/\s+/g, ' ').slice(0, 90)).join(' / ').slice(0, 300)}` : '통과'}`);
     // What one review passes, a second reviewer looks at too, as the finished set is reviewed by Claude and Gemini: on
@@ -683,7 +715,8 @@ async function finalGate(ctx, item, material, prior, hints = []) {
           text: finalReview.itemReviewText(material, item, prior, hints, known),
           images: originalImages(ctx.store, material),
         }));
-        faults = finalReview.itemFaults(second, { advisory }).map((f) => `[두 번째 검수] ${f}`);
+        const found = finalReview.matchItem(second, item);
+        faults = (found ? finalReview.itemFaults({ ...second, items: [found] }, { advisory, answer: item.problem?.answer }) : mismatch).map((f) => `[두 번째 검수] ${f}`);
         ctx.log(`${item.label}: 두 번째 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
@@ -695,7 +728,8 @@ async function finalGate(ctx, item, material, prior, hints = []) {
     (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: review?.verdict || '', myAnswer: str(review?.myAnswer, 300), faults });
     ctx.save();
     const judged = faults.length && second ? second : data;
-    return { faults, notes: faults.length ? [] : [...finalReview.itemNotes(data, { advisory }), ...(second ? finalReview.itemNotes(second, { advisory }) : [])], review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(judged, { advisory }) };
+    const own = (d) => ({ ...d, items: [finalReview.matchItem(d, item)].filter(Boolean) });
+    return { faults, notes: faults.length ? [] : [...finalReview.itemNotes(own(data), { advisory }), ...(second ? finalReview.itemNotes(own(second), { advisory }) : [])], review, solutionOnly: faults.length > 0 && finalReview.solutionOnly(own(judged), { advisory }) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { faults: [], skipped: `최종 검수 응답을 읽지 못했습니다 (${e.message}).` };
@@ -745,7 +779,11 @@ async function reviewAnalysis(ctx, material, rounds = 2) {
 const analysisPassed = (review) => Boolean(review && (review.passed ?? review.verdict === 'ok'));
 
 /** The review's findings → fixes of the analysis fields against the images (applyFixes), on the job's copy and the original. */
-async function fixAnalysis(ctx, material, issues) {
+async function fixAnalysis(ctx, material, all) {
+  // A reviewer's broken answer ('검수 응답': the list missing, a check without its reason) says nothing about the
+  // analysis; it is asked again, never "fixed" into the original (2026-10-26 audit).
+  const issues = (all || []).filter((x) => x && x.rule !== '검수 응답');
+  if (!issues.length) return [];
   const beforeKey = analysisKey(material);
   if (ctx.budget.affords && !ctx.budget.affords(5)) return [];
   ctx.log(`원본 분석 검토에서 걸린 ${issues.length}건을 원본과 대조해 고치는 중`);
@@ -764,7 +802,8 @@ async function fixAnalysis(ctx, material, issues) {
     return [];
   }
   const fixes = arr(data?.fixes).slice(0, 20);
-  const { applied } = applyFixes(material, fixes);
+  const { applied, unresolved } = applyFixes(material, fixes);
+  for (const u of unresolved) ctx.log(`원본 분석 교정을 적용하지 못했습니다: ${u.slice(0, 200)}`);
   if (!applied.length) { ctx.log('원본 분석: 고칠 곳을 찾지 못했습니다'); return []; }
   // The teacher's frames were cut from the analysis as it read; they are cut again from the fixed one.
   delete material.frames;
@@ -775,7 +814,7 @@ async function fixAnalysis(ctx, material, issues) {
     const copy = JSON.parse(JSON.stringify({ problem: stored.problem, steps: stored.steps }));
     applyFixes(copy, fixes);
     const { frames, framesKey, analysisReview, ...rest } = stored;
-    ctx.store.materials.put({ ...rest, problem: copy.problem, steps: copy.steps, analysisFixes: [...(stored.analysisFixes || []), { at: new Date().toISOString(), jobId: ctx.job.id, applied }] });
+    ctx.store.materials.put({ ...rest, problem: copy.problem, steps: copy.steps, analysisFixes: [...(stored.analysisFixes || []), { at: new Date().toISOString(), jobId: ctx.job.id, applied, ...(unresolved.length ? { unresolved } : {}) }] });
   }
   ctx.log(`원본 분석 ${applied.length}곳을 고쳤습니다`);
   return applied;
@@ -815,7 +854,7 @@ async function reviewAnalysisOnce(ctx, material) {
 function judgedRules(rules) {
   const list = Array.isArray(rules) ? rules
     : [...arr(rules?.kept).map((id) => ({ id, ok: true })), ...arr(rules?.broken).map((r) => ({ ...r, ok: false }))];
-  return list.map((r) => (typeof r === 'string' ? { id: r, ok: true } : r)).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 400) })).filter((r) => r.id);
+  return list.map((r) => (typeof r === 'string' ? { id: r, ok: true } : r)).map((r) => ({ id: str(r?.id, 40), ok: r?.ok !== false, note: str(r?.note, 2000) })).filter((r) => r.id);
 }
 
 const BLOCKING_ISSUES = new Set(['ambiguous', 'contradiction', 'missing', 'revealed']);
@@ -1126,7 +1165,7 @@ async function adjudicate(ctx, item, blind, issues) {
       purpose: 'adjudicate', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 8000,
       system: prompts.ADJUDICATE_SYSTEM, text: prompts.adjudicateText({ item, blind, issues }),
     });
-    return { problemAtFault: data?.problemAtFault === true, reason: str(data?.reason, 600) };
+    return { problemAtFault: data?.problemAtFault === true, reason: str(data?.reason, 2000) };
   } catch (e) {
     if (e.name !== 'LlmFormatError') throw e;
     return { problemAtFault: true, reason: `재확인 응답을 읽지 못함 (${e.message})` };
@@ -1345,7 +1384,7 @@ async function fillRuleNotes(ctx, item, rules) {
         system: prompts.RULE_NOTES_SYSTEM, ...prompts.ruleNotesParts({ item, rules: missing }),
       });
       const back = (Array.isArray(data?.appliedRules) ? data.appliedRules : [])
-        .map((r) => ({ id: ruleIdOf(String(r?.id || '').slice(0, 40), missing), how: String(r?.how || '').slice(0, 600) }))
+        .map((r) => ({ id: ruleIdOf(String(r?.id || '').slice(0, 40), missing), how: String(r?.how || '').slice(0, 2000) }))
         .filter((r) => r.id && r.how);
       item.appliedRules = [...item.appliedRules.filter((a) => !back.some((b) => b.id === a.id)), ...back];
       ctx.log(`${item.label}: 빠진 지침 설명 ${back.length}/${missing.length}건 채움`);
@@ -1357,7 +1396,7 @@ async function fillRuleNotes(ctx, item, rules) {
 
 // An attempt that found faults keeps the problem as it was then, so the record of faults (server/faults.js) can show the
 // next writer what the fault looked like and, once the problem passed, what it became.
-const faulted = (kind, design, failures, item) => ({ kind, design, at: new Date().toISOString(), failures, ...(item.problem?.text ? { problem: String(item.problem.text).slice(0, 1500) } : {}) });
+const faulted = (kind, design, failures, item) => ({ kind, design, at: new Date().toISOString(), failures, ...(item.problem?.text ? { problem: String(item.problem.text) } : {}) });
 
 /** One design of a problem: generated, checked, repaired (problem) and rewritten (solution) until it passes or stops
  *  getting better. Mutates `item`; returns its version, the last check and what is still wrong. */
@@ -1648,7 +1687,7 @@ async function learnFromSet(ctx) {
       // A low note (a title, notation, wording) is the system's to write, not a lesson (LOW_NOTE).
       if (seen.has(text) || LOW_NOTE.test(text)) continue;
       seen.add(text);
-      faults.push({ label: item.label, text: text.slice(0, 400), left: [...left].some((x) => x.includes(text.slice(0, 60))) });
+      faults.push({ label: item.label, text: text.slice(0, 2000), left: [...left].some((x) => x.includes(text.slice(0, 60))) });
     }
   }
   if (!faults.length || !store) return;
@@ -1707,6 +1746,15 @@ function draftLesson(x, text, material, source) {
  * otherwise stored as new. Seven lessons saying "hidden values differ from the original's" piled up on 2026-10-21/22
  * because only an identical sentence counted as already there. Returns what changed, for the set's record.
  */
+/** How much of what `before` said `after` still says: the share of before's letter pairs in after. */
+function keeps(before, after) {
+  const a = grams(before), b = grams(after);
+  if (!a.size) return 1;
+  let n = 0;
+  for (const g of a) if (b.has(g)) n++;
+  return n / a.size;
+}
+
 async function keepLesson(ctx, store, draft, { why, jobId, by }) {
   if (isFormatLesson(draft.text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${draft.text.slice(0, 60)}…`); return null; }
   const reach = (r) => r.status === 'approved' && stageOf(r) === 'generation' && (r.scope === 'material' ? draft.scope === 'material' && r.source?.materialId === draft.source?.materialId : (r.subject || '') === (draft.subject || '') || !r.subject);
@@ -1722,8 +1770,10 @@ async function keepLesson(ctx, store, draft, { why, jobId, by }) {
       if (e.name === 'BudgetExceeded' || ctx.signal?.aborted) return null;
       break;
     }
-    const merged = str(data?.text, 2000);
+    const merged = str(data?.text, 4000);
     if (data?.same !== true || merged.length < 8) continue;
+    // The merged sentence must still say what the kept lesson said, and must not be a format lesson.
+    if (isFormatLesson(merged) || keeps(r.text, merged) < 0.5) { ctx.log(`합친 문장이 원래 학습의 뜻을 잃어 합치지 않습니다: ${r.text.slice(0, 60)}…`); continue; }
     if (!editable(r)) { ctx.log(`이미 있는 학습과 같아 두지 않습니다: ${r.text.slice(0, 60)}…`); return null; }
     if (merged === r.text) return null;
     store.rules.put(updateRule(r, { text: merged }, new Date(), { why, jobId, by }));
@@ -1750,12 +1800,23 @@ async function learnFromReview(ctx, material, set, all) {
   });
   const changed = [];
   const own = (id) => { const r = ctx.store.rules.get(str(id, 40)); return r && editable(r) ? r : null; };
+  const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
+  const revised = (ctx.job.revisedLessons = ctx.job.revisedLessons || []);
   for (const x of arr(data?.revise).slice(0, 5)) {
     const r = own(x?.id);
-    const text = str(x?.text, 2000);
+    const text = str(x?.text, 4000);
     if (!r || text.length < 8 || text === r.text) continue;
     if (isFormatLesson(text)) { ctx.log(`형식에 관한 학습은 두지 않습니다: ${text.slice(0, 60)}…`); continue; }
-    ctx.store.rules.put(updateRule(r, { text, ...(str(x?.why, 1000) ? { why: str(x?.why, 1000) } : {}) }, new Date(), { why: str(x?.why, 1000), jobId: set.id, by: 'review' }));
+    // A rewrite that drops most of what the lesson said is another lesson, not this one made better (e7975d4c lost its
+    // "쓰이지 않으면 수치로 준다" clause on 2026-10-26); and a lesson rewritten once in a 학습 반복 is not rewritten in
+    // it again — a fault that stays after the rewrite is not the lesson's to fix (86fd6698, four rewrites that day).
+    if (keeps(r.text, text) < 0.5) { ctx.log(`학습 고침을 두지 않습니다 (원래 지시의 절반 넘게 사라짐): ${r.text.slice(0, 50)}… → ${text.slice(0, 50)}…`); continue; }
+    if (revised.includes(r.id)) { ctx.log(`이 반복에서 이미 고친 학습은 다시 고치지 않습니다: ${r.text.slice(0, 60)}…`); continue; }
+    revised.push(r.id);
+    const next = updateRule(r, { text, ...(str(x?.why, 1000) ? { why: str(x?.why, 1000) } : {}) }, new Date(), { why: str(x?.why, 1000), jobId: set.id, by: 'review' });
+    // The fault kinds it was rewritten for join its record, so its effect (faults.lessonEffects) counts them.
+    next.source = { ...(r.source || {}), faultKeys: [...new Set([...(r.source?.faultKeys || []), ...faultKeys])].slice(0, 40) };
+    ctx.store.rules.put(next);
     changed.push({ kind: 'revise', id: r.id, before: r.text, text, why: str(x?.why, 1000) });
   }
   for (const x of arr(data?.remove).slice(0, 5)) {
@@ -1765,9 +1826,8 @@ async function learnFromReview(ctx, material, set, all) {
     changed.push({ kind: 'remove', id: r.id, before: r.text, why: str(x?.why, 1000) });
   }
   const existing = new Set(rules.map((r) => r.text));
-  const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   for (const x of arr(data?.add).slice(0, 3)) {
-    const text = str(x?.text, 2000);
+    const text = str(x?.text, 4000);
     if (text.length < 8 || existing.has(text)) continue;
     const change = await keepLesson(ctx, ctx.store, draftLesson(x, text, material, { materialId: material.id, jobId: set.id, label: material.title, from: 'review', faultKeys }), { why: str(x?.why, 1000), jobId: set.id, by: 'review' });
     if (change) changed.push(change);

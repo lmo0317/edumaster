@@ -141,7 +141,7 @@ function failing(record, settled = null, advisory = []) {
     for (const [p, v] of Object.entries(record.reviews || {})) {
       if (v.error || !v.review) continue;
       const mine = finalReview.matchItem(v.review, it, record.set.items);
-      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }, { advisory }).map((f) => `[${NAME[p] || p}] ${f}`));
+      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }, { advisory, answer: it.problem?.answer }).map((f) => `[${NAME[p] || p}] ${f}`));
     }
     if (faults.length) out.push({ index: it.index, label: it.label, faults });
   });
@@ -170,7 +170,7 @@ function checklist(record, advisory = []) {
     const per = items.map((it) => {
       const mine = finalReview.matchItem(v.review, it, items);
       if (!mine) return Object.fromEntries(rows.filter((r) => !r.analysis).map((r) => [r.id, ['no', '문항 검수 결과 누락·불일치']]));
-      return finalReview.checklistOf(mine, { final: it.kind === 'twin', advisory });
+      return finalReview.checklistOf(mine, { final: it.kind === 'twin', advisory, answer: it.problem?.answer });
     });
     const marks = {};
     // The score counts every problem's own mark on each row (and the analysis'), not a row's worst: with the worst, one

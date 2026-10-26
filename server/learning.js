@@ -43,11 +43,11 @@ function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').tr
 /** The faulted line and its fix, when the learner gave one worth keeping. */
 function exampleOf(x) {
   if (!x || typeof x !== 'object') return null;
-  const before = clean(x.before, 300), after = clean(x.after, 300);
+  const before = clean(x.before, 1000), after = clean(x.after, 1000);
   return before || after ? { before, after } : null;
 }
 function makeRule(input, now = new Date()) {
-  const text = clean(input.text, 1500);
+  const text = clean(input.text, 4000);
   if (text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
   if (input.scope === 'material' && !clean(input.source?.materialId, 40)) throw Object.assign(new Error('어느 문제에 대한 피드백인지 알 수 없습니다.'), { status: 400 });
   const scope = SCOPES.has(input.scope) ? input.scope : 'global';
@@ -65,7 +65,7 @@ function makeRule(input, now = new Date()) {
     text,
     // A lesson the system writes comes in three parts (docs/learning.md, 학습 문장의 구조): the rule sentence (text, what
     // the prompt gets), the fault it prevents (why) and, when there is one, the faulted line and its fix (example).
-    ...(clean(input.why, 300) ? { why: clean(input.why, 300) } : {}),
+    ...(clean(input.why, 300) ? { why: clean(input.why, 1000) } : {}),
     ...(exampleOf(input.example) ? { example: exampleOf(input.example) } : {}),
     subject: clean(input.subject, 40),
     topic: clean(input.topic, 120),
@@ -89,20 +89,20 @@ function makeRule(input, now = new Date()) {
 function updateRule(rule, patch, now = new Date(), change = {}) {
   const next = { ...rule, updatedAt: now.toISOString() };
   if (patch.text !== undefined) {
-    next.text = clean(patch.text, 1500);
+    next.text = clean(patch.text, 4000);
     if (next.text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
     if (next.text !== rule.text) {
-      next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: change.by || 'teacher', why: clean(change.why, 300), jobId: clean(change.jobId, 40) }].slice(-20);
+      next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: change.by || 'teacher', why: clean(change.why, 1000), jobId: clean(change.jobId, 40) }].slice(-20);
     }
   }
   if (CATEGORIES.includes(patch.category)) next.category = patch.category;
   if (patch.topic !== undefined) next.topic = clean(patch.topic, 120);
-  if (patch.why !== undefined) { if (clean(patch.why, 300)) next.why = clean(patch.why, 300); else delete next.why; }
+  if (patch.why !== undefined) { if (clean(patch.why, 1000)) next.why = clean(patch.why, 1000); else delete next.why; }
   if (patch.example !== undefined) { if (exampleOf(patch.example)) next.example = exampleOf(patch.example); else delete next.example; }
   // dormant: a lesson the system wrote and the data put to sleep (faults.sleepLessons) — not sent, kept, woken by its
   // fault coming back. A status the system changes is on the record with its reason, like a rewritten sentence.
   if (['approved', 'pending', 'rejected', 'dormant'].includes(patch.status)) {
-    if (patch.status !== rule.status && change.by === 'system') next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: 'system', why: clean(change.why, 300), jobId: clean(change.jobId, 40), status: patch.status }].slice(-20);
+    if (patch.status !== rule.status && change.by === 'system') next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: 'system', why: clean(change.why, 1000), jobId: clean(change.jobId, 40), status: patch.status }].slice(-20);
     next.status = patch.status;
   }
   // Moving up and down: 문제 학습 → 공통 학습 → 지침, and back (to a problem only if it came from one).

@@ -43,7 +43,10 @@ const restates = (lesson, detail, min = 0.5) => coverage(lesson, detail) >= min;
 /** A reviewed item with faults that only break a system lesson turned into low notes. */
 function demote(it, advisory = []) {
   if (!it || !advisory.length || !Array.isArray(it.issues)) return it;
-  const restates = (x) => x && typeof x.detail === 'string' && advisory.some((t) => coverage(t, x.detail) >= (x.rule === '학습' ? 0.5 : 0.7));
+  // A fault filed under a criterion is demoted only when it is the lesson's sentence (nine tenths of its word pairs):
+  // at seven tenths, "숨긴 값 a=12가 원본과 같아 …" under 구조 · high was a note because a short lesson said hidden values
+  // differ from the original's, and the check was cleared with it (2026-10-26 audit).
+  const restates = (x) => x && typeof x.detail === 'string' && advisory.some((t) => coverage(t, x.detail) >= (x.rule === '학습' ? 0.5 : 0.9));
   if (!it.issues.some(restates)) return it;
   const issues = it.issues.map((x) => (restates(x) ? { ...x, severity: 'low', rule: 'AI 학습 참고' } : x));
   // The check the reviewer marked for it ('학습': fix) is cleared when no other fault explains it.
@@ -155,13 +158,31 @@ function solutionOnly(review, { advisory = [] } = {}) {
  * the gas original's final went through 13 repairs and 3 designs over low notes on its STEP 3 title and was not made
  * (2026-10-21).
  */
-function itemFaults(review, { advisory = [] } = {}) {
+/** The choice number a reviewer's own answer names ("② $\frac{2}{5}$", "3", "③ 135", "2번"), 0 when it names none. */
+const answerOf = (v) => {
+  const s = String(v ?? '').trim();
+  const circled = s.match(/[①②③④⑤]/);
+  if (circled) return '①②③④⑤'.indexOf(circled[0]) + 1;
+  const m = /^(?:정답\s*)?([1-5])(?![0-9.])/.exec(s) || /([1-5])\s*번/.exec(s);
+  return m ? Number(m[1]) : 0;
+};
+
+function itemFaults(review, { advisory = [], answer = null } = {}) {
   const it = Array.isArray(review?.items) && review.items.length === 1 ? demote(review.items[0], advisory) : null;
   if (!it) return ['최종 검수가 결과를 내지 못했습니다.'];
   if (typeof it.answerOk !== 'boolean' || !['use', 'fix', 'reject'].includes(it.verdict) || !Array.isArray(it.issues)
       || it.issues.some((x) => !x || !['high', 'mid', 'low'].includes(x.severity) || typeof x.detail !== 'string' || !x.detail.trim())) {
     return ['최종 검수의 정답 확인·판정·결함 목록이 누락되었거나 잘못되었습니다. 다시 검수해야 합니다.'];
   }
+  // A pass rests on the reviewer having judged every criterion and solved the problem itself: a review with no checks
+  // and no issues scored 100 (checklistOf counts the rows it names), and answerOk alone stood for the answer even when
+  // the number the reviewer solved to was another (2026-10-26 audit). Both are asked again, as a broken list is.
+  const missing = ITEM_NAMES.filter((n) => !it.checks || typeof it.checks !== 'object' || !(n in it.checks));
+  if (missing.length) return [`최종 검수가 기준 항목(${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ' 등' : ''})의 판정을 주지 않았습니다. 다시 검수해야 합니다.`];
+  const mine = answerOf(it.myAnswer);
+  if (!mine) return ['최종 검수가 직접 푼 정답 번호를 주지 않았습니다. 다시 검수해야 합니다.'];
+  const marked = Number(answer) || Number(it.markedAnswer) || 0;
+  const wrongAnswer = it.answerOk === false || (marked > 0 && mine !== marked);
   // A restated system lesson (demote) stays a note even when another fault sends the problem back: sent along, the
   // writer would be told to fix it anyway, and the lesson would still be acting as a criterion.
   const faults = (it.issues || []).filter((x) => x.rule !== 'AI 학습 참고').map((x) => `[${x.rule || '기준'}${x.severity ? ` · ${x.severity}` : ''}] ${x.detail || ''}`.trim()).filter((x) => x.length > 4);
@@ -172,8 +193,8 @@ function itemFaults(review, { advisory = [] } = {}) {
   faults.push(...unexplained.map(([name]) => `[${name}] 검수 체크가 수정 필요인데 구체적인 결함 설명이 없습니다.`));
   const invalidChecks = it.checks != null && (typeof it.checks !== 'object' || Array.isArray(it.checks) || Object.values(it.checks).some((v) => !['ok', 'fix', 'na'].includes(v)));
   if (invalidChecks) faults.push('검수 체크 항목의 판정 형식이 잘못되었습니다.');
-  const blocking = it.answerOk === false || it.verdict === 'reject' || unexplained.length || invalidChecks || it.issues.some((x) => x.severity !== 'low');
-  if (it.answerOk === false) faults.unshift(`검수자가 직접 푼 정답은 ${it.myAnswer || '?'}로 표시된 정답 ${it.markedAnswer ?? ''}번과 다릅니다.`);
+  const blocking = wrongAnswer || it.verdict === 'reject' || unexplained.length || invalidChecks || it.issues.some((x) => x.severity !== 'low');
+  if (wrongAnswer) faults.unshift(`검수자가 직접 푼 정답은 ${it.myAnswer || '?'}로 표시된 정답 ${marked || it.markedAnswer || ''}번과 다릅니다.`);
   if (!blocking && (it.verdict === 'use' || it.issues?.length)) return [];
   return faults.length ? faults : [`검수 판정이 '${it.verdict || '없음'}'입니다.`];
 }
@@ -228,7 +249,7 @@ const CHECKLIST = [
 ];
 
 /** One review (of the analysis or of a problem) → the checklist rows it fills: {id: [ok|partial|no|na, note]}. */
-function checklistOf(part, { analysis = false, final = false, advisory = [] } = {}) {
+function checklistOf(part, { analysis = false, final = false, advisory = [], answer = null } = {}) {
   if (!part) return {};
   if (!analysis) part = demote(part, advisory);
   const checks = part.checks || {};
@@ -239,7 +260,7 @@ function checklistOf(part, { analysis = false, final = false, advisory = [] } = 
     if (row.id === 'final' && !final) { out[row.id] = ['na', '연습 문제']; continue; }
     const mine = issues.filter((x) => row.names.includes(x.rule));
     const said = row.names.map((n) => checks[n]).filter(Boolean);
-    const wrong = row.id === 'correct' && part.answerOk === false;
+    const wrong = row.id === 'correct' && (part.answerOk === false || (Number(answer) > 0 && answerOf(part.myAnswer) > 0 && answerOf(part.myAnswer) !== Number(answer)));
     const note = [wrong && `검수자가 직접 푼 답 ${part.myAnswer || '?'}`, ...mine.map((x) => x.detail)].filter(Boolean).join(' / ');
     // A low note (표기·제목·표현) neither stops a problem being made (itemFaults) nor costs its score: on the gas
     // original's 학습 반복 (2026-10-21) a set with low notes only scored 83 and was made again.
@@ -251,4 +272,4 @@ function checklistOf(part, { analysis = false, final = false, advisory = [] } = 
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, restates, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, restates, answerOf, ITEM_NAMES, CHECKLIST, CRITERIA_FILE };

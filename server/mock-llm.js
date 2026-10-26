@@ -2,6 +2,15 @@
 // Offline stand-in for DeepSeek (EDUMASTER_LLM=mock). Returns well-formed answers so the whole flow —
 // analysis, generation, code check, blind solve, repair, feedback — can be exercised without paid calls.
 const prompts = require('./prompts');
+// A real review judges every criterion (final-review.js ITEM_NAMES), returns the identifiers of the items it was given
+// and solves each; the mock review does too (the identifiers from the prompt's [반환할 문항 식별자] block, the answer the
+// marked one of that item's block).
+const identities = (text) => { const m = /\[반환할 문항 식별자[^\n]*\n(\[[^\n]*\])/.exec(text); try { return m ? JSON.parse(m[1]) : []; } catch { return []; } };
+const markedAnswer = (text, id) => {
+  const block = Number.isInteger(id.index) ? new RegExp(`^### .*? — 문항 index: ${id.index}\\b[\\s\\S]*?표시된 정답: (\\d)번`, 'm').exec(text) : /표시된 정답: (\d)번/.exec(text);
+  return block ? block[1] : '1';
+};
+const allChecks = () => Object.fromEntries(require('./final-review').ITEM_NAMES.map((n) => [n, 'ok']));
 
 const SAMPLE = {
   title: '화학 반응의 양적 관계 — 한계 반응물과 몰질량',
@@ -153,21 +162,24 @@ function mock(messages) {
     const same = a.slice(0, 5) === b.slice(0, 5);
     data = { same, text: same ? `${a} (모의 합침)` : '', why: '모의 판정' };
   }
-  // The final review (server/final-review.js): a mock problem is fit to use.
+  // The final review (server/final-review.js): a mock problem is fit to use. A real review judges every criterion and
+  // solves the problem (itemFaults asks for both), so the mock does too.
   // A whole set reviewed (server/set-check.js): the first two looks at a set (Claude and Gemini) find a fault in its
   // final problem, so 검수하고 고치기 has something to remake; later looks pass it.
   else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system) && text.includes('[AI가 만든 변형 세트]')) {
     // A test can make the next set reviews fail, as a subscription at its limit does.
     if (failing.setReviews > 0) { failing.setReviews--; throw Object.assign(new Error("모의 한도: You've hit your session limit"), { status: 502 }); }
-    const labels = [...text.matchAll(/^### (.+?) — 문항 index:/gm)].map((x) => x[1]);
+    const ids = identities(text);
+    const labels = ids.map((x) => x.label);
     const seen = (setLooks.get(labels.join('|')) || 0) + 1;
     setLooks.set(labels.join('|'), seen);
-    data = { analysis: { verdict: 'ok', issues: [] }, summary: '모의 검수', items: labels.map((label, i) => (seen <= 2 && i === labels.length - 1
-      ? { label, myAnswer: '', answerOk: true, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '모의 검수: 원본과 구조가 같다' }] }
-      : { label, myAnswer: '', answerOk: true, verdict: 'use', issues: [] })) };
+    data = { analysis: { verdict: 'ok', issues: [] }, summary: '모의 검수', items: ids.map((id, i) => (seen <= 2 && i === ids.length - 1
+      ? { ...id, myAnswer: markedAnswer(text, id), answerOk: true, verdict: 'fix', checks: { ...allChecks(), '구조': 'fix' }, issues: [{ severity: 'mid', rule: '구조', detail: '모의 검수: 원본과 구조가 같다' }] }
+      : { ...id, myAnswer: markedAnswer(text, id), answerOk: true, verdict: 'use', checks: allChecks(), issues: [] })) };
   }
   else if (/변형 문제를 원본 이미지와 대조해 독립적으로 검토한다/.test(system)) {
-    data = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '', myAnswer: '', answerOk: true, verdict: 'use', issues: [] }], summary: '모의 검수' };
+    const id = identities(text)[0] || { label: '' };
+    data = { analysis: { verdict: 'ok', issues: [] }, items: [{ ...id, myAnswer: markedAnswer(text, id), answerOk: true, verdict: 'use', checks: allChecks(), issues: [] }], summary: '모의 검수' };
   }
   else data = generated(text);
   const content = JSON.stringify(data);

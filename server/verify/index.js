@@ -106,6 +106,7 @@ async function codeCheck(verification, { answer, choiceCount }) {
       if (!t.matches.length) reasons.push(`${label}계산한 정답 ${t.answer}과 같은 선택지가 없습니다. 선택지 값: ${t.choices.join(' | ')}`);
       else if (t.matches.length > 1) reasons.push(`${label}정답 값 ${t.answer}과 같은 선택지가 여러 개입니다 (${t.matches.join(', ')}번).`);
       else if (claimed && t.matches[0] !== claimed) reasons.push(`${label}계산한 정답은 ${t.matches[0]}번인데 문제의 정답 표시는 ${claimed}번입니다.`);
+      else if (!claimed) reasons.push(`${label}계산한 정답은 ${t.matches[0]}번인데 문제에 정답 표시가 없어 대조하지 못했습니다.`);
     }
     if (i === 0 && t.ugly.length) warnings.push('학생이 손으로 계산하기 어려운 수: ' + t.ugly.slice(0, 5).join(', '));
   });

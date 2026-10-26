@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { tableRows, numbersReused, produceItem } = require('../server/pipeline');
 const prompts = require('../server/prompts');
 const { Budget } = require('../server/llm');
+const FULL = Object.fromEntries(require('../server/final-review').ITEM_NAMES.map((n) => [n, 'ok']));
 
 const table = (rows) => ['| 실험 | 반응 전 $\\ce{A}$의 질량(g) | 반응 전 $\\ce{B}$의 질량(g) | 반응 후 |', '|---|---|---|---|', ...rows].join('\n');
 const original = table(['| Ⅰ | $5w$ | $5w$ | $\\ce{A}$ $\\frac{10}{3}w$ |', '| Ⅱ | $4w$ | $6w$ | $\\ce{A}$ $2w$ |']);
@@ -255,7 +256,7 @@ function gated(reviews) {
   const item = { index: 0, label: 'STEP 1 연습', stage: { kind: 'upto', upto: 1 }, variantNo: 1 };
   return produceItem(ctx, { material, item, prior: [], rules: [], mode: 'integrated' }).then(() => ({ item, purposes }));
 }
-const verdict = (v, issues = []) => ({ analysis: { verdict: 'ok', issues: [] }, items: [{ label: 'STEP 1 연습', answerOk: true, verdict: v, issues }] });
+const verdict = (v, issues = []) => ({ analysis: { verdict: 'ok', issues: [] }, items: [{ label: 'STEP 1 연습', answerOk: true, myAnswer: '3', checks: FULL, verdict: v, issues }] });
 
 test('what the final review finds is repaired before the problem counts as made', async () => {
   const { item, purposes } = await gated([verdict('fix', [{ severity: 'mid', rule: '조건', detail: '실험이 하나인데 "달리하여"가 남음' }]), verdict('use')]);
@@ -275,7 +276,7 @@ test('a problem that never passes the final review is not made: it waits for the
 });
 
 test('a wrong answer found by the final reviewer is a fault even when its verdict says use', async () => {
-  const wrong = { analysis: { verdict: 'ok', issues: [] }, items: [{ answerOk: false, myAnswer: '④ 6', markedAnswer: 3, verdict: 'use', issues: [] }] };
+  const wrong = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: 'STEP 1 연습', answerOk: false, myAnswer: '④ 6', markedAnswer: 3, checks: FULL, verdict: 'use', issues: [] }] };
   const { item } = await gated([wrong, verdict('use')]);
   assert.match(item.attempts.find((a) => a.kind === 'repair').failures.join(), /직접 푼 정답은 ④ 6/);
   assert.equal(item.status, 'passed');
@@ -296,14 +297,14 @@ test('with the final review on, the solution is judged by that review alone and 
 // title the system writes, and was not made.
 test('a low note alone never holds a problem back: it passes with the note kept, and the note is not learned', async () => {
   const { itemFaults } = require('../server/final-review');
-  const low = { items: [{ answerOk: true, verdict: 'fix', issues: [{ severity: 'low', rule: 'STEP 제목', detail: '마침표 없음' }] }] };
+  const low = { items: [{ answerOk: true, myAnswer: '3', checks: FULL, verdict: 'fix', issues: [{ severity: 'low', rule: 'STEP 제목', detail: '마침표 없음' }] }] };
   assert.deepEqual(itemFaults(low), []);
-  assert.equal(itemFaults({ items: [{ answerOk: true, verdict: 'use', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바꿈' }] }] }).length, 1, 'a mid fault holds it back even under use');
-  assert.equal(itemFaults({ items: [{ answerOk: false, myAnswer: '②', verdict: 'use', issues: [] }] }).length, 1);
+  assert.equal(itemFaults({ items: [{ answerOk: true, myAnswer: '3', checks: FULL, verdict: 'use', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바꿈' }] }] }).length, 1, 'a mid fault holds it back even under use');
+  assert.equal(itemFaults({ items: [{ answerOk: false, myAnswer: '②', checks: FULL, verdict: 'use', issues: [] }] }).length, 1);
   // Round 1 of 2026-10-23: the check '풀이 방식' marked fix, the only fault filed under '학습' — explained, not held back.
-  const named = { items: [{ answerOk: true, verdict: 'fix', checks: { '풀이 방식': 'fix' }, issues: [{ severity: 'low', rule: '학습', detail: 'STEP 2 첫 줄의 주어' }] }] };
+  const named = { items: [{ answerOk: true, myAnswer: '3', verdict: 'fix', checks: { ...FULL, '풀이 방식': 'fix' }, issues: [{ severity: 'low', rule: '학습', detail: 'STEP 2 첫 줄의 주어' }] }] };
   assert.deepEqual(itemFaults(named), []);
-  assert.equal(itemFaults({ items: [{ answerOk: true, verdict: 'fix', checks: { '풀이 방식': 'fix' }, issues: [] }] }).length, 1, 'a fix check with no fault at all is still unexplained');
+  assert.equal(itemFaults({ items: [{ answerOk: true, myAnswer: '3', verdict: 'fix', checks: { ...FULL, '풀이 방식': 'fix' }, issues: [] }] }).length, 1, 'a fix check with no fault at all is still unexplained');
   const { item, purposes } = await gated([verdict('fix', [{ severity: 'low', rule: '표기', detail: '수식이 $ 밖에 있음' }])]);
   assert.equal(purposes.filter((p) => p === 'final-review').length, 1, 'no rewrite for a low note');
   assert.equal(item.status, 'passed');
@@ -464,7 +465,7 @@ test('the reviewers read a STEP that ends in a table as its own block, not one m
 
 test('학습 반복 reaches its target only when every reviewer scored the set', () => {
   const setCheck = require('../server/set-check');
-  const record = (models, reviews) => ({ set: { items: [{ index: 0, label: '최종 문제' }] }, reviews: Object.fromEntries(Object.entries(reviews).map(([p, v]) => [p, v.error ? v : { review: { analysis: { verdict: 'ok', issues: [] }, items: [{ index: 0, label: '최종 문제', answerOk: true, verdict: 'use', issues: [] }] } }])), checklist: { models } });
+  const record = (models, reviews) => ({ set: { items: [{ index: 0, label: '최종 문제' }] }, reviews: Object.fromEntries(Object.entries(reviews).map(([p, v]) => [p, v.error ? v : { review: { analysis: { verdict: 'ok', issues: [] }, items: [{ index: 0, label: '최종 문제', answerOk: true, myAnswer: '1', checks: FULL, verdict: 'use', issues: [] }] } }])), checklist: { models } });
   const both = record({ 'claude-cli': { score: 94 }, 'agy-cli': { score: 100 } }, { 'claude-cli': {}, 'agy-cli': {} });
   assert.equal(setCheck.reaches(both, 90), true);
   assert.equal(setCheck.reaches(both, 95), false);
@@ -504,7 +505,7 @@ test('a row or the figure scaled by one factor, or a row keeping most amounts in
 
 test("a set's score counts each problem's mark on each row, so one problem's fault is not a ninth of it", () => {
   const setCheck = require('../server/set-check');
-  const clean = { answerOk: true, verdict: 'use', checks: {}, issues: [] };
+  const clean = { answerOk: true, myAnswer: '1', verdict: 'use', checks: FULL, issues: [] };
   const fault = { ...clean, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '숫자만 바뀜' }] };
   const record = (items) => ({ set: { items: [{ label: 'STEP 1 연습', status: 'passed' }, { label: 'STEP 1~2 연습', status: 'passed' }, { label: '최종 문제', status: 'passed', kind: 'twin' }] },
     reviews: { 'claude-cli': { review: { analysis: { verdict: 'ok', issues: [], checks: { 판독: 'ok' } }, items: items.map((it, i) => ({ ...it, label: ['STEP 1 연습', 'STEP 1~2 연습', '최종 문제'][i] })) } } } });
@@ -519,8 +520,8 @@ test('a problem the final review passes is looked at by the second reviewer too,
   const { finalGate } = require('../server/pipeline');
   const material = { problem: { text: '원본', choices: [] }, steps: [{ title: 'S', work: 'w' }] };
   const item = { index: 0, label: '최종 문제', stage: { kind: 'twin' }, attempts: [], problem: { text: '변형', choices: [], answer: 1 }, solution: { steps: [] } };
-  const clean = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, verdict: 'use', issues: [] }] };
-  const fault = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '원본과 구조가 같다' }] }] };
+  const clean = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, myAnswer: '1', checks: FULL, verdict: 'use', issues: [] }] };
+  const fault = { analysis: { verdict: 'ok', issues: [] }, items: [{ label: '최종 문제', answerOk: true, myAnswer: '1', checks: FULL, verdict: 'fix', issues: [{ severity: 'mid', rule: '구조', detail: '원본과 구조가 같다' }] }] };
   const calls = [];
   const ctx = (second, answers) => ({ job: { id: 'j', materialId: 'm', rules: [] }, budget: new Budget({ maxCalls: 10, maxTokens: 1000000 }), signal: new AbortController().signal, effort: {}, secondReviewer: second, log() {}, save() {},
     llm: { json: async (args) => { calls.push(args.purpose); const a = answers[args.purpose]; if (a instanceof Error) throw a; return { data: a }; } } });
@@ -683,7 +684,7 @@ test('the teacher\'s choice heading is only the heading, not the calculation the
   assert.equal(teacherChoiceHeading(material, item), true);
   assert.equal(item.solution.steps[0].work, '따라서 $x=2w$이다.\n\n[선택지 분석]\n정답은 ② $2w$이다.');
   // The writer's own heading line keeps what the writer put after it; only the heading takes the teacher's form.
-  const own = { solution: { steps: [{ step: 3, work: '$x=54$이다.\n선택지 분석 $54\\times\\frac{5}{2}=135$이다.\n정답은 ② 135이다.' }] } };
+  const own = { solution: { steps: [{ step: 3, work: '$x=54$이다.\n선택지 분석: $54\\times\\frac{5}{2}=135$이다.\n정답은 ② 135이다.' }] } };
   assert.equal(teacherChoiceHeading(material, own), true);
   assert.equal(own.solution.steps[0].work, '$x=54$이다.\n[선택지 분석] $54\\times\\frac{5}{2}=135$이다.\n정답은 ② 135이다.');
   assert.equal(teacherChoiceHeading(material, own), false, 'nothing to change the second time');

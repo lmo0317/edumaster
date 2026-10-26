@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const faults = require('../server/faults');
 const prompts = require('../server/prompts');
 const review = require('../server/final-review');
+const FULL = Object.fromEntries(review.ITEM_NAMES.map((n) => [n, 'ok']));
 const sets = require('../server/set-check');
 const pipeline = require('../server/pipeline');
 
@@ -140,7 +141,7 @@ test('a fault that only restates a lesson the system wrote itself is a note, not
   const material = { id: 'm', subject: '생명과학', problem: { text: '' }, steps: [] };
   const advisory = review.advisoryTexts(material, rules);
   assert.deepEqual(advisory, [ai]);
-  const it = (issues) => ({ items: [{ index: 1, label: '최종 문제', answerOk: true, markedAnswer: 4, myAnswer: '4', verdict: 'fix', checks: { '학습': 'fix' }, issues }] });
+  const it = (issues) => ({ items: [{ index: 1, label: '최종 문제', answerOk: true, markedAnswer: 4, myAnswer: '4', verdict: 'fix', checks: { ...FULL, '학습': 'fix' }, issues }] });
   const quotesAi = { severity: 'mid', rule: '학습', detail: `'${ai}' — ㄱ을 ×로 판정하면 남는 선택지가 ②와 ④뿐이라 ㄷ이 참으로 정해집니다.` };
   const quotesTeacher = { severity: 'mid', rule: '학습', detail: `'${teacher}' — STEP 1의 가정이 빠졌습니다.` };
   const real = { severity: 'mid', rule: '구조', detail: '원본과 같은 표입니다.' };
@@ -152,7 +153,7 @@ test('a fault that only restates a lesson the system wrote itself is a note, not
   assert.deepEqual(review.checklistOf(it([quotesAi]).items[0], { final: true, advisory }).method[0], 'ok');
   assert.deepEqual(review.checklistOf(it([quotesAi]).items[0], { final: true }).method[0], 'no');
   // The set review's verdicts use the same list: the problem does not fail, and the target can be reached.
-  const clean = { items: [{ ...it([]).items[0], verdict: 'use', checks: {} }] };
+  const clean = { items: [{ ...it([]).items[0], verdict: 'use', checks: FULL }] };
   const record = { set: { items: [{ index: 1, label: '최종 문제', problem: {}, kind: 'twin' }] }, reviews: { 'claude-cli': { review: it([quotesAi]) }, 'agy-cli': { review: clean } } };
   assert.equal(sets.failing(record, null, advisory).length, 0);
   assert.equal(sets.failing(record).length, 1);
@@ -170,7 +171,7 @@ test('an attempt that found faults keeps the problem as it was, and the final re
     finalGate: true, job: { id: 'test', materialId: 'm', rules: [{ id: 'a', text: ai }] }, budget: {}, effort: {}, log() {}, save() {},
     store: { rules: { all: () => rules }, files: { dataUrl: () => null } },
     priorFaults: [{ where: '이 원본', own: true, rule: '구조', detail: '원본과 같은 표입니다.', label: '최종 문제', sets: 2, count: 2, materials: 1, reviewers: [], example: null }, { where: '다른 과목의 원본', own: false, rule: '수치', detail: '실험 수치 재사용.', label: '', sets: 3, count: 3, materials: 2, reviewers: [], example: null }],
-    llm: { json: async (a) => { prompt = a.text; return { data: { items: [{ index: 1, label: '최종 문제', answerOk: true, markedAnswer: 1, myAnswer: '1', verdict: 'fix', checks: {}, issues: [{ severity: 'mid', rule: '학습', detail: `'${ai}' 어겼습니다.` }] }] } }; } },
+    llm: { json: async (a) => { prompt = a.text; return { data: { items: [{ index: 1, label: '최종 문제', answerOk: true, markedAnswer: 1, myAnswer: '1', verdict: 'fix', checks: { ...FULL, '학습': 'fix' }, issues: [{ severity: 'mid', rule: '학습', detail: `'${ai}' 어겼습니다.` }] }] } }; } },
   };
   const gate = await pipeline.finalGate(ctx, it, material, []);
   assert.deepEqual(gate.faults, []);
