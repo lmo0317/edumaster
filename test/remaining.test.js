@@ -672,3 +672,24 @@ test('a model\'s content is stored whole and unpaired math in the transcription 
   const fine = await sourceChecks({ problem: { text: '표는 $t$℃', figure: '', choices: [] }, steps: [{ title: 'S', work: '값은 $x=1$이다.', result: '' }] });
   assert.equal(fine.find((c) => c.id === 'source-math').state, 'pass');
 });
+
+// 2026-10-26 (molar mass, rerun of the seven originals): the reading put the teacher's heading and closing calculation on
+// one line, "[선택지 분석] $b=3$, $x=15$, … $=\\frac{2}{5}$이다.", and teacherChoiceHeading put that whole line into every
+// variant's solution — the one fault of four sets in a row (78·79). Only the heading is the teacher's.
+test('the teacher\'s choice heading is only the heading, not the calculation the reading put on its line', () => {
+  const { teacherChoiceHeading } = require('../server/harness');
+  const material = { steps: [{ work: 'A' }, { work: '따라서 $b=3$이다.\n[선택지 분석] $b=3$, $x=15$이므로 $\\frac{3}{15}\\times2=\\frac{2}{5}$이다.\n정답은 ② $\\frac{2}{5}$이다.' }] };
+  const item = { solution: { steps: [{ step: 1, work: '따라서 $x=2w$이다.\n정답은 ② $2w$이다.' }] } };
+  assert.equal(teacherChoiceHeading(material, item), true);
+  assert.equal(item.solution.steps[0].work, '따라서 $x=2w$이다.\n\n[선택지 분석]\n정답은 ② $2w$이다.');
+  // The writer's own heading line keeps what the writer put after it; only the heading takes the teacher's form.
+  const own = { solution: { steps: [{ step: 3, work: '$x=54$이다.\n선택지 분석 $54\\times\\frac{5}{2}=135$이다.\n정답은 ② 135이다.' }] } };
+  assert.equal(teacherChoiceHeading(material, own), true);
+  assert.equal(own.solution.steps[0].work, '$x=54$이다.\n[선택지 분석] $54\\times\\frac{5}{2}=135$이다.\n정답은 ② 135이다.');
+  assert.equal(teacherChoiceHeading(material, own), false, 'nothing to change the second time');
+  // A heading on its own line ("| 선택지 분석 |") is taken whole, as before.
+  const boxed = { steps: [{ work: '| 선택지 분석 |\n② $b=3$이므로 … 이다.\n정답은 ②이다.' }] };
+  const plain = { solution: { steps: [{ step: 1, work: '풀이.\n정답은 ③이다.' }] } };
+  teacherChoiceHeading(boxed, plain);
+  assert.equal(plain.solution.steps[0].work, '풀이.\n\n| 선택지 분석 |\n정답은 ③이다.');
+});

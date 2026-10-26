@@ -131,17 +131,29 @@ function helperVariables(text) {
  * reading. Qwen 3.8 left it out of a final twice and each cost a judge round (2026-10-13, molar mass rounds 2 and 4).
  * Returns true when it added the heading.
  */
+// Only the heading is the teacher's: a reading may put the heading and the teacher's own closing calculation on one
+// line ("[선택지 분석] $b=3$, $x=15$, … $=\\frac{2}{5}$이다.", molar mass read on 2026-10-26), and that whole line put
+// into every variant was the one fault of four sets in a row (78·79, the 학습 반복 rewording a lesson each time).
+// The heading is the line up to its closing bracket or bar; what follows it stays where it is.
+const choiceHeading = (line) => {
+  const m = String(line || '').trim().match(/^(.*?선택지\s*분석(?:\s*[\]|】)」*]+)?)\s*(.*)$/);
+  return m ? { head: m[1].trim(), rest: m[2].trim() } : null;
+};
 function teacherChoiceHeading(material, item) {
   const steps = material.steps || [];
-  const box = String(steps[steps.length - 1]?.work || '').split('\n').map((l) => l.trim()).find((l) => /선택지 분석/.test(l));
+  const teacher = String(steps[steps.length - 1]?.work || '').split('\n').map(choiceHeading).find(Boolean);
   const last = item.solution?.steps?.[item.solution.steps.length - 1];
-  if (!box || !last?.work) return false;
+  if (!teacher || !last?.work) return false;
+  const box = teacher.head;
   const lines = String(last.work).split('\n');
-  // A heading the writer gave in its own form ("선택지 분석" for "| 선택지 분석 |") is the teacher's heading.
-  const own = lines.findIndex((l) => /선택지 분석/.test(l));
+  // A heading the writer gave in its own form ("선택지 분석" for "| 선택지 분석 |") is the teacher's heading; what the
+  // writer put after it on the line is its own and stays.
+  const own = lines.findIndex((l) => /선택지\s*분석/.test(l));
   if (own >= 0) {
-    if (lines[own].trim() === box) return false;
-    lines[own] = box;
+    const mine = choiceHeading(lines[own]);
+    const next = mine.rest ? `${box} ${mine.rest}` : box;
+    if (lines[own].trim() === next) return false;
+    lines[own] = next;
     last.work = lines.join('\n');
     return true;
   }
