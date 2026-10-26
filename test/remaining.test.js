@@ -602,3 +602,56 @@ test('a final whose table of marks is the original\'s with rows renamed and colu
   assert.deepEqual(numbersReused(relabelled, [first], original), []);
   assert.deepEqual(numbersReused(first, [first, reordered], original), [], 'a problem is compared with the earlier ones only');
 });
+
+// chem-c32-molar-volume (2026-10-26): the fixer's replacement of a 보기 analysis was cut at 400 letters, which left a formula
+// without its closing $ and the judgment without its last line; the review of the fixed analysis then failed on the cut.
+test('an analysis fix is put in whole, and one that leaves the math unclosed is refused', () => {
+  const { applyFixes } = require('../server/pipeline');
+  const long = '· 모든 기체는 같은 온도와 압력에서 같은 부피 속에 같은 수의 분자가 들어 있고, 기체 (가)와 (나)는 모두 3원자 분자이다. '.repeat(6) + '$a\\times b=12\\times1.5=18$이다.';
+  assert.ok(long.length > 400);
+  const m = { problem: { text: '표', choices: [] }, steps: [{ title: 'S', work: 'ㄱ. 판정 (○)\n· 필기 줄\nㄴ. 다음' }, { title: 'T', work: '$x=1$이다.' }] };
+  const r = applyFixes(m, [
+    { field: 'steps[0].work', wrong: '· 필기 줄', right: long },
+    { field: 'steps[1].work', wrong: '$x=1$이다.', right: '$x=1$이고 $y=2이다.' },
+  ]);
+  assert.equal(r.applied.length, 1);
+  assert.ok(m.steps[0].work.endsWith('=18$이다.\nㄴ. 다음'), 'the whole replacement is in');
+  assert.equal(m.steps[1].work, '$x=1$이다.');
+  assert.match(r.unresolved[0], /\$의 짝이 맞지 않아/);
+});
+
+// The same run: after two rounds the third look listed low notes only, and the set was not made. Low notes left are fixed
+// once more and the analysis passes with them on record; a mid fault left still stops the set.
+test('low notes left after the analysis review rounds are fixed once more and do not stop the set', async () => {
+  const { reviewAnalysis, analysisPassed } = require('../server/pipeline');
+  const low = (d) => ({ severity: 'low', rule: '풀이 방식', detail: d });
+  const run = async (lastIssues) => {
+    const material = { problem: { text: '표', choices: ['ㄱ'], answer: 1 }, steps: [{ title: 'S1', work: 'A이다. B이다. C이다.' }] };
+    let stored = { id: 'm', ...JSON.parse(JSON.stringify(material)) };
+    const reviews = [
+      { analysis: { verdict: 'issues', issues: [low('A가 다름')] }, items: [] },
+      { analysis: { verdict: 'issues', issues: [low('B가 다름')] }, items: [] },
+      { analysis: { verdict: 'issues', issues: lastIssues }, items: [] },
+    ];
+    const fixes = [[{ field: 'steps[0].work', wrong: 'A이다', right: 'A1이다' }], [{ field: 'steps[0].work', wrong: 'B이다', right: 'B1이다' }], [{ field: 'steps[0].work', wrong: 'C이다', right: 'C1이다' }]];
+    const calls = [];
+    const llm = { json: async ({ purpose }) => { calls.push(purpose); return { data: purpose === 'fix-analysis' ? { fixes: fixes.shift() } : reviews.shift() }; } };
+    const ctx = { llm, store: { materials: { get: () => stored, put: (m) => { stored = m; } }, rules: { all: () => [] } }, job: { id: 'j', materialId: 'm', rules: [] }, budget: new Budget({ maxCalls: 60, maxTokens: 1e7 }), effort: { solve: 'low' }, save() {}, log() {} };
+    const review = await reviewAnalysis(ctx, material);
+    return { review, calls, material, stored, ctx };
+  };
+  const a = await run([low('C가 다름')]);
+  assert.deepEqual(a.calls, ['final-review', 'fix-analysis', 'final-review', 'fix-analysis', 'final-review', 'fix-analysis']);
+  assert.equal(a.material.steps[0].work, 'A1이다. B1이다. C1이다.');
+  assert.ok(analysisPassed(a.review));
+  assert.deepEqual([a.review.verdict, a.review.issues.length, a.review.fixed.length, a.review.before.length], ['issues', 0, 3, 3]);
+  assert.equal(a.stored.analysisReview.key, a.review.key, 'the fixed analysis carries its review, so the next set makes no call');
+  // A mid fault left stops the set as before.
+  const b = await run([{ severity: 'mid', rule: '풀이 방식', detail: 'C의 판정 근거가 빠짐' }]);
+  assert.deepEqual(b.calls, ['final-review', 'fix-analysis', 'final-review', 'fix-analysis', 'final-review']);
+  assert.equal(analysisPassed(b.review), false);
+  assert.equal(b.material.steps[0].work, 'A1이다. B1이다. C이다.');
+  // Records written before `passed` existed are read by their verdict.
+  assert.equal(analysisPassed({ verdict: 'ok' }), true);
+  assert.equal(analysisPassed({ verdict: 'issues', issues: [low('x')] }), false);
+});

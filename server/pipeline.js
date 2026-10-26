@@ -184,13 +184,19 @@ function applyFixes(material, fixes) {
     if ((m = /^steps\[(\d+)\]\.(title|purpose|technique|work|result)$/.exec(field)) && material.steps[m[1]]) return [material.steps[m[1]], m[2]];
     return null;
   };
+  // A missing sentence is put back whole: on chem-c32-molar-volume (2026-10-26) the fixer's replacement of a 보기 analysis
+  // was cut at 400 letters, which left a formula without its closing $ and the judgment without its last line, and the
+  // review of the fixed analysis then failed on what the cut had made. A fix that leaves the math unclosed is refused.
+  const unclosed = (s) => (s.match(/\$/g) || []).length % 2 === 1;
   for (const fix of fixes) {
-    const wrong = str(fix?.wrong, 400); const right = str(fix?.right, 400);
+    const wrong = str(fix?.wrong, 400); const right = str(fix?.right, 4000);
     if (!wrong || wrong === right) continue;
     const ref = fieldRef(String(fix?.field || ''));
     const note = `${fix.field}: "${wrong}" → "${right}"${fix.reason ? ' (' + str(fix.reason, 200) + ')' : ''}`;
-    if (ref && ref[0][ref[1]].split(wrong).length === 2) { ref[0][ref[1]] = ref[0][ref[1]].replace(wrong, right); applied.push(note); }
-    else unresolved.push('교정 제안(자동 적용 못 함) ' + note);
+    if (!ref || ref[0][ref[1]].split(wrong).length !== 2) { unresolved.push('교정 제안(자동 적용 못 함) ' + note); continue; }
+    const next = ref[0][ref[1]].replace(wrong, right);
+    if (unclosed(next) && !unclosed(ref[0][ref[1]])) { unresolved.push('교정 제안(수식 기호 $의 짝이 맞지 않아 적용 못 함) ' + note); continue; }
+    ref[0][ref[1]] = next; applied.push(note);
   }
   return { applied, unresolved };
 }
@@ -694,6 +700,11 @@ async function finalGate(ctx, item, material, prior, hints = []) {
 // and Gemini then found both in all three problems of the set.
 // One look does not find everything: on the third c32 run the first review found one fault, and the review of the fixed
 // analysis three more (one of them the '분자량=질량/양(mol)이고 …' line the run before had found first). Up to two rounds.
+// What the last look still lists decides as a problem's review does (final-review.js itemFaults): a high or mid fault
+// stops the set, low notes (a shortened sentence, a middle step left out) do not. On chem-c32-molar-volume (2026-10-26)
+// the third look listed one mid fault the fixer's cut had caused and three low notes, and the 학습 반복 stopped at its
+// first set for the teacher. The low notes left are fixed once more against the original and the analysis passes with
+// them on record; a high or mid fault left stops the set as before.
 async function reviewAnalysis(ctx, material, rounds = 2) {
   let review = await reviewAnalysisOnce(ctx, material);
   const fixed = [];
@@ -707,6 +718,10 @@ async function reviewAnalysis(ctx, material, rounds = 2) {
     if (!again) break;
     review = again;
   }
+  if (review && review.verdict === 'issues' && review.passed && review.issues.length) {
+    const done = await fixAnalysis(ctx, material, review.issues);
+    if (done.length) { fixed.push(...done); before.push(...review.issues); review = { ...review, key: analysisKey(material), issues: [], fixedLast: true }; }
+  }
   if (!fixed.length || !review) return review;
   Object.assign(review, { fixed, before });
   ctx.job.analysisReview = review;
@@ -715,6 +730,9 @@ async function reviewAnalysis(ctx, material, rounds = 2) {
   ctx.save();
   return review;
 }
+
+/** Whether an analysis review lets the set be made: no high or mid fault (older records: the verdict). */
+const analysisPassed = (review) => Boolean(review && (review.passed ?? review.verdict === 'ok'));
 
 /** The review's findings → fixes of the analysis fields against the images (applyFixes), on the job's copy and the original. */
 async function fixAnalysis(ctx, material, issues) {
@@ -756,7 +774,7 @@ async function fixAnalysis(ctx, material, issues) {
 async function reviewAnalysisOnce(ctx, material) {
   const stored = ctx.store?.materials?.get(ctx.job.materialId);
   const key = analysisKey(material);
-  if (stored?.analysisReview?.key === key && stored.analysisReview.verdict === 'ok' && !stored.analysisReview.issues?.length) {
+  if (stored?.analysisReview?.key === key && analysisPassed(stored.analysisReview) && !stored.analysisReview.issues?.length) {
     ctx.job.analysisReview = stored.analysisReview; ctx.save(); return stored.analysisReview;
   }
   if (ctx.budget.affords && !ctx.budget.affords(4)) throw new BudgetExceeded('원본 분석 검수·수리에 필요한 모델 호출·토큰 상한이 부족합니다.');
@@ -769,7 +787,7 @@ async function reviewAnalysisOnce(ctx, material) {
     });
     const a = data?.analysis || {};
     const issues = finalReview.analysisFaults(a);
-    const review = { key, at: new Date().toISOString(), verdict: issues.length ? 'issues' : 'ok', issues: issues.slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
+    const review = { key, at: new Date().toISOString(), verdict: issues.length ? 'issues' : 'ok', passed: !issues.some((x) => x.severity !== 'low'), issues: issues.slice(0, 12), checklist: finalReview.checklistOf(a, { analysis: true }) };
     ctx.job.analysisReview = review;
     const latest = ctx.store?.materials?.get(ctx.job.materialId);
     if (latest && analysisKey(latest) === key) ctx.store.materials.put({ ...latest, analysisReview: review });
@@ -1831,8 +1849,8 @@ async function runGeneration(ctx) {
   // writer and reviewer get (faults.forItem), and what this set is measured against when it is done (faults.setStats).
   const history = faultsData.index(store.jobs.all(), { dataDir: store.dataDir, exclude: job.id });
   if (ctx.finalGate) {
-    if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') await reviewAnalysis(ctx, material);
-    if (job.analysisReview?.key !== analysisKey(material) || job.analysisReview?.verdict !== 'ok') {
+    if (job.analysisReview?.key !== analysisKey(material) || !analysisPassed(job.analysisReview)) await reviewAnalysis(ctx, material);
+    if (job.analysisReview?.key !== analysisKey(material) || !analysisPassed(job.analysisReview)) {
       throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인한 뒤 이어서 진행해 주세요.');
     }
   }
@@ -1950,4 +1968,5 @@ function harnessStats(jobs) {
 }
 
 module.exports = {
+  analysisPassed,
   harnessStats, ON_FAIL, cleanHeading, finalGate, reviewAnalysis, fixAnalysis, ensureFrames, originalImages, learnFromSet, learnFromReview, keepLesson, draftLesson, fitSolutionToStage, reviewSolution, writeSolution, verifyItem, adoptedExamples, SYSTEM_CHECKS, sourceChecks, tableRows, numbersReused, repeatsPrior, applyFixes, proposeStepAlignment, refreshStepCountNote, targetStepCount, analyzeMaterial, runGeneration, produceItem, pickRules, normalizeMaterial, normalizeGenerated, missingValues, ruleIdOf, coverage };

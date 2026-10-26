@@ -305,7 +305,7 @@ function createJobs({ store, llm, config }) {
     try {
       if (sub.finalGate) {
         const reviewed = await pipeline.reviewAnalysis(sub, parent.material);
-        if (reviewed?.verdict !== 'ok' || reviewed.key !== materialKey(parent.material)) throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인해 주세요.');
+        if (!pipeline.analysisPassed(reviewed) || reviewed.key !== materialKey(parent.material)) throw new Error('원본 분석 검수를 통과하지 못했습니다. 분석 결과를 확인해 주세요.');
       }
       await pipeline.ensureFrames(sub, parent.material);
       await pipeline.produceItem(sub, { material: parent.material, item, prior, rules, mode: parent.options.mode, extraFeedback: feedback, previous, examples, priorFaults });
