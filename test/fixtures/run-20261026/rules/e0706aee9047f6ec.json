@@ -1,0 +1,30 @@
+{
+ "id": "e0706aee9047f6ec",
+ "createdAt": "2026-10-25T01:47:12.867Z",
+ "updatedAt": "2026-10-25T01:47:12.867Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "category": "solution",
+ "text": "해설에서 미지수가 남은 식으로 결론을 바로 이끌지 않는다. 결론은 그 결론을 정하는 근거 식(주어진 비, 발문 조건 등)을 먼저 쓴 다음 한 번만 쓰고, 같은 결론을 '즉,'으로 다시 쓰지 않는다.",
+ "subject": "화학",
+ "topic": "화학식량과 몰 / 아보가드로 법칙",
+ "history": [],
+ "source": {
+  "jobId": "01acfc2e485faf290085658a",
+  "materialId": "e0ccde32b1e7f8ce974185f9",
+  "label": "기체의 밀도와 질량 (원자 수비→분자 수비, 밀도×부피로 질량비, 원자량비)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "해설의문장앞부분이틀렸습니다라고썼지만의원자수가이므로맞",
+   "해설원자량부분의첫문장이이다이식에는미지수가들어있어원자"
+  ]
+ },
+ "applied": 5,
+ "v2": true,
+ "tagged": "migrated"
+}

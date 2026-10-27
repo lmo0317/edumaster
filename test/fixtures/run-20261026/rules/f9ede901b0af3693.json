@@ -1,0 +1,25 @@
+{
+ "id": "f9ede901b0af3693",
+ "createdAt": "2026-10-20T12:49:11.324Z",
+ "updatedAt": "2026-10-20T12:49:11.324Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "합답형 선택지 목록은 구조를 바꾼 부분을 판정하는 보기를 판정하지 않으면 정답 후보가 둘 이상 남도록 짠다. 개념만으로 판정되는 보기와 다른 보기 하나의 참·거짓만으로 나머지가 모두 소거되지 않는지 선택지별로 직접 확인한다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "fbf1b03d10ec817a7c7495c1",
+  "materialId": "87eefaa58f8fbd9140bf67fb",
+  "label": "골격근 수축 과정 — 근육 원섬유 마디 X와 구간 ㉠~㉢의 길이",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 16,
+ "v2": true,
+ "history": [],
+ "category": "choices"
+}

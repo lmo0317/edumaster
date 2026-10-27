@@ -1171,8 +1171,10 @@ function createApp(options = {}) {
 }
 
 if (require.main === module) {
-  process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection', e));
-  process.on('uncaughtException', (e) => console.error('[process] uncaught exception', e));
+  // A slip in one job's background work (a stream's error with no listener, a promise nobody awaited) is logged, not
+  // the end of the server and of every running set with it (2026-10-27 review: an EPIPE on a CLI's closed stdin).
+  process.on('uncaughtException', (e) => console.error('[uncaught]', e));
+  process.on('unhandledRejection', (e) => console.error('[unhandled]', e));
   const { server, config: cfg } = createApp();
   server.listen(cfg.port, cfg.host, () => console.log(`EduMaster listening on http://${cfg.host}:${cfg.port} (llm=${cfg.llmMode}, data=${cfg.dataDir})`));
 }

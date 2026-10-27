@@ -1,0 +1,18 @@
+{
+ "id": "ef8eac00aae02c4a",
+ "createdAt": "2026-10-02T01:59:22.695Z",
+ "updatedAt": "2026-10-02T01:59:22.695Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "analysis",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "STEP 제목과 용어는 해설에 인쇄된 글자 그대로 쓴다. 비슷한 말로 바꾸지 않는다. 예: 몰질량을 분자량이나 물질량으로 쓰지 않는다.",
+ "subject": "",
+ "topic": "",
+ "applied": 0,
+ "v2": true,
+ "history": [],
+ "category": "reading"
+}

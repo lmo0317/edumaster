@@ -1,0 +1,29 @@
+{
+ "id": "5d1cbf02bc31ebbc",
+ "createdAt": "2026-10-25T00:41:56.427Z",
+ "updatedAt": "2026-10-25T00:41:56.427Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "numbers",
+ "text": "한계 반응물을 가정→모순으로 판정하게 하는 문제에서는 비교하는 두 실험의 반응 전 질량을 두 반응물 모두 다르게 잡는다. 수치를 정한 뒤에는 한 반응물만 늘린 만큼 남은 질량도 똑같이 늘어서 반응한 질량이 같아지는 경우가 없는지 확인한다.",
+ "subject": "화학",
+ "topic": "화학 반응의 양적 관계(한계 반응물, 몰질량 비)",
+ "history": [],
+ "source": {
+  "jobId": "924f78a830092d05daf8daf3",
+  "materialId": "4c479609d6011b65f7fdaa21",
+  "label": "반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "과는의질량이로같고만늘었다반응후남은질량도에서로똑같이늘",
+   "반응식의문자계수가풀이에쓰임반응식의계수가발문에도해설에"
+  ]
+ },
+ "applied": 9,
+ "v2": true
+}

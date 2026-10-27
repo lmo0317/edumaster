@@ -222,14 +222,16 @@ function createJobs({ store, llm, config }) {
         if (unmade) throw new Error(`${r + 1}번째 세트를 만들지 못해 멈췄습니다: ${unmade}`);
         ctx.log(`${r + 1}번째 세트를 Claude·Gemini가 검수하는 중`);
         const save = (rec) => setCheck.writeCheck(config.dataDir, set.id, { ...rec, jobId: t.id, running: true });
-        let record;
+        let record = null;
         try {
           record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
         } finally {
+          // A review cut short (the repeat cancelled, a reviewer's error thrown) is closed on the record, as the check
+          // job's is: left "running" it stayed so until the server restarted (2026-10-27 review).
           const last = setCheck.readCheck(config.dataDir, set.id);
-          if (last?.jobId === t.id && last.running) setCheck.writeCheck(config.dataDir, set.id, { ...last, running: false, ...(record ? {} : { interrupted: true }) });
+          if (record) setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
+          else if (last?.jobId === t.id && last.running) setCheck.writeCheck(config.dataDir, set.id, { ...last, running: false, done: false, interrupted: true, error: '검수가 끝나기 전에 멈췄습니다. 다시 검수해 주세요.' });
         }
-        setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
         const lost = Object.entries(record.reviews || {}).find(([, v]) => v.error);
         if (lost) throw new Error(`${r + 1}번째 세트의 ${setCheck.NAME[lost[0]] || lost[0]} 검수가 실패해 멈췄습니다: ${lost[1].error}`);
         const scores = setCheck.scores(record);
@@ -247,15 +249,23 @@ function createJobs({ store, llm, config }) {
         if (flipped.length) ctx.log(`지난 세트에서 통과한 ${flipped.map((f) => f.label).join(', ')}에 이번 검수가 결함을 적었지만, 문제가 그대로라 지난 판정을 둡니다: ${flipped.flatMap((f) => f.faults).map((x) => x.slice(0, 120)).join(' / ').slice(0, 400)}`);
         ctx.save();
         if (pass) { t.reached = true; ctx.log(`목표(${t.target}점)에 도달했습니다`); return; }
+        // No problem failing and nothing faulted in the analysis, the score short of the target only by verdicts that
+        // flipped on problems settled the round before: nothing to make again or to learn, so the next round would be
+        // this set once more (2026-10-27 review). The settled verdicts stand; the target is reached.
+        if (settled.size && !fails.length && !issues.length) {
+          t.reached = true;
+          ctx.log(`걸린 문제도 원본 분석 지적도 없어 목표에 도달한 것으로 봅니다 (점수는 지난 세트에서 통과한 문제에 뒤집힌 판정이 깎은 것)`);
+          return;
+        }
         if (r + 1 >= t.maxRounds) break;
         // A fault that comes back whole after the learning was changed for it is not the learning's to fix (molar mass,
         // 2026-10-26: one lesson reworded four rounds for a line the code put into every solution, 310 calls): two
         // rounds in a row whose faults are four fifths recurrences of this original, each after a learning change,
         // stop the repeat for the teacher with the reason on the record.
-        const stuck = (rd) => rd?.faultStats && rd.faultStats.faults >= 3 && rd.faultStats.own / rd.faultStats.faults >= 0.8;
-        if (r >= 2 && stuck(round) && stuck(t.rounds[r - 1]) && t.rounds[r - 1].learned?.length && t.rounds[r - 2].learned?.length) {
+        if (setCheck.stuckAfterLearning(t.rounds, r)) {
           t.reached = false;
-          t.stopReason = `학습을 고친 뒤에도 같은 결함이 두 세트 연속 되풀이됨 (이 원본에서 ${round.faultStats.own}/${round.faultStats.faults}건)`;
+          const changed = Boolean(t.rounds[r - 1].learned?.length || t.rounds[r - 2].learned?.length);
+          t.stopReason = `${changed ? '학습을 고친 뒤에도' : '고칠 학습이 없는데도'} 같은 결함이 두 세트 연속 되풀이됨 (이 원본에서 ${round.faultStats.own}/${round.faultStats.faults}건)`;
           ctx.log(`${t.stopReason}. 학습으로 고쳐지지 않는 결함이라 멈춥니다 — 시스템(하네스·지침) 점검이 필요합니다.`);
           return;
         }
@@ -283,7 +293,9 @@ function createJobs({ store, llm, config }) {
       const copy = JSON.parse(JSON.stringify(it));
       delete copy.adopted;
       const f = failed.get(it.index);
-      if (!f) { if (it.problem) settled.add(it.index); return copy; }
+      // Carried as it is: what it was repaired for in the last set is that set's record (faults.recordsOf), not this
+      // one's — counted again, every one of them was a recurrence of this original (2026-10-27 review).
+      if (!f) { if (it.problem) { settled.add(it.index); copy.carriedFrom = last.id; copy.attempts = []; copy.reviewRounds = []; } return copy; }
       const previous = { problem: it.problem, solution: it.solution, verification: it.verification, status: it.status, designNote: it.designNote, replacedAt: new Date().toISOString(), feedback: setCheck.remakeNote(f), problems: [...new Set(it.problems || [])], warnings: [...new Set(it.warnings || [])] };
       return { index: it.index, stage: it.stage, variantNo: it.variantNo, label: it.label, status: 'pending', remakeNote: setCheck.remakeNote(f), history: [previous, ...(it.history || [])].slice(0, 3) };
     });
@@ -405,7 +417,16 @@ function createJobs({ store, llm, config }) {
     },
     // 학습 반복: the job's own budget is for the learning calls; each set it makes has a set's budget.
     train({ material, items, options, target = 90, maxRounds = 4 }) {
-      return create('train', { materialId: material.id, title: material.title, items, options, target, maxRounds, rounds: [] }, 'analyze');
+      // The learning calls of every round (learn-review, the merges of new lessons, an analysis fix) come out of this
+      // budget: an analysis' worth per round (2026-10-27 review: one round's worth for six rounds ended a repeat as
+      // 'failed' on its budget, not on its verdict).
+      const rounds = Math.max(1, Number(maxRounds) || 1);
+      return enqueue({
+        id: newId(), type: 'train', createdAt: new Date().toISOString(), log: [], promptVersion: PROMPT_VERSION,
+        budget: { maxCalls: config.budget.analyzeCalls * rounds, maxTokens: tokenCap(options?.provider, 'analyze') * rounds },
+        usage: { calls: 0, input: 0, output: 0, reasoning: 0, total: 0 },
+        materialId: material.id, title: material.title, items, options, target, maxRounds, rounds: [],
+      });
     },
     regenerate(parent, itemIndex, feedback) {
       parent = store.jobs.get(parent.id);

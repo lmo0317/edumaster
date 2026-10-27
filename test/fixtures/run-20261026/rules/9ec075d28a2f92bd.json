@@ -1,0 +1,26 @@
+{
+ "id": "9ec075d28a2f92bd",
+ "createdAt": "2026-10-21T19:50:07.650Z",
+ "updatedAt": "2026-10-21T19:50:07.650Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "연습 문제에 넣는 STEP의 계산 결과는 하나하나 보기 판정에 쓰이게 한다. 원본에서는 뒤 STEP(예: 원자량 연립)에서만 쓰이던 값이면, 그 값이 들어간 보기를 따로 만든다(예: 그 기체의 분자량을 다른 기체의 분자량과 비교하는 진술).",
+ "subject": "화학",
+ "topic": "화학식량과 몰 / 기체의 양(mol)과 입자 수, 질량, 부피 사이의 관계",
+ "source": {
+  "jobId": "df4084a578f16313e14cf3c6",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "choices",
+ "tagged": "migrated"
+}

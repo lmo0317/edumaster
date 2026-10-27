@@ -1,0 +1,25 @@
+{
+ "id": "bea3cbda0a6116d2",
+ "createdAt": "2026-10-20T11:32:40.629Z",
+ "updatedAt": "2026-10-20T11:32:40.629Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "STEP 제목에 실험 번호가 있으면, 본문에서 가정→모순으로 한계 반응물을 판정하는 실험이 그 제목의 실험이 되도록 가정할 실험을 고른다. 다른 실험을 판정했으면 제목의 실험 번호를 본문에 맞춘다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "9386c4b7e9b4d100a9f13bda",
+  "materialId": "a26b4d5712e6028827416d2e",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ 한계 반응물과 몰질량",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 25,
+ "v2": true,
+ "history": [],
+ "category": "solution"
+}

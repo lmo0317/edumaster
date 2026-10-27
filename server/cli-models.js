@@ -47,10 +47,11 @@ function run(c, args, { cwd, input, timeoutMs = 60000, signal, env } = {}) {
     signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err += d; });
-    // Writing the request to a child that failed to start (EPIPE) must not raise on the stream: 'error' on the child reports it.
-    child.stdin.on('error', () => {});
     child.on('error', (e) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(Object.assign(new Error(`실행하지 못했습니다: ${e.message}`), { status: 503 })); });
     child.on('close', (code) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolve({ code, stdout: out, stderr: err }); });
+    // A CLI that exits before reading its input closes the pipe under the write: unhandled, that EPIPE ended the whole
+    // server (2026-10-27 review). The exit code and stderr report the failure.
+    child.stdin.on('error', () => {});
     child.stdin.end(input || '');
   });
 }
@@ -151,8 +152,14 @@ async function sendCli(config, cli, { messages, effort, signal }) {
       const { code, stdout, stderr } = await run(config.agyCli, ['-p', ask, '--output-format', 'json', '--model', choice.model, '--sandbox'],
         { cwd: dir, timeoutMs: config.agyCli.timeoutMs, signal });
       if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
-      let result;
-      try { result = JSON.parse(stdout.trim().split('\n').filter((l) => l.startsWith('{')).pop() || ''); } catch { result = null; }
+      // agy's JSON: the whole output, or what follows a log line, or (as before) its last line — printed on several
+      // lines it read as "{" alone and the call went on without its usage or status (2026-10-27 review).
+      const printed = stdout.trim();
+      const lines = printed.split('\n');
+      let result = null;
+      for (const candidate of [printed, lines.slice(lines.findIndex((l) => l.startsWith('{'))).join('\n'), lines.filter((l) => l.startsWith('{')).pop() || '']) {
+        try { result = JSON.parse(candidate); break; } catch { result = null; }
+      }
       const written = fs.existsSync(path.join(dir, 'answer.txt')) ? fs.readFileSync(path.join(dir, 'answer.txt'), 'utf8').trim() : '';
       if (!result && !written) throw fail(`실행 오류 (종료 코드 ${code}): ${(stderr || stdout).trim().slice(0, 300)}`);
       if (result?.status !== 'SUCCESS' && !written) throw fail(`오류: ${String(result?.error || result?.response || result?.status).slice(0, 300)}`);

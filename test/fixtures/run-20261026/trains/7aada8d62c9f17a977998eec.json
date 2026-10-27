@@ -1,0 +1,104 @@
+{
+ "id": "7aada8d62c9f17a977998eec",
+ "type": "train",
+ "createdAt": "2026-10-26T11:29:39.509Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 0,
+  "input": 0,
+  "output": 0,
+  "reasoning": 0,
+  "total": 0,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "1b658642f34c6684ba649d91",
+ "title": "골격근 수축 (길이가 변하지 않는 구간으로 ⓐ~ⓒ 매칭)",
+ "items": [
+  {
+   "index": 0,
+   "stage": {
+    "kind": "upto",
+    "upto": 1
+   },
+   "variantNo": 1,
+   "label": "STEP 1 연습",
+   "status": "pending"
+  },
+  {
+   "index": 1,
+   "stage": {
+    "kind": "upto",
+    "upto": 2
+   },
+   "variantNo": 1,
+   "label": "STEP 1~2 연습",
+   "status": "pending"
+  },
+  {
+   "index": 2,
+   "stage": {
+    "kind": "upto",
+    "upto": 3
+   },
+   "variantNo": 1,
+   "label": "STEP 1~3 연습",
+   "status": "pending"
+  },
+  {
+   "index": 3,
+   "stage": {
+    "kind": "twin"
+   },
+   "variantNo": 1,
+   "label": "최종 문제",
+   "status": "pending"
+  }
+ ],
+ "options": {
+  "mode": "integrated",
+  "effort": "low",
+  "provider": "claude-cli",
+  "perStage": 1
+ },
+ "target": 90,
+ "maxRounds": 6,
+ "rounds": [
+  {
+   "setId": "fb7a2d4097f0e84da3324729",
+   "at": "2026-10-26T11:54:43.852Z",
+   "scores": {
+    "claude-cli": 100,
+    "agy-cli": 100
+   },
+   "failing": [],
+   "faults": [],
+   "analysisIssues": 0,
+   "pass": true,
+   "faultStats": {
+    "faults": 2,
+    "repeat": 1,
+    "own": 0,
+    "lesson": 0,
+    "rate": 50
+   }
+  }
+ ],
+ "status": "done",
+ "updatedAt": "2026-10-26T11:54:43.853Z",
+ "startedAt": "2026-10-26T11:29:39.509Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "reached": true,
+ "finishedAt": "2026-10-26T11:54:43.853Z",
+ "logLines": [
+  "1번째 세트를 만드는 중",
+  "1번째 세트를 Claude·Gemini가 검수하는 중",
+  "1번째 세트: Claude 100% · Gemini 100%",
+  "1번째 세트 결함 기록: 2건 — 전에 나온 종류 1건 (50%, 이 원본에서 0건) · 지시문의 학습이 이미 말한 것 0건",
+  "목표(90점)에 도달했습니다"
+ ]
+}

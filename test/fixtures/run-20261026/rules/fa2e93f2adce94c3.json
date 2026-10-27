@@ -1,0 +1,35 @@
+{
+ "id": "fa2e93f2adce94c3",
+ "createdAt": "2026-10-04T12:43:31.970Z",
+ "updatedAt": "2026-10-24T23:29:38.975Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "검산 프로그램에서 문제가 값을 정하지 않은 보조 문자(n, m 등)를 임의의 값(예: 1)으로 두지 않는다. 문제의 조건으로 그 비를 먼저 계산해 정하고, 조건 검사(checks)는 그렇게 계산한 값으로 참이 되는 비교식(예: left1 == 2)으로 쓴다. 한 줄에 문장 하나만 쓰고 주석을 넣지 않는다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "",
+  "materialId": "",
+  "label": "로컬 모델 평가 2026-10-04 (gpt-oss-20B·Qwen3.8-27B, 몰질량 원본)",
+  "excerpt": "n=1, m=1로 두고 검사해 조건 검사가 거짓, 주석 줄 때문에 검산 실행 실패 (두 모델 합쳐 10번 넘게)",
+  "from": "eval"
+ },
+ "applied": 19,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T23:29:38.975Z",
+   "before": "검산 프로그램에서 문제가 값을 정하지 않은 보조 문자(n, m 등)를 임의의 값(예: 1)으로 두지 않는다. 문제의 조건으로 그 비를 먼저 계산해 정하고, 조건 검사(checks)는 그렇게 계산한 값으로 참이 되는 비교식(예: left1 == 2)으로 쓴다. 한 줄에 문장 하나만 쓰고 주석을 넣지 않는다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "design",
+ "dormantAt": "2026-10-24T23:29:38.975Z"
+}

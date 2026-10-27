@@ -1,0 +1,26 @@
+{
+ "id": "1aa1f361c5932fff",
+ "createdAt": "2026-10-21T05:03:07.773Z",
+ "updatedAt": "2026-10-21T05:03:07.773Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "최종 문제의 실험 수치를 정한 뒤, 각 행의 반응 전 질량 조합을 같은 세트의 연습 문제 각 행과 하나씩 대조해 같은 조합이 있으면 바꾼다.",
+ "subject": "화학",
+ "topic": "화학 반응의 양적 관계 (한계 반응물, 몰질량 비)",
+ "source": {
+  "jobId": "0c65b92ffab5f18efbd75ef5",
+  "materialId": "631a640b30237e8b93ada70c",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ의 한계 반응물과 몰질량 비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "numbers",
+ "tagged": "migrated"
+}

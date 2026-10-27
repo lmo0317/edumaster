@@ -1,0 +1,18 @@
+{
+ "id": "fdf627e93e2ecf7f",
+ "createdAt": "2026-10-02T01:59:22.698Z",
+ "updatedAt": "2026-10-02T01:59:22.698Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "analysis",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "해설의 풀이는 선생님이 쓴 방법(가정→모순, 보조 문자 n·m, 비례식, 계산 순서)을 그대로 옮긴다. 읽히지 않는 부분을 자기 논리로 대신 풀지 않고, 다시 읽거나 읽기 어렵다고 남긴다.",
+ "subject": "",
+ "topic": "",
+ "applied": 0,
+ "v2": true,
+ "history": [],
+ "category": "reading"
+}

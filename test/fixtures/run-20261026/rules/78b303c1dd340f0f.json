@@ -1,0 +1,26 @@
+{
+ "id": "78b303c1dd340f0f",
+ "createdAt": "2026-10-21T20:46:52.755Z",
+ "updatedAt": "2026-10-21T20:46:52.755Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "해설을 다 쓴 뒤 각 계산식에 들어간 수가 표·발문에 주어졌거나 앞 STEP에서 구한 값인지 하나씩 대조하고, 출처가 없는 수가 있거나 이미 주어진 값을 결과로 구하는 식이 있으면 그 문장을 고쳐 쓴다.",
+ "subject": "화학",
+ "topic": "화학식량과 몰 / 기체의 양(mol)과 입자 수, 질량, 부피 사이의 관계",
+ "source": {
+  "jobId": "3612bea2f9da1b10122735c1",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "review"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "solution",
+ "tagged": "migrated"
+}

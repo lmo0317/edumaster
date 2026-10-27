@@ -1,0 +1,18 @@
+{
+ "id": "11bfc8e9eb819faa",
+ "createdAt": "2026-10-02T01:59:22.707Z",
+ "updatedAt": "2026-10-02T01:59:22.707Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "실험 행·자료·반응식의 문자 계수는 하나하나 풀이 어디에 쓰이는지 확인하고, 쓰이지 않으면 빼거나 묻는 값에 쓰이게 한다. 원본과 앞 문제의 실험 수치(한 행의 값 조합)를 다시 쓰지 않고, 앞 문제와 같은 값을 묻지 않는다.",
+ "subject": "",
+ "topic": "",
+ "applied": 56,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

@@ -1,0 +1,33 @@
+{
+ "id": "310b8693a75a5d5e",
+ "createdAt": "2026-10-26T11:43:29.105Z",
+ "updatedAt": "2026-10-26T11:43:29.105Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "choices",
+ "text": "계수를 선택지로 묻는 연습 문제는 일부 선택지의 계수에서 다른 반응물이 한계 반응물이 되도록 반응 전 양과 선택지 범위를 잡는다",
+ "why": "선택지의 계수 범위로는 한 반응물이 늘 한계 반응물로 정해져, 가정→모순 판정 없이 선택지 대입만으로 답이 나오는 것을 막는다.",
+ "example": {
+  "before": "선택지 $b=1\\sim5$, B 반응 전 양으로 $2b$가 늘 남는 B 이하",
+  "after": "B 반응 전 양을 줄여 일부 $b$에서 B가 한계 반응물이 되게 함"
+ },
+ "subject": "화학",
+ "topic": "화학 반응식과 기체의 밀도 (한계 반응물)",
+ "history": [],
+ "source": {
+  "jobId": "4aeaf5d47e0075191934cf55",
+  "materialId": "9cf28159b5331036f7757be5",
+  "label": "화학 반응식과 기체의 밀도 (밀도비로 한계 반응물, 반응 계수 b와 x)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "선택지가뿐이라반응하는의양가항상이하입니다그래서의가정모"
+  ]
+ },
+ "applied": 1,
+ "v2": true
+}

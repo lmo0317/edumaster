@@ -1,0 +1,25 @@
+{
+ "id": "4d5b8ab8e7b893e1",
+ "createdAt": "2026-10-21T06:04:07.735Z",
+ "updatedAt": "2026-10-21T19:55:13.609Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "최종 문제의 각 행 수치는 앞 연습 문제 행의 배수가 되지 않게 잡고, 각 기체의 분자량뿐 아니라 보기에서 비교하는 두 기체의 분자량 비(약분한 비)와 그로부터 나오는 같은 질량의 분자 수 비·전체 원자 수 비도 앞 문제와 다르게 정한다. 수치를 정한 뒤 앞 문제와 같은 문장의 보기가 있으면 그 보기에서 구하는 중간 비와 결과 비를 앞 문제의 값과 하나씩 대조해, 같으면 질량이나 부피를 바꿔 분자량 비를 다시 잡는다.",
+ "subject": "화학",
+ "topic": "",
+ "source": {
+  "jobId": "885a3ee5b452048f7620d2b3",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "review"
+ },
+ "applied": 22,
+ "v2": true,
+ "history": [],
+ "category": "numbers"
+}

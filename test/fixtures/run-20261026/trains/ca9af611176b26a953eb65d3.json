@@ -1,0 +1,104 @@
+{
+ "id": "ca9af611176b26a953eb65d3",
+ "type": "train",
+ "createdAt": "2026-10-26T11:29:54.547Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 0,
+  "input": 0,
+  "output": 0,
+  "reasoning": 0,
+  "total": 0,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "80ddacf9556d4a04aa6c21ab",
+ "title": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+ "items": [
+  {
+   "index": 0,
+   "stage": {
+    "kind": "upto",
+    "upto": 1
+   },
+   "variantNo": 1,
+   "label": "STEP 1 연습",
+   "status": "pending"
+  },
+  {
+   "index": 1,
+   "stage": {
+    "kind": "upto",
+    "upto": 2
+   },
+   "variantNo": 1,
+   "label": "STEP 1~2 연습",
+   "status": "pending"
+  },
+  {
+   "index": 2,
+   "stage": {
+    "kind": "upto",
+    "upto": 3
+   },
+   "variantNo": 1,
+   "label": "STEP 1~3 연습",
+   "status": "pending"
+  },
+  {
+   "index": 3,
+   "stage": {
+    "kind": "twin"
+   },
+   "variantNo": 1,
+   "label": "최종 문제",
+   "status": "pending"
+  }
+ ],
+ "options": {
+  "mode": "integrated",
+  "effort": "low",
+  "provider": "claude-cli",
+  "perStage": 1
+ },
+ "target": 90,
+ "maxRounds": 6,
+ "rounds": [
+  {
+   "setId": "9c3e8120bde2c1bf8b4d4591",
+   "at": "2026-10-26T12:23:02.591Z",
+   "scores": {
+    "claude-cli": 100,
+    "agy-cli": 100
+   },
+   "failing": [],
+   "faults": [],
+   "analysisIssues": 0,
+   "pass": true,
+   "faultStats": {
+    "faults": 3,
+    "repeat": 0,
+    "own": 0,
+    "lesson": 0,
+    "rate": 0
+   }
+  }
+ ],
+ "status": "done",
+ "updatedAt": "2026-10-26T12:23:02.592Z",
+ "startedAt": "2026-10-26T11:29:54.548Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "reached": true,
+ "finishedAt": "2026-10-26T12:23:02.592Z",
+ "logLines": [
+  "1번째 세트를 만드는 중",
+  "1번째 세트를 Claude·Gemini가 검수하는 중",
+  "1번째 세트: Claude 100% · Gemini 100%",
+  "1번째 세트 결함 기록: 3건 — 전에 나온 종류 0건 (0%, 이 원본에서 0건) · 지시문의 학습이 이미 말한 것 0건",
+  "목표(90점)에 도달했습니다"
+ ]
+}

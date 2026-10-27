@@ -1,0 +1,33 @@
+{
+ "id": "9794dc785c378eea",
+ "createdAt": "2026-10-25T01:53:58.568Z",
+ "updatedAt": "2026-10-25T01:53:58.568Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "design",
+ "text": "구조 변형을 할 때 시점·실험의 이름표를 서로 바꾸기만 하면 원본과 같은 문제가 되는 배치(기준 행과 구할 행만 맞바꾼 경우)는 구조 변형으로 치지 않는다. 주는 칸과 숨기는 칸의 종류나 풀이 순서가 실제로 달라지게 한다.",
+ "subject": "생명과학",
+ "topic": "근수축 - 근육 원섬유 마디 구간 길이 변화",
+ "history": [],
+ "source": {
+  "jobId": "48203d63d6241d0b94ab4743",
+  "materialId": "e0be6b8f6862c7f43ebbdf0a",
+  "label": "골격근 수축 (길이가 변하지 않는 구간으로 ⓐ~ⓒ 매칭)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "의핵심판단을하지않아도정답이나온다에서이정해지면ㄴ은거짓",
+   "원본과다른항목이하나뿐이어서숫자만바꾼문제입니다아닙니다",
+   "없이정답이나옵니다에서대을정하면ㄱ은거짓입니다그러면남는",
+   "앞문제연습의실험수치를그대로썼습니다행",
+   "원본과달라진항목이하나뿐이다수치를주는기준시점이에서로바"
+  ]
+ },
+ "applied": 3,
+ "v2": true,
+ "tagged": "migrated"
+}

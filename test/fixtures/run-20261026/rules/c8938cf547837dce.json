@@ -1,0 +1,18 @@
+{
+ "id": "c8938cf547837dce",
+ "createdAt": "2026-10-02T01:59:22.709Z",
+ "updatedAt": "2026-10-02T06:30:18.473Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "수는 손으로 계산하기 쉬운 작은 정수나 간단한 분수로 잡는다. 보기는 원본과 같은 개수·형식(5지선다, ㄱㄴㄷ 합답형 등)으로 모두 서로 다르게 만들고, 오답도 정답과 같은 꼴의 깔끔한 값으로 잡아 모양만 보고 정답이 가려지지 않게 한다(잘못된 풀이에서 나오는 값을 쓸 때도). 해설의 참·거짓 판정과 정답 번호가 맞는지 확인한다.",
+ "subject": "",
+ "topic": "",
+ "applied": 53,
+ "v2": true,
+ "history": [],
+ "category": "numbers"
+}

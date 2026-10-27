@@ -1,0 +1,18 @@
+{
+ "id": "c025206c2cb93fe0",
+ "createdAt": "2026-10-02T01:59:22.692Z",
+ "updatedAt": "2026-10-02T01:59:22.692Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "analysis",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "인쇄된 글자만 문제 조건으로 읽는다. 연필·색 펜 필기, 밑줄·동그라미, 풀이 메모는 조건에 넣지 않는다. 해설에서 구하는 값(예: x=3, 속력 2 cm/ms)이 문제 본문에 적혀 있으면 필기로 보고 뺀다.",
+ "subject": "",
+ "topic": "",
+ "applied": 0,
+ "v2": true,
+ "history": [],
+ "category": "reading"
+}

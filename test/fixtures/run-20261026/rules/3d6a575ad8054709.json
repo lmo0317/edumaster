@@ -1,0 +1,35 @@
+{
+ "id": "3d6a575ad8054709",
+ "createdAt": "2026-10-21T05:07:20.467Z",
+ "updatedAt": "2026-10-24T08:21:36.713Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "정리표의 실젯값 칸은 그 행의 양(mol)만으로 값이 정해질 때만 수로 채운다. 보조 문자 관계를 구해야 정해지는 행은 실젯값 칸에 $n$, $m$이 들어간 식을 쓰지 않고, 선생님 해설처럼 문자(예: $y=\\frac{p}{q}$ 꼴로 비례식에서 구한 값)로 두거나 그 관계를 반영한 양(mol)으로 맞춘 뒤 본문에서 그 값을 구한다.",
+ "subject": "화학",
+ "topic": "",
+ "source": {
+  "jobId": "0c65b92ffab5f18efbd75ef5",
+  "materialId": "631a640b30237e8b93ada70c",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ의 한계 반응물과 몰질량 비",
+  "excerpt": "",
+  "from": "review"
+ },
+ "applied": 14,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T08:21:36.713Z",
+   "before": "정리표의 실젯값 칸은 그 행의 양(mol)만으로 값이 정해질 때만 수로 채운다. 보조 문자 관계를 구해야 정해지는 행은 실젯값 칸에 $n$, $m$이 들어간 식을 쓰지 않고, 선생님 해설처럼 문자(예: $y=\\frac{p}{q}$ 꼴로 비례식에서 구한 값)로 두거나 그 관계를 반영한 양(mol)으로 맞춘 뒤 본문에서 그 값을 구한다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "solution",
+ "dormantAt": "2026-10-24T08:21:36.713Z"
+}

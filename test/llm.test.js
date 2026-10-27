@@ -164,7 +164,7 @@ test('an answer that really lacks a required field is retried with the error, no
     const { data } = await llm.json({ provider: 'deepseek', purpose: 'analyze', jobId: 'j', budget: new Budget({ maxCalls: 5, maxTokens: 1000 }), system: 's', text: 't', effort: 'off' });
     assert.equal(calls, 2);
     assert.equal(data.steps.length, 1);
-    assert.match(seen[1][3].content, /필요한 항목이 없습니다: steps/);
+    assert.match(seen[1][3].content, /steps 항목이 없거나 비어 있다/);
   } finally { server.close(); }
 });
 

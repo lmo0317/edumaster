@@ -1,0 +1,26 @@
+{
+ "id": "9eb78b29841c4de3",
+ "createdAt": "2026-10-21T05:31:51.865Z",
+ "updatedAt": "2026-10-21T05:31:51.865Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "최종 문제의 답을 정하기 전에 앞 STEP의 결과(계수 등)를 건너뛰는 풀이를 직접 시도해 본다. 계수에 가능한 정수를 하나씩 넣어 보거나 남은 반응물의 양을 새 미지수로 두어 각 실험을 따로 풀어 보고, 그렇게 답이 정해지면 수치나 묻는 양을 바꾼다. 오답에는 다른 계수에서 나오는 값을 넣는다.",
+ "subject": "화학",
+ "topic": "화학 반응식과 기체의 밀도 (한계 반응물, 아보가드로 법칙)",
+ "source": {
+  "jobId": "b8af3020431209003dbff71a",
+  "materialId": "ee6b4837331697726d699cfb",
+  "label": "고체 반응물이 있는 반응에서 기체의 밀도와 반응 계수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "design",
+ "tagged": "migrated"
+}

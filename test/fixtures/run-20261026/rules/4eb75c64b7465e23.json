@@ -1,0 +1,35 @@
+{
+ "id": "4eb75c64b7465e23",
+ "createdAt": "2026-10-03T15:42:34.892Z",
+ "updatedAt": "2026-10-24T23:18:45.157Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "한 세트 안에서 출제하는 각 문제(연습 문제와 최종 문제)의 선택지는 앞 문제와 동일하게 구성하지 않고, 선택지 목록이나 합답형 보기 조합을 서로 다르게 만든다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "663bc61e2cb71ed566969441",
+  "materialId": "0bad6931faac2d7f0a54fca2",
+  "label": "실린더 (가)~(다) 속 기체의 분자 수비와 원자량비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 20,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T23:18:45.157Z",
+   "before": "한 세트 안에서 출제하는 각 문제(연습 문제와 최종 문제)의 선택지는 앞 문제와 동일하게 구성하지 않고, 선택지 목록이나 합답형 보기 조합을 서로 다르게 만든다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "choices",
+ "dormantAt": "2026-10-24T23:18:45.157Z"
+}

@@ -1,0 +1,39 @@
+{
+ "id": "dee1d0a7d64716d1",
+ "createdAt": "2026-10-25T00:45:46.178Z",
+ "updatedAt": "2026-10-26T11:50:09.443Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "category": "design",
+ "text": "해설을 다 쓴 뒤 표와 발문의 문자 칸마다 그 값을 구해 계산에 쓰는 문장을 찾고, 없으면 그 칸을 수치로 주거나 묻는 값에 넣는다.",
+ "subject": "화학",
+ "topic": "화학 반응의 양적 관계(한계 반응물, 몰질량 비)",
+ "history": [
+  {
+   "at": "2026-10-26T11:50:09.443Z",
+   "before": "해설을 다 쓴 뒤 표와 발문의 문자 칸을 하나씩 해설에서 찾아, 값을 구하거나 식에 쓰는 문장이 없는 문자 칸이 있으면 그 칸을 수치로 바꾸거나 묻는 값에 넣는다.",
+   "by": "review",
+   "why": "구한 뒤 어디에도 쓰이지 않는 장식용 문자 칸이 생기는 것을 막는다.",
+   "jobId": "4a4fd8a3d8b57742ed302014"
+  }
+ ],
+ "source": {
+  "jobId": "924f78a830092d05daf8daf3",
+  "materialId": "4c479609d6011b65f7fdaa21",
+  "label": "반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "excerpt": "",
+  "from": "review",
+  "faultKeys": [
+   "달라진항목번호와근거원본과달라진항목이판정의기준이나방향",
+   "실험의반응후또는의질량칸에미지수가주어져있으나발문에서를"
+  ]
+ },
+ "applied": 9,
+ "v2": true,
+ "tagged": "migrated",
+ "why": "구한 뒤 어디에도 쓰이지 않는 장식용 문자 칸이 생기는 것을 막는다."
+}

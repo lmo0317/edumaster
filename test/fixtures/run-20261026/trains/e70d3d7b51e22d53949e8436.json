@@ -1,0 +1,94 @@
+{
+ "id": "e70d3d7b51e22d53949e8436",
+ "type": "train",
+ "createdAt": "2026-10-26T11:29:24.358Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 0,
+  "input": 0,
+  "output": 0,
+  "reasoning": 0,
+  "total": 0,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "6c5a26177e0d1e21b288929d",
+ "title": "기체의 양과 부피·질량 (분자량과 전체 원자 수로 a·b, 원자량 연립)",
+ "items": [
+  {
+   "index": 0,
+   "stage": {
+    "kind": "upto",
+    "upto": 1
+   },
+   "variantNo": 1,
+   "label": "STEP 1 연습",
+   "status": "pending"
+  },
+  {
+   "index": 1,
+   "stage": {
+    "kind": "upto",
+    "upto": 2
+   },
+   "variantNo": 1,
+   "label": "STEP 1~2 연습",
+   "status": "pending"
+  },
+  {
+   "index": 2,
+   "stage": {
+    "kind": "twin"
+   },
+   "variantNo": 1,
+   "label": "최종 문제",
+   "status": "pending"
+  }
+ ],
+ "options": {
+  "mode": "integrated",
+  "effort": "low",
+  "provider": "claude-cli",
+  "perStage": 1
+ },
+ "target": 90,
+ "maxRounds": 6,
+ "rounds": [
+  {
+   "setId": "1d288f2c1a9eaef456c34ddf",
+   "at": "2026-10-26T11:46:45.371Z",
+   "scores": {
+    "claude-cli": 100,
+    "agy-cli": 100
+   },
+   "failing": [],
+   "faults": [],
+   "analysisIssues": 0,
+   "pass": true,
+   "faultStats": {
+    "faults": 0,
+    "repeat": 0,
+    "own": 0,
+    "lesson": 0,
+    "rate": null
+   }
+  }
+ ],
+ "status": "done",
+ "updatedAt": "2026-10-26T11:46:45.372Z",
+ "startedAt": "2026-10-26T11:29:24.358Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "reached": true,
+ "finishedAt": "2026-10-26T11:46:45.372Z",
+ "logLines": [
+  "1번째 세트를 만드는 중",
+  "1번째 세트를 Claude·Gemini가 검수하는 중",
+  "1번째 세트: Claude 100% · Gemini 100%",
+  "1번째 세트 결함 기록: 걸린 것 없이 완성",
+  "목표(90점)에 도달했습니다"
+ ]
+}

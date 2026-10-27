@@ -1,0 +1,33 @@
+{
+ "id": "4d5317b310d1ada0",
+ "createdAt": "2026-10-26T11:50:09.445Z",
+ "updatedAt": "2026-10-26T11:50:09.445Z",
+ "status": "approved",
+ "scope": "material",
+ "stage": "generation",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "design",
+ "text": "반응량 표에서 칸을 문자로 숨길 때는 그 값을 구해야 다음 STEP의 양(mol)이나 몰질량 계산이 진행되는 칸을 고른다.",
+ "why": "한계 반응물 판정에서 결과로만 나오고 이후 계산에 쓰이지 않는 칸을 숨겨 구조 변형으로 치는 것을 막는다.",
+ "example": {
+  "before": "Ⅲ의 반응 후 A 또는 B의 질량을 $aw$로 숨기고 $a$를 쓰지 않음",
+  "after": "숨긴 값이 몰질량이나 $b$를 구하는 식에 들어가도록 숨길 칸을 고름"
+ },
+ "subject": "화학",
+ "topic": "화학 반응식과 양적 관계(한계 반응물·몰질량 비)",
+ "history": [],
+ "source": {
+  "jobId": "4a4fd8a3d8b57742ed302014",
+  "materialId": "276f1bea47b801aacace0032",
+  "label": "반응량과 몰질량 (가정→모순 판정, 보조 문자 n·m)",
+  "excerpt": "",
+  "from": "review",
+  "faultKeys": [
+   "표의실험에서반응후질량을로숨겼으나미지수는발문에서묻지않",
+   "구조변형기준세항목중달라진항목이판정의기준실험에서하나뿐"
+  ]
+ },
+ "applied": 1,
+ "v2": true
+}

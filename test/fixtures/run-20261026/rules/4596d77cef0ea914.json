@@ -1,0 +1,28 @@
+{
+ "id": "4596d77cef0ea914",
+ "createdAt": "2026-10-24T08:39:20.045Z",
+ "updatedAt": "2026-10-24T08:39:20.045Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "design",
+ "text": "최종 문제에서 혼합 기체 용기에 든 기체의 종류만 바꾸어 같은 방법(앞 용기의 공통 기체 질량을 빼기)으로 다른 분자의 분자량을 구하게 하는 것은 구조 변경으로 보지 않는다. 표의 모든 칸이 수치로 주어져 있으면 원본에서 수치로 준 칸 하나 이상을 ?나 문자로 숨겨 학생이 구하게 한다.",
+ "subject": "화학",
+ "topic": "화학식량과 몰 – 아보가드로 법칙, 밀도와 질량비",
+ "history": [],
+ "source": {
+  "jobId": "759a53bfc30a19fe29bd772a",
+  "materialId": "a3b5ae5c7c1eb320c46eae28",
+  "label": "기체의 밀도와 질량 (원자 수비→분자 수비, 밀도×부피로 질량비, 원자량비)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "원본과다른항목이하나도없어숫자만바꾼문제numberso"
+  ]
+ },
+ "applied": 10,
+ "v2": true
+}

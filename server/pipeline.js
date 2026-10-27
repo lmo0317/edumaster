@@ -690,17 +690,34 @@ async function finalGate(ctx, item, material, prior, hints = []) {
   // What this original (and its topic) was faulted for before: the reviewer checks those first (server/faults.js).
   const known = (ctx.priorFaults || []).filter((e) => e.own || e.where === '같은 단원의 다른 원본').slice(0, 6);
   try {
-    const { data } = await ctx.llm.json({
+    const ask = (again = '') => ctx.llm.json({
       purpose: 'final-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.review || 'high', maxTokens: 24000, vision: true,
       system: finalReview.reviewSystem(subject, allRules, ctx.generationRules ?? ctx.job.rules ?? null),
-      text: finalReview.itemReviewText(material, item, prior, hints, known),
+      text: finalReview.itemReviewText(material, item, prior, hints, known) + again,
       images: originalImages(ctx.store, material),
     });
-    const review = finalReview.matchItem(data, item) || null;
-    // The verdict must be about this problem: the prompt shows the earlier problems of the set too, and a review that
-    // answers about one of them (its index or label) is asked again rather than taken (2026-10-26 audit).
     const mismatch = ['최종 검수가 이 문항(index·label)의 판정을 돌려주지 않았습니다. 다시 검수해야 합니다.'];
-    let faults = review ? finalReview.itemFaults({ ...data, items: [review] }, { advisory, answer: item.problem?.answer }) : mismatch;
+    const answer = item.problem?.answer;
+    // The verdict must be about this problem and in form. A review that answers about another problem of the set (its
+    // index or label — the prompt shows the earlier problems too) or without what a verdict needs (every criterion
+    // judged, its own answer, its faults in form) is asked once more, told so; and if the second is no better, the
+    // review is skipped and the problem waits for the teacher. Taken as a fault it sent the problem to a repair and a
+    // solve for nothing (2026-10-26 audit, 2026-10-27 review).
+    const judge = (d) => { const found = finalReview.matchItem(d, item) || null; return { found, faults: found ? finalReview.itemFaults({ ...d, items: [found] }, { advisory, answer }) : mismatch }; };
+    const incomplete = (list) => list.some((f) => /다시 검수해야 합니다/.test(f));
+    const AGAIN = `\n\n[이전 응답이 불완전했습니다] items에는 index ${item.index}, label "${item.label}"인 [검토할 변형 문제] 하나만 넣고, 그 문항의 checks에 기준 항목 전부의 판정, myAnswer에 직접 푼 정답 번호, verdict와 issues(결함 목록)를 갖춘다. 앞 문제의 판정을 옮기지 않는다.`;
+    let { data } = await ask();
+    let { found: review, faults } = judge(data);
+    if (incomplete(faults) && (!ctx.budget.affords || ctx.budget.affords(1 + (ctx.reserveCalls || 0)))) {
+      ctx.log(`${item.label}: 최종 검수 응답이 불완전해 다시 검수합니다 (${faults[0].slice(0, 80)})`);
+      ({ data } = await ask(AGAIN));
+      ({ found: review, faults } = judge(data));
+    }
+    if (incomplete(faults)) {
+      (item.reviewRounds = item.reviewRounds || []).push({ at: new Date().toISOString(), design: item.attempts.filter((a) => a.kind === 'generate').length, verdict: '', myAnswer: '', faults });
+      ctx.save();
+      return { faults: [], skipped: `최종 검수 응답이 두 번 모두 불완전했습니다 (${faults[0]})` };
+    }
     // What it found goes into the log: a 39-minute regeneration failed on 2026-10-23 with seven '1건 — 고침' lines and no way to tell what.
     ctx.log(`${item.label}: 최종 검수 ${faults.length ? `${faults.length}건 — 고침: ${faults.map((f) => f.replace(/\s+/g, ' ').slice(0, 90)).join(' / ').slice(0, 300)}` : '통과'}`);
     // What one review passes, a second reviewer looks at too, as the finished set is reviewed by Claude and Gemini: on
@@ -711,15 +728,17 @@ async function finalGate(ctx, item, material, prior, hints = []) {
     if (!faults.length && ctx.secondReviewer) {
       try {
         ctx.log(`${item.label}: 두 번째 검수자(${ctx.secondReviewer})가 같은 기준으로 검토 중`);
-        ({ data: second } = await ctx.llm.json({
+        const askSecond = (again = '') => ctx.llm.json({
           purpose: 'final-review-second', provider: ctx.secondReviewer, jobId: ctx.job.id, budget: new Budget({ maxCalls: 2, maxTokens: 3000000 }), signal: ctx.signal, maxTokens: 24000, vision: true,
           system: finalReview.reviewSystem(subject, allRules, ctx.generationRules ?? ctx.job.rules ?? null),
-          text: finalReview.itemReviewText(material, item, prior, hints, known),
+          text: finalReview.itemReviewText(material, item, prior, hints, known) + again,
           images: originalImages(ctx.store, material),
-        }));
-        const found = finalReview.matchItem(second, item);
-        faults = (found ? finalReview.itemFaults({ ...second, items: [found] }, { advisory, answer: item.problem?.answer }) : mismatch).map((f) => `[두 번째 검수] ${f}`);
-        ctx.log(`${item.label}: 두 번째 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`);
+        });
+        ({ data: second } = await askSecond());
+        let verdict = judge(second);
+        if (incomplete(verdict.faults)) { ctx.log(`${item.label}: 두 번째 검수 응답이 불완전해 다시 검수합니다`); ({ data: second } = await askSecond(AGAIN)); verdict = judge(second); }
+        if (incomplete(verdict.faults)) { ctx.log(`${item.label}: 두 번째 검수 응답이 두 번 모두 불완전해 첫 검수로 판정합니다`); second = null; }
+        else { faults = verdict.faults.map((f) => `[두 번째 검수] ${f}`); ctx.log(`${item.label}: 두 번째 검수 ${faults.length ? `${faults.length}건 — 고침` : '통과'}`); }
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
         ctx.log(`${item.label}: 두 번째 검수를 하지 못해 첫 검수로 판정합니다 (${e.message})`);
@@ -1265,6 +1284,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
   const numbersOnly = blind.variation === 'numbers-only';
   const failed = codeChecks.filter((x) => x.state === 'fail');
   for (const c of failed) {
+    if (c.severity === 'hint') continue; // a judgement call: weighed below with the solver's (judgement)
     if (solutionOnly(c) && c.severity !== 'hard') rewriteNotes.push(`${c.label}: ${c.evidence}`);
     else if (c.severity === 'hard') { hard.push(`${c.label}: ${c.evidence}`); invalid.push(`${c.label}: ${c.evidence}`); }
     else soft.push(`${c.label}: ${c.evidence}`);
@@ -1284,6 +1304,7 @@ async function verifyItem(ctx, item, material, rules, mode, prior = [], keep = n
     ...(!lean && integratedFinal && numbersOnly ? [[`통합 변형인데 원본에서 숫자만 바뀌었습니다. ${blind.variationNote}`.trim(), harness.shapeOptions(material.problem.text, material.problem.figure)].filter(Boolean).join('\n')] : []),
     ...(item.stage.kind === 'twin' ? repeatsPrior(item, prior) : []),
     ...ruleNotes,
+    ...failed.filter((c) => c.severity === 'hint').map((c) => `${c.label}: ${c.evidence}`),
   ];
   const gated = Boolean(ctx.finalGate);
   const designNotes = [
@@ -1409,9 +1430,10 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
   ctx.log(`${item.label}: 문제 설계 중${design > 1 ? ` (${design}번째 설계)` : ''}`);
   const shapeHint = item.stage.kind === 'twin' && mode === 'integrated' ? harness.shapeOptions(material.problem.text) : '';
   let lostAnswer = false;
+  let unusable = '';
   for (let tries = 0; ; tries++) {
     // A designer that returns no problem gets one more design told that giving up is not an answer.
-    const feedback = lostAnswer ? extraFeedback : tries ? [extraFeedback, '지난 설계는 문제 없이 "만들지 못함"으로 끝났습니다. 설계를 중단하지 말고 반드시 완성된 문제를 내야 합니다.'].filter(Boolean).join('\n') : extraFeedback;
+    const feedback = lostAnswer ? extraFeedback : tries ? [extraFeedback, unusable ? `지난 설계는 쓸 수 없었습니다 (${unusable}). 문제 본문, 정답 번호, 해설 STEP(번호는 하나씩 한 번만)을 모두 갖춘 설계를 낸다.` : '지난 설계는 문제 없이 "만들지 못함"으로 끝났습니다. 설계를 중단하지 말고 반드시 완성된 문제를 내야 합니다.'].filter(Boolean).join('\n') : extraFeedback;
     const designPrompt = prompts.generateParts({ material, stage: item.stage, total, mode, prior, rules, variantNo: item.variantNo, extraFeedback: feedback, previous, examples, usedRows: usedRowsFor(item, prior, material, examples), direction: ctx.direction, shapeHint, priorFaults: ctx.priorFaults || [] });
     let data, generateShape = [];
     try {
@@ -1434,8 +1456,11 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
       Object.assign(item, normalizeGenerated(data));
       break;
     } catch (e) {
-      if (e.status !== 422 || tries >= 2 || /정답 번호/.test(e.message)) throw e;
-      ctx.log(`${item.label}: 설계가 문제 없이 돌아와 다시 설계합니다`);
+      // A design without its answer number or with a STEP number twice failed the problem outright; it is designed
+      // again like one without a problem, at most twice (2026-10-27 review).
+      if (e.status !== 422 || tries >= 2) throw e;
+      ctx.log(`${item.label}: 설계를 쓸 수 없어 다시 설계합니다 (${e.message})`);
+      unusable = e.message;
     }
   }
   item.attempts.push({ kind: 'generate', design, at: new Date().toISOString() });
@@ -1468,33 +1493,35 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
     if (repairShape.length) ctx.log(`${item.label}: 응답 JSON 구조 보정 (${repairShape.join(', ')})`);
     // A repair returns only the appliedRules notes that changed; the others stay as they were.
     const rulesAfter = (back) => [...item.appliedRules.map((r) => back.find((b) => b.id === r.id) || r), ...back.filter((b) => !item.appliedRules.some((r) => r.id === b.id))];
-    const readRepair = (data) => {
-      try { return normalizeGenerated(data); } catch (e) {
-        if (e.status !== 422) throw e;
-        ctx.log(`${item.label}: 수정 응답을 쓸 수 없어 직전 버전을 유지합니다 (${e.message})`);
-        item.attempts.push({ kind: 'lost-repair', design, at: new Date().toISOString(), failures: [e.message] });
-        return null;
+    try {
+      if (lean) {
+        const kept = { problem: item.problem, solution: item.outline, usesSteps: item.usesSteps, designNote: item.designNote, appliedRules: item.appliedRules, verification: item.verificationSpec };
+        const changed = Object.fromEntries(Object.entries(fixed || {}).filter(([k, v]) => k in kept && v != null && v !== ''));
+        const next = normalizeGenerated({ ...kept, ...changed });
+        next.appliedRules = rulesAfter(changed.appliedRules ? next.appliedRules : []);
+        Object.assign(item, next);
+        item.outline = item.solution;
+        writeNotes = await writeOut();
+        rewrites = 0;
+      } else {
+        // Local models often return only the fixed problem; what they leave out stays from the previous version instead
+        // of being wiped — the solution and the check program too: a repair of the problem alone emptied the solution,
+        // and the next solve and review went without one (2026-10-27 review).
+        const left = ['problem', 'solution', 'verification'].filter((k) => fixed?.[k] == null || fixed[k] === '');
+        if (left.length) ctx.log(`${item.label}: 수정 응답에 ${left.join(', ')}가 없어 직전 것을 유지합니다`);
+        const next = normalizeGenerated({ ...fixed, problem: left.includes('problem') ? item.problem : fixed.problem, solution: left.includes('solution') ? item.solution : fixed.solution, verification: left.includes('verification') ? item.verificationSpec : fixed.verification });
+        for (const key of ['designNote', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
+        next.appliedRules = rulesAfter(next.appliedRules);
+        Object.assign(item, next);
+        rewrites = 0;
       }
-    };
-    if (lean) {
-      const kept = { problem: item.problem, solution: item.outline, usesSteps: item.usesSteps, designNote: item.designNote, appliedRules: item.appliedRules, verification: item.verificationSpec };
-      const changed = Object.fromEntries(Object.entries(fixed || {}).filter(([k, v]) => k in kept && v != null && v !== ''));
-      const next = readRepair({ ...kept, ...changed });
-      if (!next) return;
-      next.appliedRules = rulesAfter(changed.appliedRules ? next.appliedRules : []);
-      Object.assign(item, next);
-      item.outline = item.solution;
-      writeNotes = await writeOut();
-      rewrites = 0;
-    } else {
-      // Local models often return only the fixed problem; what they leave out (the design note, the STEPs used) stays
-      // from the previous version instead of being wiped.
-      const next = readRepair(fixed);
-      if (!next) return;
-      for (const key of ['designNote', 'usesSteps']) if (!next[key]?.length && item[key]?.length) next[key] = item[key];
-      next.appliedRules = rulesAfter(next.appliedRules);
-      Object.assign(item, next);
-      rewrites = 0;
+    } catch (e) {
+      // A repair the reader cannot use (no answer number, a STEP number twice, no problem text) loses this repair, not
+      // the problem: it failed the problem whole, past the best design kept so far (2026-10-27 review).
+      if (e.status !== 422) throw e;
+      ctx.log(`${item.label}: 수정 응답을 쓸 수 없어 직전 버전을 유지합니다 (${e.message})`);
+      item.attempts.push({ kind: 'lost-repair', design, at: new Date().toISOString(), failures: [e.message] });
+      return;
     }
     await fillRuleNotes(ctx, item, rules);
   };
@@ -1513,6 +1540,9 @@ async function designOnce(ctx, { material, item, prior, rules, mode, extraFeedba
       item.attempts.push(faulted('precheck', design, faults, item));
       ctx.log(`${item.label}: 코드 검사에서 ${faults.length}건 — 독립 풀이 전에 설계자가 고침`);
       await repairWith(faults, null);
+      // Laid out before the next check reads it: unrendered, the designer's own [틀 n-k] lines were a hard fault of the
+      // second check and went back to it as one (2026-10-27 review).
+      await polish();
     }
   };
   // The solution's layout is the system's: the writer gives each sentence as a teacher frame and its values, the server

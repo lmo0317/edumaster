@@ -1,0 +1,34 @@
+{
+ "id": "dd1cb329ee85113ae0915a1a",
+ "type": "analyze",
+ "createdAt": "2026-10-26T11:28:24.389Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 6,
+  "input": 53156,
+  "output": 4906,
+  "reasoning": 0,
+  "total": 58062,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "e03fd37ed2c17e76597daf99",
+ "title": "골격근 수축 (구간 길이 비로 미지수 설정, A대·X 길이 연립)",
+ "options": {
+  "provider": "claude-cli"
+ },
+ "status": "done",
+ "updatedAt": "2026-10-26T11:29:31.211Z",
+ "startedAt": "2026-10-26T11:28:24.389Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "finishedAt": "2026-10-26T11:29:31.211Z",
+ "logLines": [
+  "원본 이미지 판독과 풀이 STEP 정리 중",
+  "옮겨 적은 내용을 원본 이미지와 대조하는 중",
+  "분석 완료"
+ ]
+}

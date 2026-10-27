@@ -1,0 +1,25 @@
+{
+ "id": "0f49649c2cdd17b1",
+ "createdAt": "2026-10-21T21:15:05.852Z",
+ "updatedAt": "2026-10-21T21:15:05.852Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "수치를 정한 뒤 표의 전체 원자 수(상댓값)가 (부피)×(분자당 원자 수) 비와 맞는지 확인한다. 세 분자량 식을 연립해 원자량이 하나로 정해지고 모든 분자량과 맞는지도 계산해 확인한다.",
+ "subject": "화학",
+ "topic": "",
+ "source": {
+  "jobId": "5a544862b6c71974122d4f42",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 16,
+ "v2": true,
+ "history": [],
+ "category": "numbers"
+}

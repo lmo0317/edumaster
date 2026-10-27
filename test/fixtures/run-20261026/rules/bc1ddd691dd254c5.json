@@ -1,0 +1,25 @@
+{
+ "id": "bc1ddd691dd254c5",
+ "createdAt": "2026-10-03T07:45:07.373Z",
+ "updatedAt": "2026-10-03T07:45:07.373Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "연습 문제에서도 원본 해설과 STEP 제목이 가리키는 용기·실험의 개수와 이름표(예: (가)~(다))를 그대로 두고, 각 용기가 원본에서 맡은 역할(한 기체만 든 용기, 혼합 기체 용기 등)도 유지한다. 용기를 줄여 제목과 본문이 어긋나거나 선생님 해설의 단계가 통째로 빠지게 설계하지 않는다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "4e86f7fc2369539f5d782e8a",
+  "materialId": "0bad6931faac2d7f0a54fca2",
+  "label": "실린더 (가)~(다) 속 기체의 분자 수비와 원자량비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 45,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

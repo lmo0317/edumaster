@@ -1,0 +1,18 @@
+{
+ "id": "3f27f14ee7a9179b",
+ "createdAt": "2026-10-02T01:59:22.700Z",
+ "updatedAt": "2026-10-02T06:30:18.469Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "연습 문제는 목표 STEP의 핵심 기법을 써야만 답이 나오게 수치를 잡는다. 크기 비교나 단순 비례만 보고 바로 결론이 나는 지름길이 없는지 직접 풀어 확인한다. 질문은 목표 STEP까지의 결과만으로 답이 나오는 값을 묻고, 뒤 STEP에서 구하는 값(예: 몰질량 관계, 계수)을 단서로 주어야 풀리는 질문은 만들지 않는다.",
+ "subject": "",
+ "topic": "",
+ "applied": 54,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

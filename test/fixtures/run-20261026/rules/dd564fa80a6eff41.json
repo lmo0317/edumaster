@@ -1,0 +1,25 @@
+{
+ "id": "dd564fa80a6eff41",
+ "createdAt": "2026-10-02T15:04:25.622Z",
+ "updatedAt": "2026-10-21T22:26:19.385Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "해설 STEP 제목이 특정 물질(예: 홑원소 분자의 분자량)을 가리키면 변형 문제의 보기 하나는 반드시 그 물질의 질량이나 양(mol)을 묻게 하여 제목의 계산값이 판정에 쓰이게 하고, 그 자리를 표에 추가한 다른 기체의 값을 묻는 보기로 바꾸지 않는다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "33a173eabc8a5c8644585e3b",
+  "materialId": "d43e96e5887d8f3235b3242c",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 52,
+ "v2": true,
+ "history": [],
+ "category": "choices"
+}

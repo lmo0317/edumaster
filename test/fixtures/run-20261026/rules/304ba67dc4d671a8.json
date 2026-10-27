@@ -1,0 +1,35 @@
+{
+ "id": "304ba67dc4d671a8",
+ "createdAt": "2026-10-02T15:04:25.622Z",
+ "updatedAt": "2026-10-24T08:21:36.713Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "선생님 해설의 식 표기(분수 안 단위의 위치, 괄호 쓰는 방식 등)가 오기처럼 보여도 고쳐 쓰지 않고 같은 틀에 수치만 바꿔 쓴다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "33a173eabc8a5c8644585e3b",
+  "materialId": "d43e96e5887d8f3235b3242c",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 29,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T08:21:36.713Z",
+   "before": "선생님 해설의 식 표기(분수 안 단위의 위치, 괄호 쓰는 방식 등)가 오기처럼 보여도 고쳐 쓰지 않고 같은 틀에 수치만 바꿔 쓴다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "solution",
+ "dormantAt": "2026-10-24T08:21:36.713Z"
+}

@@ -60,33 +60,91 @@ function reopen(json) {
   return json;
 }
 
-function extractJson(text) {
-  let body = String(text || '').trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/i.exec(body);
+// Full-width punctuation between members ('"…"，\n "appliedRules"', a generate answer of 2026-10-21 that jsonrepair
+// could not read) is the ASCII one; inside a string it is text and stays.
+function asciiPunctuation(json) {
+  let out = ''; let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (inString) { out += c; if (c === '\\') out += json[++i] ?? ''; else if (c === '"') inString = false; continue; }
+    if (c === '"') inString = true;
+    out += c === '，' ? ',' : c === '：' ? ':' : c;
+  }
+  return out;
+}
+function extractJson(text) { return extractJsonInfo(text).data; }
+/** The JSON object in a model's answer and whether it had to be repaired to read (a repaired answer may have lost its
+ *  tail, so an empty list in it is not trusted — REQUIRED). */
+// Where the object that opens at `start` closes, read by brackets outside strings; -1 when it never does.
+function balancedEnd(body, start) {
+  let depth = 0; let inString = false;
+  for (let i = start; i < body.length; i++) {
+    const c = body[i];
+    if (inString) { if (c === '\\') i++; else if (c === '"') inString = false; continue; }
+    if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+function extractJsonInfo(text) {
+  // Thinking a template leaves in the answer (<think>…</think>, gpt-oss and some local templates) holds drafts of
+  // the JSON; the answer is what follows it.
+  let body = String(text || '').trim().replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // What is inside the first fence, even when the model wrote a note after it: a "참고: …" after the closing ``` put
+  // the note's braces into the JSON (write-solution, 2026-10-03).
+  const fence = /^```(?:json)?\s*([\s\S]*?)```$/i.exec(body) || /^```(?:json)?\s*([\s\S]*?)```/i.exec(body);
   if (fence) body = fence[1].trim();
-  const start = body.indexOf('{'); const end = body.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new LlmFormatError('모델 응답에서 JSON을 찾지 못했습니다.');
-  const json = reopen(body.slice(start, end + 1));
-  try { return restoreLatex(JSON.parse(json)); } catch { /* try the LaTeX-escape repair below */ }
+  const start = body.indexOf('{'); const last = body.lastIndexOf('}');
+  if (start < 0 || last <= start) throw new LlmFormatError('모델 응답에서 JSON을 찾지 못했습니다.');
+  // The object is read to the last brace of the answer, as before; when that fails, to the brace that closes it — an
+  // explanation the model wrote after the object with braces of its own ("{정답}은 …", a \frac{}{}) was the last
+  // brace and nothing could be read (2026-10-27 review).
+  const balanced = balancedEnd(body, start);
+  const ends = [...new Set([last, ...(balanced > start ? [balanced] : [])])];
+  let error = null;
+  for (const end of ends) {
+    try { return readObject(reopen(body.slice(start, end + 1))); } catch (e) { error = error || e; }
+  }
+  throw error;
+}
+function readObject(json) {
+  const read = (s, repaired) => {
+    const data = restoreLatex(JSON.parse(s));
+    // Two objects in one answer come back as an array of both; no purpose asks for a list.
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new LlmFormatError('모델 응답이 JSON 객체 하나가 아닙니다.');
+    return { data, repaired };
+  };
+  try { return read(json, false); } catch (e) { if (e instanceof LlmFormatError) throw e; /* try the LaTeX-escape repair below */ }
   // Models often forget to double LaTeX backslashes: "\ce{A}" is an invalid JSON escape. Double every
-  // backslash that does not start a valid JSON escape, then parse again.
-  const latexFixed = json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-  try { return restoreLatex(JSON.parse(latexFixed)); } catch { /* try a general repair below */ }
+  // backslash that does not start a valid JSON escape, then parse again. \u that no four hex digits follow is a
+  // command too (\uparrow, \underline).
+  const latexFixed = json.replace(/\\(?!["\\/bfnrtu])/g, '\\\\').replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+  try { return read(latexFixed, false); } catch (e) { if (e instanceof LlmFormatError) throw e; /* try a general repair below */ }
   // A string that breaks off and starts over under the same key ('"how":"… 분수("how":"…'): keep the second
   // start. Haiku 5.5 did this in a 9.7k-character final design (2026-10-11), the set's last problem lost.
   const restarted = latexFixed.replace(/"(\w+)":"(?:[^"\\]|\\.)*"\1":"/g, '"$1":"');
-  if (restarted !== latexFixed) try { return restoreLatex(JSON.parse(restarted)); } catch { /* try a general repair below */ }
+  if (restarted !== latexFixed) try { return read(restarted, true); } catch (e) { if (e instanceof LlmFormatError) throw e; /* try a general repair below */ }
+  const ascii = asciiPunctuation(restarted);
+  if (ascii !== restarted) try { return read(ascii, false); } catch (e) { if (e instanceof LlmFormatError) throw e; /* try a general repair below */ }
   // Unescaped quotes inside strings, trailing commas, missing brackets: repair locally before asking again.
-  try { return restoreLatex(JSON.parse(jsonrepair(restarted))); }
-  catch (e) { throw new LlmFormatError('모델 응답 JSON을 읽지 못했습니다: ' + e.message); }
+  try { return read(jsonrepair(ascii), true); }
+  catch (e) { throw e instanceof LlmFormatError ? e : new LlmFormatError('모델 응답 JSON을 읽지 못했습니다: ' + e.message); }
 }
 
 // "\frac", "\times", "\rightarrow", "\beta" written with a single backslash are *valid* JSON escapes
 // (form feed, tab, carriage return, backspace) and silently corrupt the text. None of those control
 // characters belong in our content, so turn them back into a LaTeX backslash.
+// A JSON escape the model meant as a LaTeX command: \f (\frac), \b (\beta), \r (\rightarrow), \t (\times, \text) and,
+// inside $…$ only, \n (\neq, \ne, \nu, \nabla, \not: "$x \neq y$" came back as a line break and "eq y$", a fault no
+// $ check sees, 2026-10-27 review). Outside math a line break before a letter is a line break; a tab before a letter is
+// read as \t as before (a model's tab between table cells is rarer than its single-backslash \times).
+const LATEX_N = /\n(?=(?:eq|e|u|abla|ot|otin|eg|ewline|onumber)\b)/g;
 function restoreLatex(value) {
   if (typeof value === 'string') {
-    return value.replace(/\f/g, '\\f').replace(/\x08/g, '\\b').replace(/\r(?=[a-zA-Z])/g, '\\r').replace(/\t(?=[a-zA-Z])/g, '\\t');
+    const inMath = (s, at) => (s.slice(0, at).match(/\$/g) || []).length % 2 === 1;
+    return value.replace(/\f/g, '\\f').replace(/\x08/g, '\\b').replace(/\r(?=[a-zA-Z])/g, '\\r').replace(/\t(?=[a-zA-Z])/g, '\\t')
+      .replace(LATEX_N, (m, at, s) => (inMath(s, at) ? '\\n' : m));
   }
   if (Array.isArray(value)) return value.map(restoreLatex);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, restoreLatex(v)]));
@@ -296,8 +354,10 @@ function repeating(text, { window = 4000, piece = 60, times = 6 } = {}) {
   if (text.length < piece * times) return false;
   const tail = text.slice(-window);
   const last = tail.slice(-piece);
+  // Counted without overlap: a rule of 70 dashes or a wide table's divider matched itself at every offset and was
+  // "repeating" (2026-10-27 review); a loop proper fills the window many times over.
   let count = 0;
-  for (let i = tail.indexOf(last); i !== -1; i = tail.indexOf(last, i + 1)) if (++count >= times) return true;
+  for (let i = tail.indexOf(last); i !== -1; i = tail.indexOf(last, i + last.length)) if (++count >= times) return true;
   return false;
 }
 
@@ -487,9 +547,12 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         signal?.addEventListener('abort', abort, { once: true });
         child.stdout.on('data', (d) => { out += d; });
         child.stderr.on('data', (d) => { err += d; });
-        child.stdin.on('error', () => { /* the child is gone; 'error' or 'close' on the child reports it */ });
         child.on('error', (e) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(Object.assign(new Error(`Claude CLI를 실행하지 못했습니다: ${e.message}`), { status: 503 })); });
         child.on('close', (c) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolve({ code: c, stdout: out, stderr: err }); });
+        // A CLI that exits before reading its prompt (not logged in, an option it no longer knows) closes the pipe
+        // under the write; unhandled, that EPIPE ended the whole server with every running set (2026-10-27 review).
+        // The exit code and stderr report the failure.
+        child.stdin.on('error', () => {});
         child.stdin.end(prompt);
       });
       if (signal?.aborted) throw new Error('작업이 취소되었습니다.');
@@ -668,10 +731,13 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         if (finish === 'length') cut = 1;
         if (finish === 'length') throw Object.assign(new LlmFormatError('모델 출력이 길이 제한에서 잘렸습니다.'), { cut: true });
         if (finish === 'repeat') throw new LlmFormatError('모델이 같은 내용을 반복해서 중간에 멈췄습니다.');
-        const { data, moved } = fixShape(extractJson(raw), SHAPES[purpose]);
-        // A repaired-but-truncated answer (jsonrepair dropped everything after a broken bracket) must not pass.
-        const missing = (REQUIRED[purpose] || []).filter((k) => data[k] === undefined || data[k] === null || data[k] === '' || (Array.isArray(data[k]) && !data[k].length));
-        if (missing.length) throw new LlmFormatError(`응답에 필요한 항목이 없습니다: ${missing.join(', ')}`);
+        const { data: parsed, repaired } = extractJsonInfo(raw);
+        const { data, moved } = fixShape(parsed, SHAPES[purpose]);
+        // A repaired-but-truncated answer (jsonrepair dropped everything after a broken bracket) must not pass; an answer
+        // read as written with an empty list is the model's answer ({"items":[]} — nothing to learn — was refused and
+        // asked again twice per set, 2026-10-20 to 26).
+        const missing = (REQUIRED[purpose] || []).filter((k) => data[k] === undefined || data[k] === null || data[k] === '' || (repaired && Array.isArray(data[k]) && !data[k].length));
+        if (missing.length) throw Object.assign(new LlmFormatError(`응답에 필요한 항목이 없습니다: ${missing.join(', ')}`), { missing });
         return { data, usage, shapeFixes: moved };
       } catch (e) {
         if (!(e instanceof LlmFormatError)) throw e;
@@ -684,8 +750,11 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         // Same request again would give the same broken answer (temperature 0). For unreadable JSON, show the
         // model its answer and the error and ask for the corrected JSON; for a cut-off answer, allow more room.
         if (finish !== 'length' && finish !== 'repeat' && raw) {
+          // An item left out is asked for by name: told its JSON was wrong, a solver with no answer made one up.
+          const ask = e.missing ? `위 응답에 ${e.missing.join(', ')} 항목이 없거나 비어 있다. 실제로 넣을 것이 없으면 그 항목을 0이나 빈 배열로 두고, 빠뜨린 것이면 채워서, 같은 내용을 올바른 JSON 객체 하나로만 다시 출력하라.`
+            : `위 응답은 올바른 JSON이 아니다 (${e.message}). 같은 내용을 올바른 JSON 객체 하나로만 다시 출력하라.`;
           messages = [...messages.slice(0, 2), { role: 'assistant', content: raw.slice(0, 60000) },
-            { role: 'user', content: `위 응답은 올바른 JSON이 아니다 (${e.message}). 같은 내용을 올바른 JSON 객체 하나로만 다시 출력하라. 문자열 안의 큰따옴표는 \\" 로, LaTeX 역슬래시는 \\\\ 로 쓴다.` }];
+            { role: 'user', content: `${ask} 문자열 안의 큰따옴표는 \\" 로, LaTeX 역슬래시는 \\\\ 로 쓴다.` }];
         }
       }
     }
@@ -731,4 +800,4 @@ function pcModelKey(id) {
 }
 
 module.exports = {
-  claudeDesignModel, answerText, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, fixShape, SHAPES };
+  claudeDesignModel, answerText, PER_CALL_FREE, HARNESS_LIMITS, harnessSettings, repeating, pcModelLabel, pcModelKey, PROVIDERS, claudeCliReady, claudeLimits, claudeCliChoice, llmSettings, saveLlmSettings, CLAUDE_MODELS, CLAUDE_EFFORTS, withTeacherPrompt, createLlm, Budget, BudgetExceeded, LlmFormatError, extractJson, extractJsonInfo, fixShape, SHAPES, REQUIRED };

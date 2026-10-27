@@ -1,0 +1,18 @@
+{
+ "id": "3fd261228e75cd6f",
+ "createdAt": "2026-09-28T22:57:11.015Z",
+ "updatedAt": "2026-09-28T22:57:11.015Z",
+ "status": "approved",
+ "scope": "global",
+ "kind": "do",
+ "target": "solution",
+ "text": "해설은 교사 해설의 풀이 흐름과 표현을 그대로 따른다. 원본에서 읽히지 않거나 애매한 부분을 AI의 다른(더 조잡한) 논리로 대신 풀지 않는다.",
+ "subject": "",
+ "topic": "",
+ "applied": 68,
+ "stage": "generation",
+ "layer": "guide",
+ "v2": true,
+ "history": [],
+ "category": "solution"
+}

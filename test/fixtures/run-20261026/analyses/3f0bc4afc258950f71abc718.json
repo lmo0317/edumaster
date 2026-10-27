@@ -1,0 +1,34 @@
+{
+ "id": "3f0bc4afc258950f71abc718",
+ "type": "analyze",
+ "createdAt": "2026-10-26T11:28:24.417Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 6,
+  "input": 53912,
+  "output": 6252,
+  "reasoning": 0,
+  "total": 60164,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "80ddacf9556d4a04aa6c21ab",
+ "title": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+ "options": {
+  "provider": "claude-cli"
+ },
+ "status": "done",
+ "updatedAt": "2026-10-26T11:29:40.047Z",
+ "startedAt": "2026-10-26T11:28:24.417Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "finishedAt": "2026-10-26T11:29:40.047Z",
+ "logLines": [
+  "원본 이미지 판독과 풀이 STEP 정리 중",
+  "옮겨 적은 내용을 원본 이미지와 대조하는 중",
+  "분석 완료"
+ ]
+}
