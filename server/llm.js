@@ -168,6 +168,7 @@ const PROVIDERS = {
 /** The Claude Code CLI is installed and someone has logged in to it on this machine (the file holds the login). */
 function claudeCliReady(config) {
   if (config.claudeCli?.off) return false;
+  if (config.llmMode === 'mock') return true;
   return Boolean(claudeCliToken(config)) || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'));
 }
 // LLM tab settings (data/llm-settings.json): the 기본 모델, and which Claude model and effort the subscription runs.
@@ -269,6 +270,7 @@ function claudeCliToken(config) {
 // longer than 5 minutes, and a local Gemma or a long DeepSeek reasoning call can take longer than that.
 function postJson(url, headers, payload, timeoutMs, signal, timeoutMessage) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('작업이 취소되었습니다.'));
     const target = new URL(url);
     const body = Buffer.from(JSON.stringify(payload));
     const client = target.protocol === 'https:' ? https : http;
@@ -303,6 +305,7 @@ function repeating(text, { window = 4000, piece = 60, times = 6 } = {}) {
 // repeating. Returns the same envelope a non-streamed call gives; a stopped loop has finish_reason 'repeat'.
 function postStream(url, payload, timeoutMs, signal, timeoutMessage) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('작업이 취소되었습니다.'));
     const target = new URL(url);
     const body = Buffer.from(JSON.stringify({ ...payload, stream: true, stream_options: { include_usage: true } }));
     const client = target.protocol === 'https:' ? https : http;
@@ -398,7 +401,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         : `DeepSeek 오류 (${response.status})`;
       throw Object.assign(new Error(hint), { status: 502, detail: raw.slice(0, 300) });
     }
-    return JSON.parse(raw);
+    // A 2xx that is not JSON (a proxy's error page, a cut connection) is the provider's fault, named as such.
+    try { return JSON.parse(raw); } catch { throw Object.assign(new Error('DeepSeek 응답을 읽지 못했습니다 (JSON이 아님).'), { status: 502, detail: raw.slice(0, 300) }); }
   }
 
   async function sendGemma({ messages, maxTokens, effort, signal, copying = false, dry = true }) {
@@ -477,12 +481,14 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
         const env = { ...process.env, CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS || '64000', ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}) };
         const child = spawn(config.claudeCli.bin, [...(config.claudeCli.binArgs || []), ...args], { cwd: dir, env });
         let out = ''; let err = '';
-        const timer = setTimeout(() => { child.kill('SIGTERM'); reject(Object.assign(new Error('Claude(구독) 응답 시간이 초과되었습니다.'), { status: 504 })); }, config.claudeCli.timeoutMs);
-        const abort = () => child.kill('SIGTERM');
+        const stop = () => { child.kill('SIGTERM'); setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 5000).unref(); };
+        const timer = setTimeout(() => { stop(); reject(Object.assign(new Error('Claude(구독) 응답 시간이 초과되었습니다.'), { status: 504 })); }, config.claudeCli.timeoutMs);
+        const abort = () => stop();
         signal?.addEventListener('abort', abort, { once: true });
         child.stdout.on('data', (d) => { out += d; });
         child.stderr.on('data', (d) => { err += d; });
-        child.on('error', (e) => { clearTimeout(timer); reject(Object.assign(new Error(`Claude CLI를 실행하지 못했습니다: ${e.message}`), { status: 503 })); });
+        child.stdin.on('error', () => { /* the child is gone; 'error' or 'close' on the child reports it */ });
+        child.on('error', (e) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(Object.assign(new Error(`Claude CLI를 실행하지 못했습니다: ${e.message}`), { status: 503 })); });
         child.on('close', (c) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolve({ code: c, stdout: out, stderr: err }); });
         child.stdin.end(prompt);
       });
@@ -538,7 +544,8 @@ function createLlm({ config, store, apiKey, claudeKey = '', mock }) {
     for (let attempt = 0; ; attempt++) {
       const { response, raw } = await postJson(config.claude.baseUrl + '/v1/messages', headers, payload, config.claude.timeoutMs, signal, 'Claude 응답 시간이 초과되었습니다.');
       if (response.ok) {
-        const data = JSON.parse(raw);
+        let data;
+        try { data = JSON.parse(raw); } catch { throw Object.assign(new Error('Claude 응답을 읽지 못했습니다 (JSON이 아님).'), { status: 502, detail: raw.slice(0, 300) }); }
         const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
         const u = data.usage || {};
         const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
