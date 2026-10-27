@@ -112,7 +112,10 @@ function archive(dataDir, job, review = null) {
   if (!records.length) return 0;
   const dir = path.join(dataDir, 'faults');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${job.id}.json`), JSON.stringify({ jobId: job.id, materialId: job.materialId, title: job.material?.title || job.title || '', archivedAt: new Date().toISOString(), records }, null, 1));
+  const file = path.join(dir, `${job.id}.json`);
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify({ jobId: job.id, materialId: job.materialId, title: job.material?.title || job.title || '', archivedAt: new Date().toISOString(), records }, null, 1));
+  fs.renameSync(temp, file);
   return records.length;
 }
 

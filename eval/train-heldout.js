@@ -6,6 +6,7 @@ const path = require('node:path');
 const { createApp } = require('../server');
 
 const [stamp, cases, target = '90', maxRounds = '6'] = process.argv.slice(2);
+if (!stamp || !cases) { console.error('사용법: node eval/train-heldout.js <stamp> <case,...> [target] [maxRounds]'); process.exit(1); }
 const dataDir = path.join(__dirname, '.work', stamp);
 
 (async () => {

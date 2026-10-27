@@ -7,8 +7,10 @@
   let job;
   try {
     const res = await fetch('api/jobs/' + encodeURIComponent(id || ''), { credentials: 'same-origin' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(res.status === 401 ? '로그인이 필요합니다. 메인 화면에서 접속한 뒤 다시 열어 주세요.' : data.error);
+    let data = null;
+    try { data = await res.json(); } catch { /* not JSON: a proxy's error page */ }
+    if (!res.ok) throw new Error(res.status === 401 ? '로그인이 필요합니다. 메인 화면에서 접속한 뒤 다시 열어 주세요.' : data?.error || `요청 실패 (${res.status})`);
+    if (!data) throw new Error('서버의 응답을 읽지 못했습니다. 잠시 후 다시 열어 주세요.');
     job = data;
   } catch (e) {
     doc.innerHTML = `<p class="note bad">${esc(e.message)}</p>`;

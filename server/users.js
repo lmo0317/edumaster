@@ -41,7 +41,13 @@ const view = (u) => ({ id: u.id, username: u.username, role: u.role, disabled: B
 function createUsers(dataDir) {
   const file = path.join(dataDir, 'users.json');
   const read = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')) || []; } catch { return []; } };
-  const write = (list) => { fs.writeFileSync(file, JSON.stringify(list, null, 1), { mode: 0o600 }); fs.chmodSync(file, 0o600); };
+  // Temp file + rename: a reader never sees a half-written list (which read() would take for no accounts at all).
+  const write = (list) => {
+    const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify(list, null, 1), { mode: 0o600 });
+    fs.chmodSync(temp, 0o600);
+    fs.renameSync(temp, file);
+  };
   const admins = (list) => list.filter((u) => u.role === 'admin' && !u.disabled);
   return {
     count: () => read().length,
@@ -61,18 +67,22 @@ function createUsers(dataDir) {
     create({ username, password, role = 'teacher' }) {
       const n = checkName(username);
       if (!ROLES.has(role)) throw fail(400, '역할은 관리자 또는 선생님이어야 합니다.');
+      if (read().some((x) => x.username === n)) throw fail(409, '이미 있는 아이디입니다.');
+      const now = new Date().toISOString();
+      const hash = hashPassword(checkPassword(password)); // the slow part, before the list is read for writing
       const list = read();
       if (list.some((x) => x.username === n)) throw fail(409, '이미 있는 아이디입니다.');
-      const now = new Date().toISOString();
-      const u = { id: crypto.randomBytes(8).toString('hex'), username: n, role, hash: hashPassword(checkPassword(password)), createdAt: now, updatedAt: now };
+      const u = { id: crypto.randomBytes(8).toString('hex'), username: n, role, hash, createdAt: now, updatedAt: now };
       write([...list, u]);
       return view(u);
     },
     setPassword(id, password) {
+      if (!read().some((x) => x.id === id)) throw fail(404, '계정을 찾지 못했습니다.');
+      const hash = hashPassword(checkPassword(password)); // the slow part, before the list is read for writing
       const list = read();
       const u = list.find((x) => x.id === id);
       if (!u) throw fail(404, '계정을 찾지 못했습니다.');
-      u.hash = hashPassword(checkPassword(password));
+      u.hash = hash;
       u.updatedAt = new Date().toISOString();
       write(list);
       return view(u);

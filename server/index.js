@@ -637,14 +637,21 @@ function createApp(options = {}) {
   route('GET', /^\/api\/rules$/, () => store.rules.all());
   route('POST', /^\/api\/rules$/, async (req) => {
     const body = await readBody(req, 16 * 1024);
-    let source = body.source;
-    if (source?.jobId && isId(source.jobId)) {
+    let source = body.source && typeof body.source === 'object' ? { ...body.source } : undefined;
+    const FROM_PAGE = ['input', 'check', 'fix'];
+    if (source) {
+      source.from = FROM_PAGE.includes(source.from) ? source.from : 'input';
+      delete source.faultKeys;
+      if (source.jobId !== undefined && !isId(source.jobId)) throw fail(400, '작업 식별자가 올바르지 않습니다.');
+      if (source.materialId !== undefined && !isId(source.materialId)) throw fail(400, '자료 식별자가 올바르지 않습니다.');
+    }
+    if (source?.jobId) {
       const job = store.jobs.get(source.jobId);
       const item = job?.items?.[source.itemIndex];
       if (job) source = { ...source, materialId: job.materialId, label: `${job.title} · ${item?.label || ''}`, excerpt: (item?.problem?.text || job.material?.problem?.text || '').slice(0, 600) };
       // A problem's own item records its subject; an every-problem item is tagged only when the teacher tags it.
       if (job && !body.subject && body.scope !== 'global') { body.subject = job.material?.subject; body.topic = job.material?.topic; }
-    } else if (source?.materialId && isId(source.materialId)) {
+    } else if (source?.materialId) {
       // Feedback written on the problem page itself (on the original, its reading or the variants in general).
       const material = getMaterial(source.materialId);
       source = { materialId: material.id, label: material.title, from: source.from };

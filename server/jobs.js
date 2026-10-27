@@ -222,7 +222,13 @@ function createJobs({ store, llm, config }) {
         if (unmade) throw new Error(`${r + 1}번째 세트를 만들지 못해 멈췄습니다: ${unmade}`);
         ctx.log(`${r + 1}번째 세트를 Claude·Gemini가 검수하는 중`);
         const save = (rec) => setCheck.writeCheck(config.dataDir, set.id, { ...rec, jobId: t.id, running: true });
-        const record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
+        let record;
+        try {
+          record = await setCheck.reviewSet({ store, set: store.jobs.get(set.id), call, images, save });
+        } finally {
+          const last = setCheck.readCheck(config.dataDir, set.id);
+          if (last?.jobId === t.id && last.running) setCheck.writeCheck(config.dataDir, set.id, { ...last, running: false, ...(record ? {} : { interrupted: true }) });
+        }
         setCheck.writeCheck(config.dataDir, set.id, { ...record, jobId: t.id, running: false });
         const lost = Object.entries(record.reviews || {}).find(([, v]) => v.error);
         if (lost) throw new Error(`${r + 1}번째 세트의 ${setCheck.NAME[lost[0]] || lost[0]} 검수가 실패해 멈췄습니다: ${lost[1].error}`);

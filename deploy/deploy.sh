@@ -12,7 +12,16 @@ ssh "$HOST" bash -s <<REMOTE
 set -euo pipefail
 mkdir -p $APP/data
 cd $APP
-tar xzf /tmp/edumaster.tgz --keep-newer-files --warning=no-ignore-newer && rm /tmp/edumaster.tgz
+# Stopped while the files and node_modules are replaced: a job's verification worker loads mathjs from node_modules
+# at each check, and KaTeX is served from there; unfinished jobs are marked interrupted on the next start and can be
+# resumed. Whatever happens below, the service is started again.
+systemctl --user stop edumaster 2>/dev/null || true
+trap 'systemctl --user start edumaster 2>/dev/null || true' EXIT
+# Only eval/reports keeps a copy the server made newer (a report made or rechecked there); everything else is replaced,
+# so a lock file or page touched on the server cannot pin an old version.
+tar xzf /tmp/edumaster.tgz --exclude=eval/reports
+tar xzf /tmp/edumaster.tgz --keep-newer-files eval/reports 2>/dev/null || true
+rm /tmp/edumaster.tgz
 npm ci --omit=dev --no-audit --no-fund --loglevel=error
 mkdir -p ~/.config/systemd/user
 cp deploy/edumaster.service ~/.config/systemd/user/edumaster.service

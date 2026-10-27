@@ -27,6 +27,7 @@
     try { data = await res.json(); } catch { /* non-json */ }
     if (res.status === 401 && !url.endsWith('/login')) { showLogin(); throw new Error('로그인이 필요합니다.'); }
     if (!res.ok) throw new Error(data?.error || `요청 실패 (${res.status})`);
+    if (data === null && res.status !== 204) throw new NetworkError('서버의 응답을 읽지 못했습니다 (네트워크 로그인 페이지일 수 있음). 잠시 후 다시 시도해 주세요.');
     return data;
   }
 
@@ -195,14 +196,19 @@
     const el = document.createElement('div');
     el.className = 'zoom';
     el.innerHTML = `<img src="${esc(src)}" alt="확대 이미지">`;
-    el.addEventListener('click', () => el.remove());
-    document.addEventListener('keydown', function close(e) { if (e.key === 'Escape') { el.remove(); document.removeEventListener('keydown', close); } });
+    const close = () => { el.remove(); document.removeEventListener('keydown', onKey); };
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    el.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
     document.body.appendChild(el);
   }
   document.addEventListener('click', (e) => { const img = e.target.closest('img[data-zoom]'); if (img) zoom(img.src); });
 
   // ------------------------------------------------------------------ router
   function setNav(name) { $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === name)); }
+  // Writes the screen only while the route that asked for it is still the one shown (a slow answer must not replace
+  // the page the teacher moved on to).
+  const paint = (alive, html) => { if (alive()) view.innerHTML = html; return alive(); };
   async function route() {
     const token = ++routeToken;
     const hash = location.hash || '#/';
@@ -212,12 +218,12 @@
       // Each original problem is a workspace (reading, its own feedback, variant sets); the home page lists them.
       if ((m = /^#\/m\/([a-f0-9]+)\/history/.exec(hash))) { setNav('home'); await historyView(m[1], alive); }
       else if ((m = /^#\/m\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await materialView(m[1], alive); }
-      else if ((m = /^#\/j\/([a-f0-9]+)\/check/.exec(hash))) { setNav('home'); await checkView(m[1]); }
+      else if ((m = /^#\/j\/([a-f0-9]+)\/check/.exec(hash))) { setNav('home'); await checkView(m[1], false, alive); }
       else if ((m = /^#\/j\/([a-f0-9]+)/.exec(hash))) { setNav('home'); await jobView(m[1], alive); }
-      else if (hash.startsWith('#/new')) { setNav('home'); await homeView(); }
+      else if (hash.startsWith('#/new')) { setNav('home'); await homeView(alive); }
       else if (hash.startsWith('#/materials')) { location.replace('#/'); return; }
-      else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1]); }
-      else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(); }
+      else if ((m = /^#\/compare\/([a-z0-9-]+)/.exec(hash))) { setNav('compare'); await compareView(m[1], alive); }
+      else if (hash.startsWith('#/compare')) { setNav('compare'); await compareView(undefined, alive); }
       else if (hash.startsWith('#/progress')) { setNav('progress'); window.EMProgress.mount(view); }
       else if (hash.startsWith('#/guide')) { setNav('guide'); await window.EMGuide.mount(view, api); }
       else if ((m = /^#\/learn\/(persona|guides|common|teaching|ai|records)/.exec(hash))) { setNav('learn'); await learnView(m[1]); }
@@ -231,8 +237,8 @@
       else if (hash.startsWith('#/system')) { location.replace('#/llm'); return; }
       else if (hash.startsWith('#/llm/harness')) { setNav('llm'); await llmView('harness'); }
       else if (hash.startsWith('#/llm')) { setNav('llm'); await llmView('models'); }
-      else if (hash.startsWith('#/account')) { setNav(''); await accountView(); }
-      else { setNav('home'); await materialsView(); }
+      else if (hash.startsWith('#/account')) { setNav(''); await accountView(alive); }
+      else { setNav('home'); await materialsView(alive); }
     } catch (e) {
       if (alive() && e.message !== '로그인이 필요합니다.') {
         view.innerHTML = `<div class="panel"><div class="note bad">${esc(e.message)}</div><div class="row"><button class="primary" id="retry">다시 시도</button><a href="#/">처음으로</a></div></div>`;
@@ -257,9 +263,10 @@
     el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('over'); if (e.dataTransfer.files[0]) take(e.dataTransfer.files[0]); });
   }
 
-  async function homeView() {
+  async function homeView(alive = () => true) {
     const state = { problem: null, solution: null };
     try { await loadStatus(); } catch { /* picker falls back to DeepSeek only */ }
+    if (!alive()) return;
     view.innerHTML = `
       <div class="row"><h1 style="margin-right:auto">문제 추가</h1><a href="#/">← 문제 목록</a></div>
       <div class="panel">
@@ -290,15 +297,18 @@
     dropZone($('#drop-problem'), (d) => { state.problem = d; paint('problem'); });
     dropZone($('#drop-solution'), (d) => { state.solution = d; paint('solution'); });
     $('#same').addEventListener('change', (e) => { $('#drop-solution').classList.toggle('disabled', e.target.checked); paint('solution'); });
+    const dropEl = $('#drop-problem');
+    const pasting = new AbortController();
+    window.addEventListener('hashchange', () => pasting.abort(), { once: true });
     const onPaste = guard(async (e) => {
-      if (!$('#drop-problem')) return document.removeEventListener('paste', onPaste);
+      if (!dropEl.isConnected) return pasting.abort();
       const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith('image/'));
       if (!file) return;
       const data = await readImage(file);
       const key = !state.problem ? 'problem' : 'solution';
       state[key] = data; paint(key);
     });
-    document.addEventListener('paste', onPaste);
+    document.addEventListener('paste', onPaste, { signal: pasting.signal });
     $('#start').addEventListener('click', guard(async () => {
       $('#start').disabled = true;
       try {
@@ -347,8 +357,9 @@
     return { cat: 'done', tone: 'ok', label: '완료', next: '' };
   }
 
-  async function materialsView() {
+  async function materialsView(alive = () => true) {
     const [materials, jobs] = await Promise.all([api('GET', '/api/materials'), api('GET', '/api/jobs')]);
+    if (!alive()) return;
     // The card counts the sets the problem page lists (regular sets and the 학습 반복 rounds that reached the target):
     // "변형 세트 12" on a card whose page showed one set (every round counted, 2026-10-24).
     const jobsOf = (id) => jobs.filter((j) => j.materialId === id);
@@ -472,6 +483,7 @@
 
   async function materialView(id, alive) {
     let m = await api('GET', '/api/materials/' + id);
+    if (!alive()) return;
     if (m.status === 'analyzing') {
       view.innerHTML = `<div class="lt"><div class="lt-title"><h1>${esc(m.title)}</h1></div>
         <div class="flow" id="m-flow">${flowHtml(m)}</div>
@@ -485,7 +497,7 @@
         }
         return m.status !== 'analyzing';
       });
-      if (alive()) materialView(id, alive);
+      if (alive()) return materialView(id, alive);
       return;
     }
     if (m.status === 'failed' || !m.steps) {
@@ -501,9 +513,10 @@
     renderMaterial(m, false);
     const mark = (x) => JSON.stringify([x.status, (x.jobs || []).map((j) => [j.id, j.status, (j.items || []).map((i) => [i.status, i.adopted])])]);
     let last = mark(m);
+    let restart = false;
     await poll(alive, () => ((liveMaterial?.m.jobs || []).some(isBusy) ? 3000 : 15000), async () => {
       const fresh = await api('GET', '/api/materials/' + id);
-      if (fresh.status !== 'ready') { if (alive()) materialView(id, alive); return true; } // analysis started elsewhere
+      if (fresh.status !== 'ready') { restart = true; return true; } // analysis started elsewhere
       const next = mark(fresh);
       if (next === last || liveMaterial?.m.id !== id) return false;
       last = next;
@@ -512,6 +525,7 @@
       liveMaterial.side().catch(() => {});
       return false;
     });
+    if (restart && alive()) return materialView(id, alive);
   }
 
   // Rows that open in place (LLM tab, problem page): the row's 관리/보기/편집 button toggles it, and the keys of open rows
@@ -572,7 +586,7 @@
   }
   function learnRow(x, opened) {
     const key = 'L:' + x.id;
-    const from = ['fix', 'auto', 'review'].includes(x.from) && x.jobId ? `<a href="#/j/${x.jobId}${x.itemIndex !== undefined ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
+    const from = ['fix', 'auto', 'review'].includes(x.from) && x.jobId ? `<a href="#/j/${esc(x.jobId)}${Number.isInteger(x.itemIndex) ? `?item=${x.itemIndex}` : ''}">${FROM_TXT[x.from]}</a>` : FROM_TXT[x.from] || '';
     return `<div class="lt-row lt-pick${x.status === 'approved' ? '' : ' off'}${opened.has(key) ? ' open' : ''}" data-row="${key}" data-learn="${x.id}">
         <input type="checkbox" data-act="toggle" ${x.status === 'approved' ? 'checked' : ''} aria-label="적용">
         <div class="lt-main"><span class="lt-name lt-clamp">${inlineRich(x.text)}</span>
@@ -1070,13 +1084,16 @@
     $$('input', el).forEach((x) => x.addEventListener('change', summary));
     summary();
     $('#go').addEventListener('click', guard(async () => {
-      $('#go').disabled = true;
-      const p = plan();
-      const train = value('train') ? { target: Number(value('train')), maxRounds: 4 } : undefined;
-      const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider'), train });
-      try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
-      if (r.trainJobId) { toast('학습 반복을 시작했습니다. 목표에 닿은 세트가 문제 리스트에 올라옵니다.'); location.hash = `#/m/${m.id}/history`; return; }
-      location.hash = '#/j/' + r.jobId;
+      const go = $('#go');
+      go.disabled = true;
+      try {
+        const p = plan();
+        const train = value('train') ? { target: Number(value('train')), maxRounds: 4 } : undefined;
+        const r = await api('POST', '/api/generations', { materialId: m.id, stages: p.stages, mode: p.mode, perStage: p.per, direction: value('direction') || undefined, effort: value('effort'), provider: value('genProvider'), train });
+        try { localStorage.setItem('em-stage-' + m.id, 'list'); } catch { /* no storage */ }
+        if (r.trainJobId) { toast('학습 반복을 시작했습니다. 목표에 닿은 세트가 문제 리스트에 올라옵니다.'); location.hash = `#/m/${m.id}/history`; return; }
+        location.hash = '#/j/' + r.jobId;
+      } finally { if (go.isConnected) go.disabled = false; }
     }));
   }
 
@@ -1102,10 +1119,11 @@
     const text = models.map(([p, v]) => `${CHECK_MODEL[p] || p} ${v.error ? '실패' : c.scores?.[p] != null ? `${c.scores[p]}%` : `사용 ${v.use}/${v.total}`}`).join(' · ');
     return `<a class="set-pill ${all ? 'ok' : 'warn'}" href="#/j/${j.id}/check" title="Claude·Gemini 검수 결과 (요구사항 충실도)">검수 ${esc(text)}</a>`;
   }
-  async function checkView(id, again = false) {
+  async function checkView(id, again = false, alive = () => true) {
     const token = routeToken;
     const [r, job] = await Promise.all([api('GET', `/api/jobs/${id}/check`), api('GET', '/api/jobs/' + id)]);
     const train = job.trainJobId ? (await api('GET', '/api/jobs?materialId=' + job.materialId)).find((j) => j.id === job.trainJobId) : null;
+    if (!alive() || token !== routeToken) return;
     const c = r.check;
     let tab = 'result';
     try { tab = sessionStorage.getItem('em-check-tab') || 'result'; } catch { /* no storage */ }
@@ -1136,7 +1154,14 @@
         route();
       })));
       // While the review (and the remakes) run, the page follows them.
-      if (busy) setTimeout(() => { if (token === routeToken && location.hash.startsWith(`#/j/${id}/check`)) checkView(id, true).catch(() => {}); }, 15000);
+      const here = () => token === routeToken && location.hash.startsWith(`#/j/${id}/check`);
+      const follow = (ms) => setTimeout(() => {
+        if (!here()) return;
+        checkView(id, true, here).then(() => connectionBanner(false)).catch((e) => {
+          if (e instanceof NetworkError) { connectionBanner(true); follow(Math.min(60000, ms * 2)); } else if (here()) toast(e.message, true);
+        });
+      }, ms);
+      if (busy) follow(15000);
       if (!again) window.scrollTo(0, 0);
     };
     if (!c || c.stale || c.interrupted) {
@@ -1191,6 +1216,7 @@
 
   async function jobView(id, alive) {
     let job = await api('GET', '/api/jobs/' + id);
+    if (!alive()) return;
     if (job.type === 'regenerate') { location.hash = '#/j/' + job.parentJobId; return; }
     const openState = new Map();
     const drafts = new Map();
@@ -1539,12 +1565,13 @@
 
   // ------------------------------------------------------------------ model comparison
   // The same molar-mass original made into a problem set by each model: what worked, what did not, the PDF.
-  async function compareView(id) {
+  async function compareView(id, alive = () => true) {
     view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">불러오는 중…</div>';
     const list = await api('GET', '/api/compare');
+    if (!alive()) return;
     if (!list.length) { view.innerHTML = '<h1>모델 비교</h1><div class="panel muted">아직 비교 자료가 없습니다.</div>'; return; }
     const b = await api('GET', '/api/compare/' + (id || list[0].id));
-    view.innerHTML = '<h1>모델 비교</h1>' + window.EMCompare.pageHtml(b, { pdfBase: 'api/compare', balance: true });
+    if (!paint(alive, '<h1>모델 비교</h1>' + window.EMCompare.pageHtml(b, { pdfBase: 'api/compare', balance: true }))) return;
     window.EMCompare.ready();
     api('GET', '/api/balance').then((x) => { if ($('#balance')) $('#balance').textContent = x.balance; }).catch(() => { if ($('#balance')) $('#balance').textContent = '확인 실패'; });
   }
@@ -1611,7 +1638,7 @@
           ${x.why ? `<dt>이유</dt><dd>${inlineRich(x.why)}</dd>` : ''}
           ${ex ? `<dt>예</dt><dd>${x.example.before ? `<div class="lm-quote lm-before">${inlineRich(x.example.before)}</div>` : ''}${x.example.after ? `<div class="lm-quote lm-after">${inlineRich(x.example.after)}</div>` : ''}</dd>` : ''}
           ${o.detail ? o.detail(x) : ''}
-          ${x.history.length ? `<dt>이력</dt><dd>${x.history.map((h) => `<div class="lm-hist"><span class="muted small">${lmDay(h.at)} · ${LM_BY[h.by] || h.by}${h.status ? ` · ${h.status === 'dormant' ? '휴면' : '다시 켬'}` : ''}${h.why ? ` · ${esc(h.why)}` : ''}${h.jobId ? ` · <a href="#/j/${h.jobId}">세트</a>` : ''}</span>${h.status ? '' : `<div class="lm-quote">${inlineRich(h.before)}</div>`}</div>`).join('')}</dd>` : ''}
+          ${x.history.length ? `<dt>이력</dt><dd>${x.history.map((h) => `<div class="lm-hist"><span class="muted small">${lmDay(h.at)} · ${LM_BY[h.by] || h.by}${h.status ? ` · ${h.status === 'dormant' ? '휴면' : '다시 켬'}` : ''}${h.why ? ` · ${esc(h.why)}` : ''}${h.jobId ? ` · <a href="#/j/${esc(h.jobId)}">세트</a>` : ''}</span>${h.status ? '' : `<div class="lm-quote">${inlineRich(h.before)}</div>`}</div>`).join('')}</dd>` : ''}
         </dl>
         <div class="lt-actions">${editing ? '' : '<button class="small" data-act="edit">고치기</button>'}${o.actions(x)}
           <button class="small" data-act="onoff">${x.status === 'approved' ? '끄기' : '다시 켜기'}</button><span class="spacer"></span><button class="small danger" data-act="del">삭제</button></div>
@@ -1619,12 +1646,13 @@
     </div>`;
   };
   // The actions every row has; a tab adds its own (o.extra) before them.
+  const repaint = (paint) => Promise.resolve().then(paint).catch((e) => { if (e.message !== '로그인이 필요합니다.') toast(e.message, true); });
   function lmBind(pane, byId, paint, o = {}) {
     $$('.lm-item[data-item]', pane).forEach((el) => {
       const x = byId.get(el.dataset.item);
       if (!x) return;
-      $('[data-pick]', el)?.addEventListener('change', (e) => { e.target.checked ? lmUi.sel.add(x.id) : lmUi.sel.delete(x.id); paint(); });
-      $('[data-toggle]', el)?.addEventListener('click', () => { lmUi.open = lmUi.open === x.id ? null : x.id; lmUi.edit = null; paint(); });
+      $('[data-pick]', el)?.addEventListener('change', (e) => { e.target.checked ? lmUi.sel.add(x.id) : lmUi.sel.delete(x.id); repaint(paint); });
+      $('[data-toggle]', el)?.addEventListener('click', () => { lmUi.open = lmUi.open === x.id ? null : x.id; lmUi.edit = null; repaint(paint); });
       const act = (name, fn, ev = 'click') => { const b = $(`[data-act=${name}]`, el); if (b) b.addEventListener(ev, guard(fn)); };
       act('edit', async () => { lmUi.edit = x.id; await paint(); $('[data-f=text]', pane)?.focus(); });
       act('cancel', async () => { lmUi.edit = null; await paint(); });
@@ -1646,7 +1674,7 @@
   }
   const lmSearch = (pane, paint) => {
     const qEl = $('#lm-q', pane);
-    if (qEl) { let t; qEl.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { lmUi.q = qEl.value; paint().then(() => { const el = $('#lm-q', pane); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }); }, 250); }); }
+    if (qEl) { let t; qEl.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { lmUi.q = qEl.value; repaint(paint).then(() => { const el = $('#lm-q', pane); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }); }, 250); }); }
   };
   const lmMatches = (x) => { const q = lmUi.q.trim().toLowerCase(); return !q || x.text.toLowerCase().includes(q) || (x.topic || '').toLowerCase().includes(q) || (x.why || '').toLowerCase().includes(q); };
 
@@ -1670,7 +1698,7 @@
         x.merged ? `<span class="lm-chip">AI 학습 ${x.merged}개 흡수</span>` : '',
         x.status !== 'approved' ? '<span class="lm-chip off">꺼짐</span>' : '',
       ].join('');
-      const detail = (x) => (x.evidence.length ? `<dt>출처</dt><dd>${x.evidence.map((e) => `<div class="lm-quote">${inlineRich(e)}</div>`).join('')}${x.jobId ? ` <a href="#/j/${x.jobId}">그 세트 보기</a>` : ''}</dd>` : '');
+      const detail = (x) => (x.evidence.length ? `<dt>출처</dt><dd>${x.evidence.map((e) => `<div class="lm-quote">${inlineRich(e)}</div>`).join('')}${x.jobId ? ` <a href="#/j/${esc(x.jobId)}">그 세트 보기</a>` : ''}</dd>` : '');
       const actions = (x) => {
         const moves = [['guide', '지침'], ['lesson', '공통 학습'], ...(x.materialId || x.learnedOn ? [['problem', '이 문제만']] : [])].filter(([k]) => k !== x.layer);
         return moves.length ? `<select class="lm-move" data-act="move" aria-label="옮기기"><option value="">옮기기…</option>${moves.map(([k, t]) => `<option value="${k}">${t}로</option>`).join('')}</select>` : '';
@@ -1699,7 +1727,7 @@
             <div class="lm-add"><textarea data-add="lesson" rows="2" placeholder="예: 수는 계산기 없이 풀리게 작은 정수로 잡는다."></textarea>
               <div class="lt-actions"><label class="fb-target-label">과목</label><select id="lm-add-subject" class="lm-move">${lmOptions(d.subjects, '', '모든 과목')}</select><label class="fb-target-label">단계</label><select id="lm-add-stage" class="lm-move"><option value="generation">생성</option><option value="analysis">분석</option></select><label class="fb-target-label">종류</label><select id="lm-add-cat" class="lm-move">${lmCatOptions('design')}</select><span class="spacer"></span><button class="small primary" data-add-go="lesson">추가</button></div></div></section>`,
         teaching: `<section class="lm-sec"><div class="lm-sec-head"><h2>선생님 지도 학습 <span class="n">${own.length}</span></h2><p>선생님이 문제 페이지에서 그 문제에 대해 가르친 것입니다. 그 문제의 세트에만 들어갑니다. 새 학습은 문제 페이지에서 결과를 보며 넣고, 여기서는 문제별로 모아 보고 고칩니다.</p></div>
-            ${problems.map((id) => `<div class="lm-cat"><a href="#/m/${id}">${esc(byId.get(own.find((x) => x.materialId === id).id).materialTitle || '삭제된 문제')}</a> <span class="n">${own.filter((x) => x.materialId === id).length}</span></div><div class="lm-list">${list(own.filter((x) => x.materialId === id), '')}</div>`).join('') || '<div class="lm-list"><p class="lm-empty">아직 없습니다.</p></div>'}</section>`,
+            ${problems.map((id) => `<div class="lm-cat"><a href="#/m/${esc(id)}">${esc(byId.get(own.find((x) => x.materialId === id).id).materialTitle || '삭제된 문제')}</a> <span class="n">${own.filter((x) => x.materialId === id).length}</span></div><div class="lm-list">${list(own.filter((x) => x.materialId === id), '')}</div>`).join('') || '<div class="lm-list"><p class="lm-empty">아직 없습니다.</p></div>'}</section>`,
       };
       pane.innerHTML = `
         <div class="lm-rules">
@@ -1769,7 +1797,7 @@
         x.merged.length ? `<span class="lm-chip">${x.merged.length}개 합침</span>` : '',
         x.effect === 'dormant' ? `<span class="lm-chip off">휴면 · ${lmDay(x.dormantAt)}</span>` : x.status !== 'approved' ? '<span class="lm-chip off">꺼짐</span>' : '',
       ].join('');
-      const detail = (x) => `<dt>배운 곳</dt><dd>${x.materialTitle ? `<a href="#/m/${x.materialId}">${esc(x.materialTitle)}</a>` : '삭제된 문제'}${x.jobId ? ` · <a href="#/j/${x.jobId}">그 세트</a>` : ''}${x.faultKeys ? ` · 결함 종류 ${x.faultKeys}개에서` : ''}</dd>${x.merged.length ? `<dt>합친 원문</dt><dd>${x.merged.map((t) => `<div class="lm-quote">${inlineRich(t)}</div>`).join('')}</dd>` : ''}`;
+      const detail = (x) => `<dt>배운 곳</dt><dd>${x.materialTitle ? `<a href="#/m/${esc(x.materialId)}">${esc(x.materialTitle)}</a>` : '삭제된 문제'}${x.jobId ? ` · <a href="#/j/${esc(x.jobId)}">그 세트</a>` : ''}${x.faultKeys ? ` · 결함 종류 ${x.faultKeys}개에서` : ''}</dd>${x.merged.length ? `<dt>합친 원문</dt><dd>${x.merged.map((t) => `<div class="lm-quote">${inlineRich(t)}</div>`).join('')}</dd>` : ''}`;
       const actions = (x) => (x.layer !== 'guide' ? '<button class="small" data-act="promote">지침으로 올리기</button>' : '');
       const o = { chips, detail, actions, subjects: d.subjects, pick: true };
       // The journal: sets newest first, the ones since the last visit marked.
@@ -1802,9 +1830,9 @@
           ${groups.length ? groups.map(([k, xs]) => `<div class="lm-cat lm-eff-${k}">${LM_EFFECT[k][0]} <span class="n">${xs.length}</span><span class="lm-cat-note">${LM_EFFECT[k][1]}</span></div><div class="lm-list">${xs.map((x) => lmRow(x, o)).join('')}</div>`).join('') : `<div class="lm-list"><p class="lm-empty">${lmUi.q || lmUi.effect || lmUi.subject || lmUi.cat ? '조건에 맞는 학습이 없습니다.' : '아직 AI 학습이 없습니다.'}</p></div>`}</section>`;
       try { localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch { /* no storage */ }
       lmSearch(pane, paint);
-      $('#lm-more', pane)?.addEventListener('click', () => { lmUi.more = !lmUi.more; paint(); });
-      $$('[data-filter]', pane).forEach((s) => s.addEventListener('change', () => { lmUi[s.dataset.filter] = s.value; lmUi.open = null; paint(); }));
-      $('[data-pick-all]', pane)?.addEventListener('click', () => { const all = items.every((x) => lmUi.sel.has(x.id)); for (const x of items) all ? lmUi.sel.delete(x.id) : lmUi.sel.add(x.id); paint(); });
+      $('#lm-more', pane)?.addEventListener('click', () => { lmUi.more = !lmUi.more; repaint(paint); });
+      $$('[data-filter]', pane).forEach((s) => s.addEventListener('change', () => { lmUi[s.dataset.filter] = s.value; lmUi.open = null; repaint(paint); }));
+      $('[data-pick-all]', pane)?.addEventListener('click', () => { const all = items.every((x) => lmUi.sel.has(x.id)); for (const x of items) all ? lmUi.sel.delete(x.id) : lmUi.sel.add(x.id); repaint(paint); });
       const bulkApi = async (ids, body, done) => { await api('POST', '/api/learning/bulk', { ids, ...body }); lmUi.sel.clear(); toast(done); await paint(); };
       $$('[data-bulk]', pane).forEach((b) => b.addEventListener('click', guard(async () => {
         const k = b.dataset.bulk;
@@ -2036,15 +2064,24 @@
       ${st.result && !st.result.ok ? `<div class="note bad small">지난 연결 시도가 실패했습니다: ${esc(st.result.error || '이유를 알 수 없음')} — 로그인을 다시 시작해 주세요.</div>` : ''}
       <div data-r="step"><button class="primary" data-a="start">로그인 시작</button></div>`;
     // Waits for the sign-in to finish (GPT: after the code is entered on OpenAI's page; Gemini: after the code is pasted).
+    let waiting = false;
     const wait = async (btn) => {
-      for (let i = 0; i < 360; i++) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (!$(`#login-${c}`)) return;
-        const now = await api('GET', '/api/cli-login/' + c);
-        if (now.loggedIn) { toast(`${t.name} 구독에 연결했습니다.`); await loadStatus().catch(() => {}); route(); return; }
-        if (!now.pending && now.result && !now.result.ok) { toast('연결되지 않았습니다: ' + (now.result.error || ''), true); cliLoginPanel(c); return; }
-        if (btn?.isConnected && now.checking) btn.textContent = '확인하는 중… (최대 1~2분)';
-      }
+      if (waiting) return;
+      waiting = true;
+      try {
+        for (let i = 0; i < 360; i++) {
+          await new Promise((r) => setTimeout(r, 2500));
+          if (!el.isConnected) return;
+          let now;
+          try { now = await api('GET', '/api/cli-login/' + c); } catch (e) { if (e instanceof NetworkError) continue; throw e; }
+          if (now.loggedIn) { toast(`${t.name} 구독에 연결했습니다.`); await loadStatus().catch(() => {}); route(); return; }
+          if (!now.pending && now.result && !now.result.ok) { toast('연결되지 않았습니다: ' + (now.result.error || ''), true); cliLoginPanel(c); return; }
+          if (btn?.isConnected && now.checking) btn.textContent = '확인하는 중… (최대 1~2분)';
+        }
+        toast('로그인이 끝나지 않았습니다. 로그인을 다시 시작해 주세요.', true);
+      } catch (e) {
+        if (e.message !== '로그인이 필요합니다.') toast(e.message, true);
+      } finally { waiting = false; }
     };
     const show = (login) => {
       if (login.url === '-') { wait(); return; } // already signed in on the server: being checked
@@ -2054,9 +2091,11 @@
         <div class="fb-add-bar"><button data-a="cancel">취소</button><span class="spacer"></span>${c === 'agy-cli' ? '<button class="primary" data-a="send">연결</button>' : ''}</div>`;
       $('[data-a=cancel]', el).addEventListener('click', guard(async () => { await api('POST', `/api/cli-login/${c}/cancel`); cliLoginPanel(c); }));
       $('[data-a=send]', el)?.addEventListener('click', guard(async (e) => {
-        e.target.disabled = true; e.target.textContent = '확인하는 중… (최대 1~2분)';
-        await api('POST', `/api/cli-login/${c}/code`, { code: $(`#code-${c}`).value });
-        await wait(e.target);
+        const btn = e.target;
+        btn.disabled = true; btn.textContent = '확인하는 중… (최대 1~2분)';
+        try { await api('POST', `/api/cli-login/${c}/code`, { code: $(`#code-${c}`).value }); }
+        catch (err) { if (btn.isConnected) { btn.disabled = false; btn.textContent = '연결'; } throw err; }
+        await wait(btn);
       }));
       if (c === 'codex-cli') wait();
     };
@@ -2203,8 +2242,9 @@
 
   // ------------------------------------------------------------------ 계정
   const ROLE_TXT = { admin: '관리자', teacher: '선생님' };
-  async function accountView() {
+  async function accountView(alive = () => true) {
     const me = await api('GET', '/api/me');
+    if (!alive()) return;
     const isAdmin = me.role === 'admin';
     view.innerHTML = `<div class="lt">
       <div class="lt-title"><h1>계정</h1><p class="lt-meta">${esc(me.username)} · ${ROLE_TXT[me.role]}${me.lastLoginAt ? ` · 마지막 로그인 ${fmtTime(me.lastLoginAt)}` : ''}</p></div>

@@ -16,7 +16,9 @@ const path = require('node:path');
 
 // --name value, or a bare --flag (true).
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : acc), []));
-if (!args.data || !args.case) { console.error('usage: --data <dir> --case <case>'); process.exit(1); }
+if (typeof args.data !== 'string' || typeof args.case !== 'string') { console.error('usage: --data <dir> --case <case>'); process.exit(1); }
+// The server reads the bundle on request: temp + rename so it never reads a half-written one.
+const writeAtomic = (file, text) => { const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, text); fs.renameSync(temp, file); };
 const caseDir = path.join(__dirname, 'cases', args.case);
 const spec = JSON.parse(fs.readFileSync(path.join(caseDir, 'case.json'), 'utf8'));
 const dataUrl = (file) => `data:image/${path.extname(file).slice(1).replace('jpg', 'jpeg')};base64,` + fs.readFileSync(file).toString('base64');
@@ -84,7 +86,7 @@ if (R3) {
     original: { problemImage: dataUrl(path.join(caseDir, spec.problem)), solutionImage: spec.solution ? dataUrl(path.join(caseDir, spec.solution)) : null, answer: spec.expect?.answer, steps: spec.expect?.stepTitles || [] },
     models,
   };
-  fs.writeFileSync(file, JSON.stringify(bundle));
+  writeAtomic(file, JSON.stringify(bundle));
   console.log(file, `${ROUND}차`, models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '));
   process.exit(0);
 }
@@ -94,7 +96,7 @@ if (R2) {
   models.push(...before.filter((p) => !models.some((m) => m.key === p.key)));
   models.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
   bundle.round2 = { createdAt: new Date().toISOString(), models };
-  fs.writeFileSync(file, JSON.stringify(bundle));
+  writeAtomic(file, JSON.stringify(bundle));
   console.log(file, '2차', models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '));
   process.exit(0);
 }
@@ -110,5 +112,5 @@ const out = {
   models,
 };
 fs.mkdirSync(path.join(__dirname, 'compare'), { recursive: true });
-fs.writeFileSync(file, JSON.stringify(out));
+writeAtomic(file, JSON.stringify(out));
 console.log(file, models.map((m) => `${m.key}:${m.items.map((i) => i.status).join('/')}`).join('  '), Math.round(fs.statSync(file).size / 1024) + 'KB');

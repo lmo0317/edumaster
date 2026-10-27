@@ -12,10 +12,12 @@ const path = require('node:path');
 
 const argv = process.argv.slice(2);
 const arg = (name, def = '') => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : def);
-const dataDir = path.resolve(arg('--data'));
+const dataArg = arg('--data');
 const jobId = arg('--job');
 const judge = arg('--judge', 'claude-cli');
 const reportFile = arg('--report');
+// path.resolve('') is the current folder: the flag's absence has to be checked before resolving.
+const dataDir = dataArg ? path.resolve(dataArg) : '';
 if (!dataDir || !jobId) { console.error('usage: --data <run dir> --job <id> [--report <file>] [--judge claude-cli]'); process.exit(1); }
 
 process.env.EDUMASTER_DATA_DIR = dataDir;
@@ -57,7 +59,9 @@ const { scoreGeneration } = require('./score');
   }
   job.judgedBy = judge;
   job.log = [...(job.log || []), { t: new Date().toISOString(), message: `${judge}가 다시 판정함 (문제·해설은 그대로)` }].slice(-200);
-  fs.writeFileSync(file, JSON.stringify(job, null, 1));
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(job, null, 1));
+  fs.renameSync(temp, file);
   if (reportFile) {
     const raw = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
     const rows = Array.isArray(raw) ? raw : raw.results || [];
