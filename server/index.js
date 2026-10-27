@@ -76,6 +76,7 @@ function createApp(options = {}) {
   // Failed logins: 10 per address and 5 per name in 10 minutes, then wait.
   const attempts = new Map();
   const failedFor = (key) => (attempts.get(key) || []).filter((t) => t > Date.now() - 10 * 60000);
+  const pruneAttempts = () => { for (const [k, v] of attempts) if (!v.some((t) => t > Date.now() - 10 * 60000)) attempts.delete(k); };
   const endSessionsOf = (userId, keep) => { for (const [k, v] of Object.entries(sessions)) if (v.userId === userId && k !== keep) delete sessions[k]; saveSessions(); };
 
   // ------------------------------------------------------------ helpers
@@ -96,7 +97,12 @@ function createApp(options = {}) {
     req.on('data', (c) => { size += c.length; if (size > limit) { reject(fail(413, '요청이 너무 큽니다. 이미지 크기를 줄여 주세요.')); req.destroy(); } else chunks.push(c); });
     req.on('end', () => {
       if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(fail(400, '요청 형식이 올바르지 않습니다.')); }
+      let body;
+      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reject(fail(400, '요청 형식이 올바르지 않습니다.')); }
+      // Every handler reads fields off the body: a JSON that is not an object (null, a list, a string) is a bad request,
+      // not a server error.
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return reject(fail(400, '요청 본문은 JSON 객체여야 합니다.'));
+      resolve(body);
     });
     req.on('error', reject);
   });
@@ -212,6 +218,7 @@ function createApp(options = {}) {
     if (!users.count()) throw fail(503, '아직 계정이 없습니다. 서버에서 관리자 계정을 먼저 만들어 주세요.');
     const user = users.verify(name, password);
     if (!user) {
+      if (attempts.size > 1000) pruneAttempts();
       attempts.set('ip:' + ip, [...byIp, Date.now()]);
       attempts.set('name:' + name, [...byName, Date.now()]);
       throw fail(401, '아이디 또는 비밀번호가 올바르지 않습니다.');
@@ -533,7 +540,7 @@ function createApp(options = {}) {
     const found = store.files.find(id);
     if (!found) throw fail(404, '이미지를 찾지 못했습니다.');
     res.writeHead(200, { 'Content-Type': found.mime, 'Cache-Control': 'private, max-age=86400', ...security });
-    fs.createReadStream(found.file).pipe(res);
+    fs.createReadStream(found.file).on('error', () => res.destroy()).pipe(res);
     return undefined;
   });
 
@@ -630,14 +637,21 @@ function createApp(options = {}) {
   route('GET', /^\/api\/rules$/, () => store.rules.all());
   route('POST', /^\/api\/rules$/, async (req) => {
     const body = await readBody(req, 16 * 1024);
-    let source = body.source;
-    if (source?.jobId && isId(source.jobId)) {
+    let source = body.source && typeof body.source === 'object' ? { ...body.source } : undefined;
+    const FROM_PAGE = ['input', 'check', 'fix'];
+    if (source) {
+      source.from = FROM_PAGE.includes(source.from) ? source.from : 'input';
+      delete source.faultKeys;
+      if (source.jobId !== undefined && !isId(source.jobId)) throw fail(400, '작업 식별자가 올바르지 않습니다.');
+      if (source.materialId !== undefined && !isId(source.materialId)) throw fail(400, '자료 식별자가 올바르지 않습니다.');
+    }
+    if (source?.jobId) {
       const job = store.jobs.get(source.jobId);
       const item = job?.items?.[source.itemIndex];
       if (job) source = { ...source, materialId: job.materialId, label: `${job.title} · ${item?.label || ''}`, excerpt: (item?.problem?.text || job.material?.problem?.text || '').slice(0, 600) };
       // A problem's own item records its subject; an every-problem item is tagged only when the teacher tags it.
       if (job && !body.subject && body.scope !== 'global') { body.subject = job.material?.subject; body.topic = job.material?.topic; }
-    } else if (source?.materialId && isId(source.materialId)) {
+    } else if (source?.materialId) {
       // Feedback written on the problem page itself (on the original, its reading or the variants in general).
       const material = getMaterial(source.materialId);
       source = { materialId: material.id, label: material.title, from: source.from };
@@ -676,6 +690,7 @@ function createApp(options = {}) {
       { env: { ...process.env, CLAUDE_BIN: cfg.claudeCli.bin } });
     const state = { child, url: '', done: false, result: null };
     claudeLogin = state;
+    child.stdin.on('error', () => { /* the helper exited; 'close' reports the result */ });
     let buf = '';
     child.stdout.on('data', (d) => {
       buf += d;
@@ -699,6 +714,7 @@ function createApp(options = {}) {
     if (!code || /\s/.test(code)) throw fail(400, '코드를 그대로 붙여 넣어 주세요.');
     if (state.codeSent) throw fail(409, '이미 코드를 확인하는 중입니다.');
     // The check takes up to a minute or so; the page asks GET /api/claude-login for the result instead of waiting here.
+    if (state.child.exitCode !== null || state.child.stdin.destroyed) throw fail(409, '로그인 과정이 이미 끝났습니다. 로그인을 다시 시작해 주세요.');
     state.codeSent = true;
     lastLoginResult = null;
     state.child.stdin.write(code + '\n');
@@ -862,7 +878,7 @@ function createApp(options = {}) {
     // ("…+시스템") in filename= failed the whole download with a 500 (2026-10-14).
     const ascii = name.replace(/[^\x20-\x7e]/g, '').replace(/\+(?=\.pdf$)/, '') || 'compare.pdf';
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`, 'Content-Length': fs.statSync(file).size, ...security });
-    fs.createReadStream(file).pipe(res);
+    fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
     return undefined;
   }
   // The original's scans (its problem and solution, kept again under each round made of another original) leave the
@@ -1125,7 +1141,11 @@ function createApp(options = {}) {
         if (req.method !== 'GET' && !r.open) {
           // Same-origin check for state-changing requests (cookie auth).
           const origin = req.headers.origin;
-          if (origin && req.headers.host && new URL(origin).host !== (req.headers['x-forwarded-host'] || req.headers.host)) throw fail(403, '다른 사이트에서 온 요청은 받을 수 없습니다.');
+          if (origin && req.headers.host) {
+            let host = '';
+            try { host = new URL(origin).host; } catch { host = ''; }
+            if (host !== (req.headers['x-forwarded-host'] || req.headers.host)) throw fail(403, '다른 사이트에서 온 요청은 받을 수 없습니다.');
+          }
         }
         const result = await r.handler(req, res, match.slice(1));
         if (result !== undefined && !res.headersSent) send(res, 200, result);

@@ -282,7 +282,7 @@ function checklistOf(part, { analysis = false, final = false, advisory = [], ans
     // original's 학습 반복 (2026-10-21) a set with low notes only scored 83 and was made again.
     const mark = wrong || mine.some((x) => x.severity !== 'low') ? 'no'
       : said.includes('fix') && !mine.length ? 'partial'
-      : said.length && said.every((s) => s === 'na') ? 'na' : 'ok';
+      : !said.length || said.every((s) => s === 'na') ? 'na' : 'ok';
     out[row.id] = [mark, mark === 'ok' && row.id === 'correct' && part.myAnswer ? `검수자 풀이 ${part.myAnswer}` : note];
   }
   return out;

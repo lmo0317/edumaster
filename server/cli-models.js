@@ -40,12 +40,14 @@ function run(c, args, { cwd, input, timeoutMs = 60000, signal, env } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(c.bin, [...(c.binArgs || []), ...args], { cwd, env: { ...process.env, ...env } });
     let out = ''; let err = '';
-    const timer = setTimeout(() => { child.kill('SIGTERM'); reject(Object.assign(new Error('응답 시간이 초과되었습니다.'), { status: 504 })); }, timeoutMs);
-    const abort = () => child.kill('SIGTERM');
+    // A CLI that ignores SIGTERM (at the timeout or a cancel) is killed for good a few seconds later.
+    const stop = () => { child.kill('SIGTERM'); setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 5000).unref(); };
+    const timer = setTimeout(() => { stop(); reject(Object.assign(new Error('응답 시간이 초과되었습니다.'), { status: 504 })); }, timeoutMs);
+    const abort = () => stop();
     signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err += d; });
-    child.on('error', (e) => { clearTimeout(timer); reject(Object.assign(new Error(`실행하지 못했습니다: ${e.message}`), { status: 503 })); });
+    child.on('error', (e) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(Object.assign(new Error(`실행하지 못했습니다: ${e.message}`), { status: 503 })); });
     child.on('close', (code) => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolve({ code, stdout: out, stderr: err }); });
     // A CLI that exits before reading its input closes the pipe under the write: unhandled, that EPIPE ended the whole
     // server (2026-10-27 review). The exit code and stderr report the failure.
@@ -286,6 +288,7 @@ async function loginStart(config, cli, root) {
     ? spawn(config.codexCli.bin, [...(config.codexCli.binArgs || []), 'login', '--device-auth'], { cwd: os.tmpdir() })
     : spawn('python3', [path.join(root, 'deploy', 'agy-login.py'), agyMarker(config)], { env: { ...process.env, AGY_BIN: config.agyCli.bin } });
   state.child = child;
+  child.stdin.on('error', () => { /* the login tool exited; 'close' reports the result */ });
   logins.set(cli, state);
   let buf = '';
   const strip = (t) => t.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
@@ -320,6 +323,7 @@ function loginCode(cli, code) {
   if (!state || state.done) throw Object.assign(new Error('진행 중인 로그인이 없습니다. 로그인을 다시 시작해 주세요.'), { status: 409 });
   if (!code || /\s/.test(code)) throw Object.assign(new Error('코드를 그대로 붙여 넣어 주세요.'), { status: 400 });
   if (state.codeSent) throw Object.assign(new Error('이미 코드를 확인하는 중입니다.'), { status: 409 });
+  if (state.child.exitCode !== null || state.child.stdin.destroyed) throw Object.assign(new Error('로그인 과정이 이미 끝났습니다. 로그인을 다시 시작해 주세요.'), { status: 409 });
   state.codeSent = true;
   state.child.stdin.write(code + '\n');
   return loginState(cli);

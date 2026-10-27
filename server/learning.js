@@ -39,7 +39,8 @@ const categoryOf = (r) => (CATEGORIES.includes(r.category) ? r.category : stageO
 const FORMAT_LESSON = /\\ce\{[^}]*\}\$? ?(꼴|표기|로 (쓴|써|바꾸))|\\text\{\} ?(으)?로|\\text 없이|\$…\$|\$ ?(짝|밖|안)|마침표|띄어쓰기|유니코드|아래 첨자|수식 모드|'·'|·' 항목|항목 구분|조사(를|가) /;
 const isFormatLesson = (text) => FORMAT_LESSON.test(String(text || ''));
 
-function clean(text, max) { return String(text ?? '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
+function clean(text, max) { return (typeof text === 'string' || typeof text === 'number' ? String(text) : '').replace(/\s+\n/g, '\n').trim().slice(0, max); }
+const object = (x) => { if (!x || typeof x !== 'object' || Array.isArray(x)) throw Object.assign(new Error('요청 형식이 올바르지 않습니다.'), { status: 400 }); return x; };
 /** The faulted line and its fix, when the learner gave one worth keeping. */
 function exampleOf(x) {
   if (!x || typeof x !== 'object') return null;
@@ -47,6 +48,7 @@ function exampleOf(x) {
   return before || after ? { before, after } : null;
 }
 function makeRule(input, now = new Date()) {
+  object(input);
   const text = clean(input.text, 4000);
   if (text.length < 2) throw Object.assign(new Error('지침 내용을 입력해 주세요.'), { status: 400 });
   if (input.scope === 'material' && !clean(input.source?.materialId, 40)) throw Object.assign(new Error('어느 문제에 대한 피드백인지 알 수 없습니다.'), { status: 400 });
@@ -87,6 +89,7 @@ function makeRule(input, now = new Date()) {
  * teacher can read: the gas original's 8dffe10d was rewritten six times on 2026-10-21 and no version survived.
  */
 function updateRule(rule, patch, now = new Date(), change = {}) {
+  object(patch);
   const next = { ...rule, updatedAt: now.toISOString() };
   if (patch.text !== undefined) {
     next.text = clean(patch.text, 4000);
@@ -101,7 +104,7 @@ function updateRule(rule, patch, now = new Date(), change = {}) {
   if (patch.example !== undefined) { if (exampleOf(patch.example)) next.example = exampleOf(patch.example); else delete next.example; }
   // dormant: a lesson the system wrote and the data put to sleep (faults.sleepLessons) — not sent, kept, woken by its
   // fault coming back. A status the system changes is on the record with its reason, like a rewritten sentence.
-  if (['approved', 'pending', 'rejected', 'dormant'].includes(patch.status)) {
+  if (['approved', 'pending', 'rejected', ...(change.by === 'system' ? ['dormant'] : [])].includes(patch.status)) {
     if (patch.status !== rule.status && change.by === 'system') next.history = [...(rule.history || []), { at: now.toISOString(), before: rule.text, by: 'system', why: clean(change.why, 1000), jobId: clean(change.jobId, 40), status: patch.status }].slice(-20);
     next.status = patch.status;
   }
@@ -142,8 +145,8 @@ function overlap(a, b) {
  */
 function selectRules(allRules, material, { limit = 40, maxChars = 9000, stage = 'generation' } = {}) {
   const approved = allRules.filter((r) => r.status === 'approved' && stageOf(r) === stage);
-  const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const byTime = (a, b) => a.createdAt.localeCompare(b.createdAt);
+  const byTime = (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+  const own = approved.filter((r) => r.scope === 'material' && r.source?.materialId === material.id).sort(byTime);
   // Every-problem items tagged with a subject reach only that subject (learning that keeps growing is not all sent to
   // every problem); within the lessons, ones for this subject come before the untagged ones, so the cap drops those first.
   const reaches = (r) => !r.subject || !material.subject || r.subject === material.subject;

@@ -31,7 +31,7 @@ function journalOf(store) {
   const materials = new Map(store.materials.all().map((m) => [m.id, m]));
   const sets = jobs.filter((j) => j.type === 'generate' && Array.isArray(j.items));
   const setNo = new Map();
-  for (const m of new Set(sets.map((j) => j.materialId))) sets.filter((j) => j.materialId === m).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).forEach((j, i) => setNo.set(j.id, i + 1));
+  for (const m of new Set(sets.map((j) => j.materialId))) sets.filter((j) => j.materialId === m).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))).forEach((j, i) => setNo.set(j.id, i + 1));
   const setById = new Map(sets.map((j) => [j.id, j]));
   const groups = new Map();
   // A change outside a set — the teacher's own rewrite, the AI merging items it read as one — is grouped by what did it.

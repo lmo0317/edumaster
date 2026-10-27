@@ -43,7 +43,7 @@ function followFeedback(text) {
     else if (under && line.startsWith('- ')) feedback.push(line.slice(2));
   }
   if (!feedback.length) return SAMPLE;
-  const count = Number(feedback.map((f) => /STEP[을를]?\s*(\d+)\s*개/.exec(f)?.[1]).find(Boolean)) || 0;
+  const count = Math.min(10, Number(feedback.map((f) => /STEP[을를]?\s*(\d+)\s*개/.exec(f)?.[1]).find(Boolean)) || 0);
   const rewrite = feedback.some((f) => /쉽게/.test(f));
   let steps = SAMPLE.steps.map((s) => ({ ...s, marker: '' }));
   while (count && steps.length < count) {

@@ -112,7 +112,7 @@ function clustersOf(pairs) {
     groups.set(root, g);
   }
   return [...groups.values()].map((g) => {
-    const items = [...g.items.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const items = [...g.items.values()].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
     const best = [...g.pairs].sort((p, q) => q.similarity - p.similarity)[0];
     return { key: items.map((r) => r.id).sort().join('+'), items, keeper: keeperOfAll(items), text: best.decision.text, why: best.decision.why, pairs: g.pairs.map((p) => p.key) };
   }).sort((a, b) => b.items.length - a.items.length);

@@ -18,7 +18,9 @@ const casesDir = path.join(__dirname, 'cases');
 const providers = (args.providers || 'deepseek').split(',');
 const stage = args.stage || 'analyze';
 const mode = args.mode || 'integrated';
-const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir).filter((d) => fs.existsSync(path.join(casesDir, d, 'case.json'))) : args.cases.split(',');
+const caseNames = !args.cases || args.cases === 'all' ? fs.readdirSync(casesDir).filter((d) => fs.existsSync(path.join(casesDir, d, 'case.json'))) : args.cases.split(',').map((s) => s.trim()).filter(Boolean);
+const missingCase = caseNames.find((name) => !/^[a-z0-9-]+$/.test(name) || !fs.existsSync(path.join(casesDir, name, 'case.json')));
+if (!caseNames.length || missingCase) { console.error(`없는 평가 문제: ${missingCase || '(없음)'} — eval/cases/<이름>/case.json`); process.exit(1); }
 const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
 const { PROMPT_VERSION } = require('../server/prompts');
 const { jobTiming, REVIEW_VERSION } = require('../server/scoring');
@@ -47,7 +49,9 @@ function caseRules(dataDir) {
 }
 function tagCaseLessons(dataDir, name) {
   const materials = path.join(dataDir, 'materials');
-  const ids = fs.existsSync(materials) ? fs.readdirSync(materials).map((f) => JSON.parse(fs.readFileSync(path.join(materials, f), 'utf8')))
+  // Only the records: the store's temp files (<id>.json.<pid>.<hex>.tmp) may be half-written or already renamed.
+  const readJson = (f) => { try { return JSON.parse(fs.readFileSync(path.join(materials, f), 'utf8')); } catch { return null; } };
+  const ids = fs.existsSync(materials) ? fs.readdirSync(materials).filter((f) => f.endsWith('.json')).map(readJson).filter(Boolean)
     .filter((m) => String(m.title || '').startsWith(`[평가] ${name} ·`)).map((m) => m.id) : [];
   for (const { file, rule } of caseRules(dataDir)) {
     if (rule.scope === 'material' && ids.includes(rule.source?.materialId) && rule.source.evalCase !== name) {
@@ -77,6 +81,11 @@ async function main() {
   for (const [arg, file] of [['claude-token', 'claude-oauth-token.txt'], ['llm-settings', 'llm-settings.json']]) {
     const from = args[arg] || path.join(root, 'data', file);
     if (fs.existsSync(from)) { fs.copyFileSync(from, path.join(dataDir, file)); fs.chmodSync(path.join(dataDir, file), 0o600); }
+  }
+  // A settings copy that does not parse (the server was rewriting it) would silently run the default model.
+  if (fs.existsSync(path.join(dataDir, 'llm-settings.json'))) {
+    try { JSON.parse(fs.readFileSync(path.join(dataDir, 'llm-settings.json'), 'utf8')); }
+    catch { throw new Error('llm-settings.json을 읽지 못했습니다 (서버가 쓰는 중이었을 수 있음). 다시 시작해 주세요.'); }
   }
   // Measure the system as it runs: the teacher's approved rules and reading corrections come along (RAG).
   // --no-learning measures the bare prompts, so the two runs show what retrieval adds.
@@ -114,6 +123,13 @@ async function main() {
     : provider === 'claude-cli' ? llmSettings(dataDir).claude?.model || provider : provider);
 
   const results = [];
+  fs.mkdirSync(path.join(__dirname, 'reports'), { recursive: true });
+  const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}${mixedName}`);
+  // Written after every case: a crash later in the run keeps the cases already paid for.
+  const writeReport = () => {
+    fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, reviewVersion: REVIEW_VERSION, learning, results }, null, 1));
+    fs.writeFileSync(base_ + '.md', report(results));
+  };
   for (const name of caseNames) {
     const spec = JSON.parse(fs.readFileSync(path.join(casesDir, name, 'case.json'), 'utf8'));
     const problem = path.join(casesDir, name, spec.problem);
@@ -160,19 +176,17 @@ async function main() {
       } catch (e) {
         row.error = e.message;
       }
-      tagCaseLessons(dataDir, name);
+      try { tagCaseLessons(dataDir, name); } catch (e) { console.error(`\n[${name}] 학습 태그 실패: ${e.message}`); }
       row.minutes = +((Date.now() - started) / 60000).toFixed(1);
       const all = [...(row.analysis || []), ...(row.generation || [])];
       process.stdout.write(` ${all.filter((c) => c.pass).length}/${all.length} 통과 (${row.minutes}분)`);
       results.push(row);
+      writeReport();
     }
   }
   await new Promise((r) => app.server.close(r));
 
-  fs.mkdirSync(path.join(__dirname, 'reports'), { recursive: true });
-  const base_ = path.join(__dirname, 'reports', `${stamp}-${stage}-${providers.join('+')}${mixedName}`);
-  fs.writeFileSync(base_ + '.json', JSON.stringify({ stamp, stage, mode, promptVersion: PROMPT_VERSION, reviewVersion: REVIEW_VERSION, learning, results }, null, 1));
-  fs.writeFileSync(base_ + '.md', report(results));
+  writeReport();
   console.log(`\n\n${report(results)}\n보고서: ${base_}.md`);
 }
 

@@ -16,6 +16,8 @@ const { REVIEW_VERSION } = require('../server/scoring');
 const argv = process.argv.slice(2);
 const arg = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : '');
 const since = arg('--since');
+if (argv.includes('--since') && !since) { console.error('--since 뒤에 보고서 시각(YYYYMMDDTHHMM…)을 적어 주세요.'); process.exit(1); }
+const writeAtomic = (file, text) => { const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, text); fs.renameSync(temp, file); };
 const provider = arg('--review');
 const extra = argv.flatMap((a, i) => (a === '--jobs' ? [argv[i + 1]] : []));
 const reportsDir = path.join(__dirname, 'reports');
@@ -77,7 +79,7 @@ function reviewer() {
           notes.push(`${row.provider} ${it.label}: ${added.length}건`);
         }
       }
-      if (!review || job.items.every((it) => !it.problem || it.verification?.solutionReview)) fs.writeFileSync(found.file, JSON.stringify(job));
+      if (!review || job.items.every((it) => !it.problem || it.verification?.solutionReview)) writeAtomic(found.file, JSON.stringify(job));
       row.generation = scoreGeneration(job);
     }
     if (!all) { console.log(`${f}: jobs missing, left as is`); continue; }

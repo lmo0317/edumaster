@@ -78,6 +78,7 @@ function runWorker(spec, timeoutMs = 4000, startupMs = 30000) {
       resolve(m);
     });
     worker.once('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: '검산 실행 오류: ' + e.message }); });
+    worker.once('exit', (code) => { clearTimeout(timer); resolve({ ok: false, error: `검산 실행기가 답하지 않고 끝났습니다 (코드 ${code}).` }); });
   });
 }
 

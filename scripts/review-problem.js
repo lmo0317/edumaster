@@ -60,11 +60,19 @@ const result = set ? setCheck.checkRecord(m, set) : {
 // The set's page shows the review (#/j/<set id>/check), from data/reviews/<set id>.json.
 const kept = set ? path.join(cfg.dataDir, 'reviews', `${set.id}.json`) : '';
 if (kept) fs.mkdirSync(path.dirname(kept), { recursive: true });
+let warnedRunning = false;
 const save = () => {
   const current = set && store.jobs.get(set.id);
   if (current && result.contentKey !== setCheck.contentKey(current)) { result.stale = true; result.done = false; }
   fs.writeFileSync(out, JSON.stringify(result, null, 1));
-  if (kept && current) setCheck.writeCheck(cfg.dataDir, set.id, result);
+  if (!kept || !current) return;
+  // The server's own 검수 job (jobs.js check/train) writes this file while it runs: its record stays; this one goes to `out` only.
+  const existing = setCheck.readCheck(cfg.dataDir, set.id);
+  if (existing?.running && existing.jobId) {
+    if (!warnedRunning) { warnedRunning = true; console.error(`세트 ${set.id}는 서버가 검수하는 중이라 data/reviews에는 쓰지 않습니다 (결과: ${out}).`); }
+    return;
+  }
+  setCheck.writeCheck(cfg.dataDir, set.id, result);
 };
 save();
 (async () => {

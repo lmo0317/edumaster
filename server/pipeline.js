@@ -58,7 +58,7 @@ function normalizeMaterial(data) {
     finalCheck: str(data?.finalCheck),
     uncertainties: arr(data?.uncertainties).map((u) => str(u, 2000)).filter(Boolean).slice(0, 20),
     stepMarkers: [...new Set(arr(data?.stepMarkers).map((m) => str(m, 40)).filter(Boolean))].slice(0, 10),
-    solutionStepCount: Number.parseInt(data?.solutionStepCount, 10) || 0,
+    solutionStepCount: Math.min(20, Math.max(0, Number.parseInt(data?.solutionStepCount, 10) || 0)),
     sourceVerification: data?.verification && typeof data.verification === 'object' ? data.verification : (data?.sourceVerification || null),
     stepHeadings: arr(data?.stepHeadings).map((h) => str(h, 300)).filter(Boolean).slice(0, 10),
     checks: arr(data?.checks).slice(0, 20),
@@ -82,7 +82,7 @@ const markerNumber = (marker) => Number.parseInt(String(marker || '').replace(/[
 // The setting the original's figure fixes (how many neurons, where a synapse can be) is a premise too: the solver kept
 // flagging nerve B's "2개의 뉴런, ㉠~㉢ 중 한 곳에 시냅스" while a lesson said to keep it (2026-10-10, every round).
 function cleanHeading(h) {
-  const title = str(h?.title ?? h, 300);
+  const title = h && typeof h === 'object' ? str(h.title, 300) : str(h, 300);
   const own = markerNumber(h?.marker);
   const m = /^\s*(?:step|STEP)\s*(\d+)\s*[.:)·]?\s*/.exec(title);
   const after = m ? title.slice(m.index + m[0].trimEnd().length) : '';
@@ -196,9 +196,11 @@ function applyFixes(material, fixes) {
     if (!wrong) { unresolved.push('교정 제안(고칠 글자가 비어 있어 적용 못 함) ' + note); continue; }
     if (wrong === right) continue;
     const ref = fieldRef(String(fix?.field || ''));
-    if (!ref || ref[0][ref[1]].split(wrong).length !== 2) { unresolved.push('교정 제안(자동 적용 못 함) ' + note); continue; }
-    const next = ref[0][ref[1]].replace(wrong, right);
-    if (unclosed(next) && !unclosed(ref[0][ref[1]])) { unresolved.push('교정 제안(수식 기호 $의 짝이 맞지 않아 적용 못 함) ' + note); continue; }
+    const current = ref ? String(ref[0][ref[1]] ?? '') : '';
+    if (!ref || current.split(wrong).length !== 2) { unresolved.push('교정 제안(자동 적용 못 함) ' + note); continue; }
+    // A function replacer: a string one expands "$$", "$&", "$'" in the replacement, and $ is everywhere in math text.
+    const next = current.replace(wrong, () => right);
+    if (unclosed(next) && !unclosed(current)) { unresolved.push('교정 제안(수식 기호 $의 짝이 맞지 않아 적용 못 함) ' + note); continue; }
     ref[0][ref[1]] = next; applied.push(note);
   }
   return { applied, unresolved };
@@ -296,7 +298,7 @@ async function analyzeMaterial(ctx, material) {
     result.proofread = applied;
     result.uncertainties.push(...unresolved);
     if (proposed.length > 100) result.uncertainties.push(`교정 제안이 ${proposed.length}건이어서 100건까지만 적용했습니다. 원본과 대조해 주세요.`);
-    result.solutionStepCount = Number.parseInt(check?.solutionStepCount, 10) || result.solutionStepCount;
+    result.solutionStepCount = Math.min(20, Math.max(0, Number.parseInt(check?.solutionStepCount, 10) || 0)) || result.solutionStepCount;
   } catch (e) {
     if (e.name !== 'BudgetExceeded' && e.name !== 'LlmFormatError') throw e;
     result.uncertainties.push('원본 대조(교정) 단계를 건너뛰었습니다: ' + e.message);
@@ -1832,14 +1834,18 @@ async function learnFromReview(ctx, material, set, all) {
   const faults = all.filter((f) => !LOW_NOTE.test(f.text));
   if (!faults.length || !ctx.store) return [];
   const editable = (r) => layerOf(r) !== 'guide' && ['auto', 'review', 'eval'].includes(r.source?.from);
-  const rules = selectRules(ctx.store.rules.all(), material).map((r) => ({ id: r.id, text: r.text, editable: editable(r) }));
+  const allRules = ctx.store.rules.all();
+  const rules = selectRules(allRules, material).map((r) => ({ id: r.id, text: r.text, editable: editable(r) }));
   ctx.log('검수에서 걸린 점으로 학습을 고치는 중');
   const { data } = await ctx.llm.json({
     purpose: 'learn-review', jobId: ctx.job.id, budget: ctx.budget, signal: ctx.signal, effort: ctx.effort.solve, maxTokens: 8000,
     system: prompts.LEARN_REVIEW_SYSTEM, text: prompts.learnReviewText({ material, faults: faults.slice(0, 40), rules }),
   });
   const changed = [];
-  const own = (id) => { const r = ctx.store.rules.get(str(id, 40)); return r && editable(r) ? r : null; };
+  // The id as the model returned it, matched against the lessons it was shown (a mangled id is simply not found; the
+  // store itself refuses an id that is not a key, which failed the whole round).
+  const shown = new Set(rules.map((r) => r.id));
+  const own = (id) => { const key = str(id, 40); const r = key && shown.has(key) ? allRules.find((x) => x.id === key) : null; return r && editable(r) ? r : null; };
   const faultKeys = faultsData.keysOf(faults.map((f) => f.text));
   const revised = (ctx.job.revisedLessons = ctx.job.revisedLessons || []);
   for (const x of arr(data?.revise).slice(0, 5)) {
@@ -1994,7 +2000,7 @@ async function runGeneration(ctx) {
   job.faultStats = faultsData.setStats(job, history);
   ctx.log(faultsData.statsLine(job.faultStats));
   ctx.save();
-  if (!ctx.signal.aborted) await learnFromSet(ctx);
+  if (!ctx.signal.aborted) { try { await learnFromSet(ctx); } catch (e) { ctx.log(`세트 학습 실패 — ${e.message}`); } }
   // The data decides what the lessons are worth: one whose fault came back wakes, one no review has cited for a window
   // of sets sleeps (faults.sleepLessons / wakeLessons). The teacher's own items are never touched.
   try {

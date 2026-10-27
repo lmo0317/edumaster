@@ -187,9 +187,46 @@ const frameLine = (l) => subDigits(String(l || '').replace(/\$\\ce\{([^{}]*)\}\$
 // other numbers in it, so its frame is all slots), and the closing choice and answer lines (teacherChoiceHeading).
 const frameSkip = (l) => !l || /^\|.*\|$/.test(l) || /^\|?\s*-{3}/.test(l) || /^[★*•\s]*([①②③④⑤]|정답은)/.test(l)
   || String(l).replace(/\$[^$]*\$/g, '').replace(/[^가-힣]/g, '').length < 4;
+// The fixed parts of a frame (its text between the slots), and the regex that holds a line to it. Slots that stand next
+// to each other with nothing but spaces between them are one slot: "《물질1》 《질량1》 《물질2》 《질량2》" gave four
+// unbounded groups in a row, and a long line that does not match made the regex try every split of it — n^4 steps,
+// 40 seconds on a 1,000-letter line, the whole server frozen with it (2026-10-27 review). The regexes are kept by frame.
+const SLOT = /《[^《》]{1,20}》/g;
+const frameRegexes = new Map();
 function frameRegex(frame) {
-  const parts = String(frame).split(/《[^《》]{1,20}》/);
-  return new RegExp(`^${parts.map((p) => frameLine(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*')).join('(.+?)')}$`);
+  let re = frameRegexes.get(frame);
+  if (re) return re;
+  // Whitespace-only fixed parts are dropped with the slot before them merged into the next.
+  const parts = String(frame).split(SLOT).map(frameLine);
+  const merged = [parts[0]];
+  for (let i = 1; i < parts.length; i++) { if (parts[i] === '' && i < parts.length - 1) continue; merged.push(parts[i]); }
+  re = new RegExp(`^${merged.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*')).join('(.+?)')}$`);
+  if (frameRegexes.size > 2000) frameRegexes.clear();
+  frameRegexes.set(frame, re);
+  return re;
+}
+const FRAME_LINE_MAX = 600;
+/**
+ * Whether the line fits the frame. The regex is the judge, but it runs only on a line that a linear check has already
+ * found to hold every fixed part of the frame in order (the first at the start and the last at the end when the frame
+ * begins or ends with one, a letter at least between two parts): on such a line the lazy groups settle at once, and it
+ * is the line that does not fit where they tried every split (minutes on one long line).
+ */
+function frameMatches(frame, line) {
+  if (!line || line.length > FRAME_LINE_MAX) return false;
+  const squeeze = (t) => t.replace(/\s+/g, '');
+  const parts = String(frame).split(SLOT).map(frameLine).map(squeeze);
+  const text = squeeze(line);
+  let at = 0;
+  for (let k = 0; k < parts.length; k++) {
+    const p = parts[k];
+    if (!p) continue;
+    const first = k === 0; const last = k === parts.length - 1;
+    const i = first ? (text.startsWith(p) ? 0 : -1) : last ? (text.endsWith(p) && text.length - p.length >= at ? text.length - p.length : -1) : text.indexOf(p, at);
+    if (i < 0) return false;
+    at = i + p.length + 1; // the slot after it takes a letter at least
+  }
+  return frameRegex(frame).test(line);
 }
 /** Frames worth holding a line to: enough fixed words that a frame is not "anything". */
 function frameFixed(frame) {
@@ -222,9 +259,14 @@ function validateFrames(material, extracted) {
   // and every lookup took the first — the choice analysis' frames ([틀 3-4] on) were "없는 틀 번호" and the writer was
   // asked again and again (7 of 9 new originals on 2026-10-21/22; molar mass and density, framed in one pass, had one).
   const byStep = new Map();
-  for (const s of extracted?.steps || []) {
+  // The model's shape is not trusted: steps that is not a list, an entry that is not an object, frames that is not a
+  // list of strings — one such entry lost the frames of every STEP (the TypeError was caught a level up).
+  for (const s of Array.isArray(extracted?.steps) ? extracted.steps : []) {
+    if (!s || typeof s !== 'object') continue;
     const k = Number(s.step);
-    byStep.set(k, { step: k, frames: [...(byStep.get(k)?.frames || []), ...(s.frames || [])] });
+    if (!Number.isInteger(k) || k < 1) continue;
+    const list = Array.isArray(s.frames) ? s.frames.filter((f) => typeof f === 'string') : [];
+    byStep.set(k, { step: k, frames: [...(byStep.get(k)?.frames || []), ...list] });
   }
   for (const s of [...byStep.values()].sort((a, b) => a.step - b.step)) {
     const i = Number(s.step) - 1;
@@ -243,9 +285,9 @@ function validateFrames(material, extracted) {
       });
     };
     // In the order of the teacher's lines, so [틀 n-k] runs down the STEP as the teacher wrote it.
-    const at = (f) => lines.findIndex((l) => frameRegex(f).test(l));
+    const at = (f) => lines.findIndex((l) => frameMatches(f, l));
     const frames = [...new Set((s.frames || []).map(frameLine).map(unique))].filter((f) => f && frameFixed(f) >= 6 && at(f) >= 0 && !carriesValue(f)).sort((a, b) => at(a) - at(b));
-    if (frames.length) out.push({ step: i + 1, frames, lines: lines.length, covered: lines.filter((l) => frames.some((f) => frameRegex(f).test(l))).length });
+    if (frames.length) out.push({ step: i + 1, frames, lines: lines.length, covered: lines.filter((l) => frames.some((f) => frameMatches(f, l))).length });
   }
   return out;
 }
@@ -256,7 +298,7 @@ function uncoveredLines(material) {
     const mine = (material.frames || []).find((f) => f.step === i + 1)?.frames || [];
     for (const line of String(s.work || '').split('\n').map(frameLine)) {
       if (!line || /^\|.*\|$/.test(line) || /^\|?\s*-{3}/.test(line)) continue;
-      if (!mine.some((f) => frameRegex(f).test(line))) out.push({ step: i + 1, line });
+      if (!mine.some((f) => frameMatches(f, line))) out.push({ step: i + 1, line });
     }
   });
   return out;
@@ -276,7 +318,7 @@ function frameFindings(material, item, limit = 8) {
     const mine = frames.find((f) => f.step === no);
     if (!mine) continue;
     for (const line of String(step.work || '').split('\n').map(frameLine)) {
-      if (frameSkip(line) || mine.frames.some((f) => frameRegex(f).test(line))) continue;
+      if (frameSkip(line) || line.length > FRAME_LINE_MAX || mine.frames.some((f) => frameMatches(f, line))) continue;
       const literal = (f) => frameLine(f.replace(/《[^《》]{1,20}》/g, ''));
       const near = [...mine.frames].sort((a, b) => editDistance(literal(a), line) - editDistance(literal(b), line))[0];
       out.push(`해설 STEP ${no}의 문장이 선생님 문장 틀과 다릅니다: "${line.slice(0, 160)}" — 가장 가까운 선생님 틀: "${near}" (《…》에는 이 문제의 값을 넣고 나머지 글자는 틀 그대로 쓴다)`);
