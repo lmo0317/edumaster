@@ -1,0 +1,18 @@
+{
+ "id": "6f4f8a9c79f5b587",
+ "createdAt": "2026-10-02T01:59:22.702Z",
+ "updatedAt": "2026-10-02T01:59:22.702Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "원본 해설의 핵심 추론(예: 가정→모순 판정, 해설이 정의한 보조 문자 n·m)이 변형에서도 똑같이 필요하도록 수치를 잡고, 해설에도 같은 문자와 같은 순서로 쓴다.",
+ "subject": "",
+ "topic": "",
+ "applied": 54,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

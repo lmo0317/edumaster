@@ -49,15 +49,21 @@ function runTrial(numberMode, spec, trial) {
   const scope = new Map();
   for (const [name, value] of Object.entries(trialValues(spec.free, trial))) scope.set(name, numberMode === 'Fraction' ? math.fraction(value) : value);
   const assigned = [];
+  // mathjs reads "2 mol" or "40 g/mol" as a quantity with a unit, which equals no choice: that was reported as a wrong
+  // answer and sent the numbers to repair, when it is the program that must be fixed (2026-10-27 review).
+  const unitFree = (v, what) => {
+    if (math.isUnit(v) || (math.isMatrix(v) && v.toArray().flat().some((x) => math.isUnit(x)))) throw new Error(`${what}의 값에 단위(g, mol, L …)가 섞여 있습니다. 프로그램은 수치만 쓰고 단위는 desc에 적습니다.`);
+    return v;
+  };
   spec.program.forEach((statement, line) => {
     let value;
-    try { value = evaluate(statement, scope); }
+    try { value = unitFree(evaluate(statement, scope), `${line + 1}번째 줄 "${statement}"`); }
     catch (e) { throw new Error(`${line + 1}번째 줄 "${statement}" 계산 실패: ${e.message}`); }
     const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/.exec(statement)?.[1];
     if (name) assigned.push({ name, value });
   });
   const value = (expr, what) => {
-    try { return evaluate(String(expr), scope); } catch (e) { throw new Error(`${what} "${expr}" 계산 실패: ${e.message}`); }
+    try { return unitFree(evaluate(String(expr), scope), what); } catch (e) { throw new Error(`${what} "${expr}" 계산 실패: ${e.message}`); }
   };
   const answer = spec.answer ? value(spec.answer, '정답 식') : undefined;
   const choices = spec.choices.map((expr, i) => (expr === '' || expr === null ? undefined : value(expr, `${i + 1}번 선택지 식`)));

@@ -1,0 +1,26 @@
+{
+ "id": "adc70c5be5e68f2b",
+ "createdAt": "2026-10-21T07:45:39.583Z",
+ "updatedAt": "2026-10-21T07:45:39.583Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "선생님 해설의 문장 틀을 다른 STEP이나 다른 기체로 옮겨 쓸 때는 '즉,', '따라서'처럼 앞 문장을 받는 접속어를 그 자리에 받을 앞 문장이 있을 때만 남긴다. 변형에서 숨긴 칸이 바뀌어 STEP의 첫 계산 대상이 달라지면(예: 부피 대신 분자량을 구함), 그 줄은 실제로 구하는 값을 주어로 하는 문장으로 시작한다.",
+ "subject": "화학",
+ "topic": "화학식량과 몰 / 기체의 양(mol)과 입자 수, 질량, 부피 사이의 관계",
+ "source": {
+  "jobId": "3b695f8fb625e1aee41babb5",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "review"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "solution",
+ "tagged": "migrated"
+}

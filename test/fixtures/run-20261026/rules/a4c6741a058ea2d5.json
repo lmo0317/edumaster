@@ -1,0 +1,25 @@
+{
+ "id": "a4c6741a058ea2d5",
+ "createdAt": "2026-10-04T12:43:31.976Z",
+ "updatedAt": "2026-10-04T12:43:31.976Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "검산 프로그램과 조건 검사에는 이 문제의 새 수치만 쓴다. 원본의 표 값이나 원본에서 구한 값(원본의 상댓값, 원본의 정답 등)을 그대로 옮겨 검사하지 않는다. 정답 번호는 검산으로 계산한 값과 같은 선택지 번호로 맞춘다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "",
+  "materialId": "",
+  "label": "로컬 모델 평가 2026-10-04 (gpt-oss-20B·Qwen3.8-27B, 몰질량 원본)",
+  "excerpt": "최종 문제 검사에 원본의 x=15, 2/5, 18을 그대로 써서 거짓, 계산한 정답이 선택지에 없거나 정답 번호와 다름",
+  "from": "eval"
+ },
+ "applied": 33,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

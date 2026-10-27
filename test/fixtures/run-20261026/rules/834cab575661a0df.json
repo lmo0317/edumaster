@@ -1,0 +1,18 @@
+{
+ "id": "834cab575661a0df",
+ "createdAt": "2026-10-02T01:59:22.712Z",
+ "updatedAt": "2026-10-02T06:03:29.435Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "해설은 선생님 해설과 같은 구성으로 쓴다. 이 문제가 쓰는 STEP만 두고(STEP 1~2 연습이면 STEP 1, 2만), 정답을 구하는 마지막 계산은 마지막 STEP 끝에 쓴다. 선생님 해설에 없는 설명 문장이나 덧셈식을 덧붙이지 않고, 그 STEP에서 선생님이 표로 정리했으면 같은 표로 정리한다.",
+ "subject": "",
+ "topic": "",
+ "applied": 54,
+ "v2": true,
+ "history": [],
+ "category": "solution"
+}

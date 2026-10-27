@@ -1,0 +1,35 @@
+{
+ "id": "ff82249d45fd84c4",
+ "createdAt": "2026-10-26T12:16:21.680Z",
+ "updatedAt": "2026-10-26T12:16:21.680Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "design",
+ "text": "가계도 구성원의 표현형을 바꿀 때는 부모·자녀 표현형만으로 형질의 우열이나 상염색체·X 염색체 여부가 바로 정해지지 않는지 확인한다.",
+ "why": "가계도만 보고 우열과 유전자 위치가 정해져 DNA 상대량 자료를 쓰는 가정→모순 STEP을 건너뛰는 지름길을 막는다.",
+ "example": {
+  "before": "정상인 3과 4 사이에서 (가) 발현 딸 8",
+  "after": "원본처럼 정상 부모에서 발현 딸이 나오지 않게 배치"
+ },
+ "subject": "생명과학",
+ "topic": "사람의 유전 - 가계도 분석(상염색체·X 염색체 유전, DNA 상대량)",
+ "history": [],
+ "source": {
+  "jobId": "9c3e8120bde2c1bf8b4d4591",
+  "materialId": "80ddacf9556d4a04aa6c21ab",
+  "label": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "가계도에서을정상여자로을발현여자로바꿨다그결과를나타내지",
+   "원본의실험수치를그대로썼습니다와의DNA상대량을더한값행",
+   "앞문제연습의실험수치를그대로썼습니다와의DNA상대량을더"
+  ]
+ },
+ "applied": 0,
+ "v2": true
+}

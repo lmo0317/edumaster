@@ -1,0 +1,35 @@
+{
+ "id": "86fd6698a7eccd40",
+ "createdAt": "2026-10-02T11:02:01.128Z",
+ "updatedAt": "2026-10-24T08:21:36.713Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "해설은 선생님 해설의 마지막 문장과 같은 자리에서 끝낸다. 그 뒤에 결론을 되풀이하거나 선택지 번호를 언급하는 문장(예: '…이므로 정답은 ②이다.')을 덧붙이지 않는다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "8d94386ac44e8ea3d7763d59",
+  "materialId": "a8eff79f0c86ae6169ec5341",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ 한계 반응물과 몰질량 비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 31,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T08:21:36.713Z",
+   "before": "해설은 선생님 해설의 마지막 문장과 같은 자리에서 끝낸다. 그 뒤에 결론을 되풀이하거나 선택지 번호를 언급하는 문장(예: '…이므로 정답은 ②이다.')을 덧붙이지 않는다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "solution",
+ "dormantAt": "2026-10-24T08:21:36.713Z"
+}

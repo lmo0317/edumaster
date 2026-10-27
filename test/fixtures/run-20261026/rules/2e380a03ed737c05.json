@@ -1,0 +1,25 @@
+{
+ "id": "2e380a03ed737c05",
+ "createdAt": "2026-10-02T15:04:25.622Z",
+ "updatedAt": "2026-10-19T15:50:09.442Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "합답형 보기는 각 보기가 선생님 해설의 해당 STEP에서 구한 값과 그 해설에 있는 논리만으로 판정되도록 만든다. 이 원본의 선생님 해설에 없는 추가 논리가 있어야 판정되는 보기는 넣지 않는다 (선생님 해설에 있는 논리, 예를 들어 해설이 같은 질량의 분자 수 비를 분자량의 역수 비로 구하면 그 논리는 써도 된다). 해설에도 선생님 해설에 없는 보기별 판정 절을 따로 붙이지 않는다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "33a173eabc8a5c8644585e3b",
+  "materialId": "d43e96e5887d8f3235b3242c",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 52,
+ "v2": true,
+ "history": [],
+ "category": "choices"
+}

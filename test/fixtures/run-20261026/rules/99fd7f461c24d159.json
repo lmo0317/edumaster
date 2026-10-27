@@ -1,0 +1,26 @@
+{
+ "id": "99fd7f461c24d159",
+ "createdAt": "2026-10-21T21:22:41.799Z",
+ "updatedAt": "2026-10-21T21:22:41.799Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "all",
+ "text": "최종 문제의 칸 배치를 정한 뒤 해설을 STEP마다 선생님 해설의 첫 문장(공식 문장)부터 같은 순서로 써 보고, 어느 STEP에서 공식 문장 대신 비례식을 먼저 써서 값을 역산하거나 선생님 해설에 없는 공식 문장(예: 질량=양(mol)×분자량)이 필요해지면 칸 배치를 다시 정한다.",
+ "subject": "화학",
+ "topic": "화학식량과 몰 / 기체의 양(mol)과 입자 수, 질량, 부피 사이의 관계",
+ "source": {
+  "jobId": "5a544862b6c71974122d4f42",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "review"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "design",
+ "tagged": "migrated"
+}

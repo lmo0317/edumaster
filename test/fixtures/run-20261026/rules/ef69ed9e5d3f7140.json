@@ -1,0 +1,31 @@
+{
+ "id": "ef69ed9e5d3f7140",
+ "createdAt": "2026-10-25T02:05:36.093Z",
+ "updatedAt": "2026-10-25T02:05:36.093Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "design",
+ "text": "원본 발문의 단서(예: '돌연변이와 교차는 고려하지 않으며')를 줄일 때는 각 단서가 해설의 어느 추론에 쓰이는지 확인하고, 가정→모순 판정에 쓰이는 단서(X 염색체 유전 가정에서 어머니가 자녀에게 서로 다른 X 염색체를 준다는 추론에는 교차 배제가 필요하다)는 남긴다.",
+ "subject": "생명과학",
+ "topic": "사람의 유전 – 가계도 분석(상염색체·X 염색체 유전)",
+ "history": [],
+ "source": {
+  "jobId": "a7f3ec12d1fadc191cbf2306",
+  "materialId": "b91e12c205f354420dd3209e",
+  "label": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "원본단서는인데변형문제는로줄이면서를뺐다의은교차가없어야",
+   "의핵심기법인없이도정답이나온다로ㄴ을로판정하면남는선택지",
+   "앞문제연습의실험수치를그대로썼습니다와의DNA상대량을더",
+   "대응의결과는ㄷ에서으로만쓰이는데이STEP을건너뛰어도ㄷ"
+  ]
+ },
+ "applied": 3,
+ "v2": true
+}

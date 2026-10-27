@@ -46,7 +46,10 @@ function demote(it, advisory = []) {
   // A fault filed under a criterion is demoted only when it is the lesson's sentence (nine tenths of its word pairs):
   // at seven tenths, "숨긴 값 a=12가 원본과 같아 …" under 구조 · high was a note because a short lesson said hidden values
   // differ from the original's, and the check was cleared with it (2026-10-26 audit).
-  const restates = (x) => x && typeof x.detail === 'string' && advisory.some((t) => coverage(t, x.detail) >= (x.rule === '학습' ? 0.5 : 0.9));
+  // Under a criterion the fault must also be little more than the lesson (half of its own letter pairs in the lesson):
+  // "'<lesson>'를 어겼다: 숨긴 값 a=12가 원본과 같다 …" quotes the lesson whole and then gives the evidence, and was a
+  // note with its check cleared (2026-10-27 review).
+  const restates = (x) => x && typeof x.detail === 'string' && advisory.some((t) => (x.rule === '학습' ? coverage(t, x.detail) >= 0.5 : coverage(t, x.detail) >= 0.9 && coverage(x.detail, t) >= 0.5));
   if (!it.issues.some(restates)) return it;
   const issues = it.issues.map((x) => (restates(x) ? { ...x, severity: 'low', rule: 'AI 학습 참고' } : x));
   // The check the reviewer marked for it ('학습': fix) is cleared when no other fault explains it.
@@ -163,9 +166,19 @@ const answerOf = (v) => {
   const s = String(v ?? '').trim();
   const circled = s.match(/[①②③④⑤]/);
   if (circled) return '①②③④⑤'.indexOf(circled[0]) + 1;
-  const m = /^(?:정답\s*)?([1-5])(?![0-9.])/.exec(s) || /([1-5])\s*번/.exec(s);
+  // "2w", "1/4", "5/2" are values, not the numbers of choices (2026-10-27 review: "2w, ㄱ·ㄴ" read as ② against a ③).
+  const m = /^(?:정답\s*)?([1-5])(?![0-9.\/]|\s*[A-Za-z㉠-㉿ⓐ-ⓩ])/.exec(s) || /([1-5])\s*번/.exec(s);
   return m ? Number(m[1]) : 0;
 };
+
+/** Whether a reviewer's verdict on one problem has what a verdict needs (itemFaults asks the same): every criterion
+ *  judged, its own answer a choice number, its faults listed in form. A set review without it is asked again. */
+function wellFormed(it) {
+  return Boolean(it) && typeof it.answerOk === 'boolean' && ['use', 'fix', 'reject'].includes(it.verdict) && Array.isArray(it.issues)
+    && it.issues.every((x) => x && ['high', 'mid', 'low'].includes(x.severity) && typeof x.detail === 'string' && Boolean(x.detail.trim()))
+    && Boolean(it.checks) && typeof it.checks === 'object' && !Array.isArray(it.checks) && ITEM_NAMES.every((n) => n in it.checks)
+    && Object.values(it.checks).every((v) => ['ok', 'fix', 'na'].includes(v)) && answerOf(it.myAnswer) > 0;
+}
 
 function itemFaults(review, { advisory = [], answer = null } = {}) {
   const it = Array.isArray(review?.items) && review.items.length === 1 ? demote(review.items[0], advisory) : null;
@@ -200,13 +213,16 @@ function itemFaults(review, { advisory = [], answer = null } = {}) {
 }
 
 // Models may reorder their output. Match an explicit index or an unambiguous label, never an array position.
+// An index given as a string ("0") is the number; a label with stray spaces is the label (2026-10-27 review).
+const indexOf = (x) => (Number.isInteger(x.index) ? x.index : /^\s*\d+\s*$/.test(String(x.index ?? '')) ? Number(x.index) : null);
+const labelOf = (x) => String(x?.label ?? '').trim();
 function matchItem(review, expected, items = [expected]) {
   const matches = (Array.isArray(review?.items) ? review.items : []).filter((x) => x && (
-    Number.isInteger(x.index) ? x.index === expected.index : x.label === expected.label && items.filter((it) => it.label === expected.label).length === 1
+    indexOf(x) !== null ? indexOf(x) === expected.index : labelOf(x) === labelOf(expected) && items.filter((it) => labelOf(it) === labelOf(expected)).length === 1
   ));
   if (matches.length !== 1) return null;
   const found = matches[0];
-  if (found.label && found.label !== expected.label) return null;
+  if (labelOf(found) && labelOf(found) !== labelOf(expected)) return null;
   return found;
 }
 
@@ -272,4 +288,4 @@ function checklistOf(part, { analysis = false, final = false, advisory = [], ans
   return out;
 }
 
-module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, restates, answerOf, ITEM_NAMES, CHECKLIST, CRITERIA_FILE };
+module.exports = { reviewSystem, setText, itemReviewText, analysisText, itemFaults, itemNotes, solutionOnly, matchItem, analysisFaults, checklistOf, advisoryTexts, demote, restates, answerOf, wellFormed, ITEM_NAMES, CHECKLIST, CRITERIA_FILE };

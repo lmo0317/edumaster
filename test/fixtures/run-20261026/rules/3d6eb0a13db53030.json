@@ -1,0 +1,26 @@
+{
+ "id": "3d6eb0a13db53030",
+ "createdAt": "2026-10-21T05:54:56.342Z",
+ "updatedAt": "2026-10-21T05:54:56.342Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "해설에서 '다음과 같이 비례식으로 구할 수 있다'처럼 뒤의 식을 미리 알리는 문장에는 바로 뒤에 실제로 나오는 식으로 구하는 값만 적는다. 보조 문자 관계를 구한 뒤에야 정해지는 값은 그 관계 문장 다음에 따로 구하고, 정리표에 쓴 문자는 모두 본문에서 도입하고 구한다.",
+ "subject": "화학",
+ "topic": "화학 반응의 양적 관계 (한계 반응물, 몰질량 비)",
+ "source": {
+  "jobId": "bf4a415a4bb110775bab40e9",
+  "materialId": "631a640b30237e8b93ada70c",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ의 한계 반응물과 몰질량 비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [],
+ "category": "solution",
+ "tagged": "migrated"
+}

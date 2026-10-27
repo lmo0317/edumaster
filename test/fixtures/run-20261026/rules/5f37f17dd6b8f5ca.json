@@ -1,0 +1,31 @@
+{
+ "id": "5f37f17dd6b8f5ca",
+ "createdAt": "2026-10-25T02:05:40.070Z",
+ "updatedAt": "2026-10-25T02:05:40.070Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "numbers",
+ "text": "구성원 대응 결과를 써서 확률을 묻는 보기는 대응 후보마다 나오는 확률을 모두 계산해 둔다. 거짓 보기의 확률은 틀린 대응에서 나오는 값 중 하나로 잡아, 대응을 바르게 해야만 참·거짓이 갈리게 한다.",
+ "subject": "생명과학",
+ "topic": "사람의 유전 – 가계도 분석(상염색체·X 염색체 유전)",
+ "history": [],
+ "source": {
+  "jobId": "a7f3ec12d1fadc191cbf2306",
+  "materialId": "b91e12c205f354420dd3209e",
+  "label": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "원본단서는인데변형문제는로줄이면서를뺐다의은교차가없어야",
+   "의핵심기법인없이도정답이나온다로ㄴ을로판정하면남는선택지",
+   "앞문제연습의실험수치를그대로썼습니다와의DNA상대량을더",
+   "대응의결과는ㄷ에서으로만쓰이는데이STEP을건너뛰어도ㄷ"
+  ]
+ },
+ "applied": 3,
+ "v2": true
+}

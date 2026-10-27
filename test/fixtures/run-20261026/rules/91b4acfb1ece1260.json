@@ -1,0 +1,35 @@
+{
+ "id": "91b4acfb1ece1260",
+ "createdAt": "2026-10-21T05:58:57.456Z",
+ "updatedAt": "2026-10-24T13:15:48.644Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "표의 분자량을 다른 기체 분자량의 배수 관계 문장으로 바꾸지 않는다. 그 배수만으로 1g당 원자 수 비교 같은 보기가 앞 STEP의 분자량 값 없이 판정되기 때문이다. 구조를 바꾼 뒤에는 각 보기를 앞 STEP 결과 없이 풀 수 있는지 직접 풀어 확인한다.",
+ "subject": "화학",
+ "topic": "",
+ "source": {
+  "jobId": "885a3ee5b452048f7620d2b3",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 12,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T13:15:48.644Z",
+   "before": "표의 분자량을 다른 기체 분자량의 배수 관계 문장으로 바꾸지 않는다. 그 배수만으로 1g당 원자 수 비교 같은 보기가 앞 STEP의 분자량 값 없이 판정되기 때문이다. 구조를 바꾼 뒤에는 각 보기를 앞 STEP 결과 없이 풀 수 있는지 직접 풀어 확인한다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "choices",
+ "dormantAt": "2026-10-24T13:15:48.644Z"
+}

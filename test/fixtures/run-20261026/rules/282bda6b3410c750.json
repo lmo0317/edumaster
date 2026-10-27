@@ -1,0 +1,35 @@
+{
+ "id": "282bda6b3410c750",
+ "createdAt": "2026-10-02T11:02:01.129Z",
+ "updatedAt": "2026-10-24T08:21:36.713Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "solution",
+ "text": "선생님이 '실젯값이 $\\frac{p}{q}$이므로 $m=kn$이다.'처럼 값만 쓰고 바로 결론으로 넘어간 문장은 같은 틀로 값만 바꿔 쓰고, 문자로 세운 중간식(예: $\\frac{an}{bn+cm}=\\frac{p}{q}$)을 끼워 넣지 않는다. 다만 변형에서 어떤 실험의 실젯값이 보조 문자 관계($m=kn$)를 구한 뒤에야 정해지면, 그 관계 문장 바로 뒤에 '$m=kn$이므로 ○에서 $\\frac{\\text{D의 양(mol)}}{\\text{전체 기체의 양(mol)}}$의 실젯값은 $\\frac{p}{q}$이다.'를 한 줄 넣고 그 뒤에 비례식을 쓴다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "8d94386ac44e8ea3d7763d59",
+  "materialId": "a8eff79f0c86ae6169ec5341",
+  "label": "A(g)+bB(g)→2C(g)+2D(g) 실험 Ⅰ~Ⅲ 한계 반응물과 몰질량 비",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 32,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T08:21:36.713Z",
+   "before": "선생님이 '실젯값이 $\\frac{p}{q}$이므로 $m=kn$이다.'처럼 값만 쓰고 바로 결론으로 넘어간 문장은 같은 틀로 값만 바꿔 쓰고, 문자로 세운 중간식(예: $\\frac{an}{bn+cm}=\\frac{p}{q}$)을 끼워 넣지 않는다. 다만 변형에서 어떤 실험의 실젯값이 보조 문자 관계($m=kn$)를 구한 뒤에야 정해지면, 그 관계 문장 바로 뒤에 '$m=kn$이므로 ○에서 $\\frac{\\text{D의 양(mol)}}{\\text{전체 기체의 양(mol)}}$의 실젯값은 $\\frac{p}{q}$이다.'를 한 줄 넣고 그 뒤에 비례식을 쓴다.",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "solution",
+ "dormantAt": "2026-10-24T08:21:36.713Z"
+}

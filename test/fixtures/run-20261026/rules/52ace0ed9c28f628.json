@@ -1,0 +1,18 @@
+{
+ "id": "52ace0ed9c28f628",
+ "createdAt": "2026-10-02T01:59:22.704Z",
+ "updatedAt": "2026-10-02T01:59:22.704Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "학생이 추론해야 할 결론(예: 반응 후 남는 물질, 앞 STEP에서 구할 값)은 표·발문·조건에 미리 적지 않는다. 모르는 칸은 ?나 문자로 둔다.",
+ "subject": "",
+ "topic": "",
+ "applied": 58,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

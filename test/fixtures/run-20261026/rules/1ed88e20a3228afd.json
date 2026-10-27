@@ -1,0 +1,18 @@
+{
+ "id": "1ed88e20a3228afd",
+ "createdAt": "2026-09-28T22:57:11.018Z",
+ "updatedAt": "2026-09-28T22:57:11.018Z",
+ "status": "approved",
+ "scope": "global",
+ "kind": "dont",
+ "target": "problem",
+ "text": "풀이에 필요 없는 서술이나 무관한 조건을 넣지 않는다. 예: 질량만 따지는 문제에 \"(단, 실린더 속 기체의 온도와 압력은 일정하다.)\"를 붙이지 않는다. 구해야 할 값을 표에 채워 주지 않는다.",
+ "subject": "",
+ "topic": "",
+ "applied": 68,
+ "stage": "generation",
+ "layer": "guide",
+ "v2": true,
+ "history": [],
+ "category": "design"
+}

@@ -1,0 +1,25 @@
+{
+ "id": "ef1ae7d1e880c251",
+ "createdAt": "2026-10-20T15:44:48.780Z",
+ "updatedAt": "2026-10-20T15:44:48.780Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "합답형 문항은 보기 하나를 판정했을 때 남는 선택지들이 모두 같은 보기를 포함하거나 모두 빼서 나머지 보기를 판정할 필요가 없어지는지 확인한다. 그런 경우에는 보기 조합이나 선택지 목록을 바꿔 각 보기를 따로 판정해야 정답이 나오게 한다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "6f6287385a533a8cfa12ac3e",
+  "materialId": "87eefaa58f8fbd9140bf67fb",
+  "label": "골격근 수축 과정 — 근육 원섬유 마디 X와 구간 ㉠~㉢의 길이",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 16,
+ "v2": true,
+ "history": [],
+ "category": "choices"
+}

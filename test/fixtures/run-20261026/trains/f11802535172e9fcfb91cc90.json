@@ -1,0 +1,84 @@
+{
+ "id": "f11802535172e9fcfb91cc90",
+ "type": "train",
+ "createdAt": "2026-10-26T11:29:39.466Z",
+ "promptVersion": "5967ae2e4c",
+ "budget": {
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "usage": {
+  "calls": 0,
+  "input": 0,
+  "output": 0,
+  "reasoning": 0,
+  "total": 0,
+  "maxCalls": 11,
+  "maxTokens": 100000000
+ },
+ "materialId": "e03fd37ed2c17e76597daf99",
+ "title": "골격근 수축 (구간 길이 비로 미지수 설정, A대·X 길이 연립)",
+ "items": [
+  {
+   "index": 0,
+   "stage": {
+    "kind": "upto",
+    "upto": 1
+   },
+   "variantNo": 1,
+   "label": "STEP 1 연습",
+   "status": "pending"
+  },
+  {
+   "index": 1,
+   "stage": {
+    "kind": "twin"
+   },
+   "variantNo": 1,
+   "label": "최종 문제",
+   "status": "pending"
+  }
+ ],
+ "options": {
+  "mode": "integrated",
+  "effort": "low",
+  "provider": "claude-cli",
+  "perStage": 1
+ },
+ "target": 90,
+ "maxRounds": 6,
+ "rounds": [
+  {
+   "setId": "798cb7ca14ac17fa99ae072e",
+   "at": "2026-10-26T11:42:51.527Z",
+   "scores": {
+    "claude-cli": 100,
+    "agy-cli": 100
+   },
+   "failing": [],
+   "faults": [],
+   "analysisIssues": 0,
+   "pass": true,
+   "faultStats": {
+    "faults": 0,
+    "repeat": 0,
+    "own": 0,
+    "lesson": 0,
+    "rate": null
+   }
+  }
+ ],
+ "status": "done",
+ "updatedAt": "2026-10-26T11:42:51.528Z",
+ "startedAt": "2026-10-26T11:29:39.467Z",
+ "modelLabel": "Claude Opus 5.5 (구독)",
+ "reached": true,
+ "finishedAt": "2026-10-26T11:42:51.528Z",
+ "logLines": [
+  "1번째 세트를 만드는 중",
+  "1번째 세트를 Claude·Gemini가 검수하는 중",
+  "1번째 세트: Claude 100% · Gemini 100%",
+  "1번째 세트 결함 기록: 걸린 것 없이 완성",
+  "목표(90점)에 도달했습니다"
+ ]
+}

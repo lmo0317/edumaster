@@ -204,12 +204,15 @@ const VALUE_IN_FIXED = [
   /[①②③④⑤]/,
   /=\s*\$?\s*-?\d+(?:\.\d+)?\s*(?:\$|$|[가-힣,;.)\s])/,
   /\\[dt]?frac\{\s*(?:-?\d+(?:\.\d+)?|[a-zA-Z]{1,2})\s*\}\{\s*-?\d+(?:\.\d+)?\s*\}/,
-  /\d+(?:\.\d+)?\s*[a-z]?\s*\$?\s*(?:g|mol|L|mL|cm|mm|μm|\\mu ?m|%|℃|°C|kJ|J|atm|Pa)(?![A-Za-z])/,
 ];
+// An amount with its unit (20 g, 2 mol). A unit of one that a rate is reckoned by ("1g에 들어 있는 원자 수", "1 mol당")
+// is the method, not a value: two frames of the molar-volume original's 보기 ㄴ were dropped for it (2026-10-27 review).
+const UNIT_AMOUNT = /(\d+(?:\.\d+)?)\s*[a-z]?\s*\$?\s*(?:g|mol|L|mL|cm|mm|μm|\\mu ?m|%|℃|°C|kJ|J|atm|Pa)(?![A-Za-z])(\s*(?:에|당|마다))?/g;
 function carriesValue(frame) {
   const fixed = String(frame).replace(/《[^《》]{1,20}》/g, ' ');
   if ((fixed.replace(/\\\$/g, '').match(/\$/g) || []).length % 2) return true;
-  return VALUE_IN_FIXED.some((re) => re.test(fixed));
+  if (VALUE_IN_FIXED.some((re) => re.test(fixed))) return true;
+  return [...fixed.matchAll(UNIT_AMOUNT)].some((m) => !(m[1] === '1' && m[2]));
 }
 
 /** The extracted frames kept: those that match a line of their own STEP of the teacher's solution. */
@@ -310,7 +313,8 @@ function renderFrames(material, item) {
       const m = FRAME_REF.exec(line);
       if (!m) return line;
       const frame = frames.find((f) => f.step === Number(m[1]))?.frames[Number(m[2]) - 1];
-      if (!frame) { missing.push(`해설 STEP ${step.step}: [틀 ${m[1]}-${m[2]}]은 없는 틀 번호입니다.`); return m[3]; }
+      // Kept as the writer's reference line (as an unfilled frame is), never its bare "값=1" (2026-10-27 review).
+      if (!frame) { missing.push(`해설 STEP ${step.step}: [틀 ${m[1]}-${m[2]}]은 없는 틀 번호입니다.`); return line; }
       const values = {};
       for (const part of m[3].split(/\s*;\s*/)) {
         const kv = /^[《{]?([^=》}]+?)[》}]?\s*=\s*(.*)$/.exec(part.trim());
@@ -398,7 +402,7 @@ function answerLine(item) {
   for (const step of steps) {
     // A table row is left alone; a line's closing bold marks stay.
     step.work = String(step.work || '').split('\n').map((l) => (/^\s*\|/.test(l) ? l : l.replace(/^(.*?정답은\s*)([①②③④⑤])(.*?)(\*\*)?\s*$/, (all, head, had, rest, bold) => (
-      /^\s*(이다|입니다)/.test(rest) ? `${head}${mark}${rest}${bold || ''}` : `${head}${line}${bold || ''}`)))).join('\n');
+      /^\s*(이다|입니다|이고|이며|이므로|,)/.test(rest) ? `${head}${mark}${rest}${bold || ''}` : `${head}${line}${bold || ''}`)))).join('\n');
   }
   // A solution that ends without it gets it at the end of its last STEP: Opus's STEP 1~2 practice ended on its reaction
   // table (reaction-density 3차, 2026-10-18, Claude's review), its teacher's answer line being in STEP 3.
@@ -693,7 +697,9 @@ function checkCleanNumbers(item) {
  * not exist) must not reach the student: the line is a hard fault, not a wording note. */
 function checkFramesFilled(item) {
   const left = (item.solution?.steps || []).flatMap((st) => String(st.work || '').split('\n')
-    .filter((l) => /[\[［]\s*틀\s*\d+/.test(l) || (!/\$/.test(l) && /^[^=;|]{1,20}=[^;=|]{1,60};\s*[^=;|]{1,20}=/.test(l)))
+    // Values without their reference ("실험=Ⅰ; 물질=B"): no $ and no sentence around them ("따라서 a=12; b=1.5이다." is a
+    // sentence, 2026-10-27 review).
+    .filter((l) => /[\[［]\s*틀\s*\d+/.test(l) || (!/\$/.test(l) && !/[가-힣]{3,}/.test(l) && !/(이다|입니다|한다|된다|있다|없다)\.?\s*$/.test(l) && /^[^=;|]{1,20}=[^;=|]{1,60};\s*[^=;|]{1,20}=/.test(l)))
     .map((l) => `STEP ${st.step}: ${l.trim().slice(0, 80)}`));
   return [result('frames', '해설 문장 틀 채움', !left.length, left.length ? `틀 참조가 문장으로 바뀌지 않고 남았습니다: ${left.slice(0, 3).join(' / ')}` : '', 'hard')];
 }
@@ -722,10 +728,29 @@ function checkUnusedLetters(material, item) {
     unused.length ? `문제가 도입한 문자 ${unused.join(', ')}가 해설 어디에도 쓰이지 않습니다. 묻는 값이나 계산에 쓰이게 하거나 수치로 바꿔야 합니다.` : `문자 ${letters.join(', ')} 모두 해설에 쓰임`)];
 }
 
+// A letter the variant introduces that nothing asks for and that, once worked out ("$a=5$이다"), is used nowhere else
+// is a decoration the student has to wonder about: Gemini on molar mass set 1 (2026-10-26), "$aw$로 숨겼으나 … 해설의
+// 이후 계산에서도 전혀 쓰이지 않아 풀이에 불필요한 조건" — the letter was in the solution, as "$a=5$" only, so
+// checkUnusedLetters passed it. Whether a hidden value had to be found is a judgement: the final review gets it as a
+// hint (severity 'hint', pipeline.verifyItem), never a repair of its own.
+function checkDecorativeLetters(material, item) {
+  const inherited = new Set(problemLetters(material?.problem, { mathOnly: false }));
+  const letters = problemLetters(item.problem).filter((v) => !inherited.has(v));
+  if (!letters.length) return [];
+  const asked = plain([String(item.problem.text || '').split('\n').filter((l) => l.trim()).pop() || '', ...(item.problem.choices || [])].join('\n'));
+  const solution = plain((item.solution?.steps || []).map((s) => s.work).join('\n'));
+  const count = (text, re) => (text.match(re) || []).length;
+  const decorative = letters.filter((v) => !hasLetter(asked, v)
+    && count(solution, new RegExp(`(?<![A-Za-z_\\\\])${v}(?![A-Za-z_])`, 'g')) - count(solution, new RegExp(`(?<![A-Za-z_\\\\])${v}\\s*=\\s*-?[\\d./]`, 'g')) <= 0);
+  return [result('decorative-letter', '문제의 문자가 풀이에 필요함', !decorative.length,
+    decorative.length ? `문제가 도입한 문자 ${decorative.join(', ')}는 발문에서 묻지 않고, 해설에서 값을 구한 뒤 어디에도 쓰이지 않습니다. 풀이에 쓰이지 않는 조건이면 묻는 값이나 계산에 쓰이게 하거나 수치로 바꿉니다.` : '', 'hint')];
+}
+
 function inspectItem(material, item, mode) {
   return [
     ...checkFramesFilled(item),
     ...checkUnusedLetters(material, item),
+    ...checkDecorativeLetters(material, item),
     ...checkChoices(material, item),
     ...checkOxConsistency(material, item),
     ...checkHelpers(material, item),
@@ -821,4 +846,4 @@ function applySubstringFixes(text, fixes) {
   return out;
 }
 
-module.exports = { notation, notateItem, notateMaterial, stepTitle, uncoveredLines, renderFrames, validateFrames, carriesValue, frameFindings, frameRegex, teacherChoiceHeading, checkFramesFilled, checkUnusedLetters, problemLetters, checkFormat, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };
+module.exports = { notation, notateItem, notateMaterial, stepTitle, uncoveredLines, renderFrames, validateFrames, carriesValue, frameFindings, frameRegex, teacherChoiceHeading, checkFramesFilled, checkUnusedLetters, checkDecorativeLetters, problemLetters, checkFormat, shapeOptions, judgments, assumes, titleKey, plain, helperVariables, stageSteps, skeleton, formatIssues, inspectItem, hangulFixes, applyWordFixes, confusableFixes, applySubstringFixes, editDistance, CONFUSABLE };

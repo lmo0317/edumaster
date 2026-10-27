@@ -1,0 +1,35 @@
+{
+ "id": "7ac75b6c5e5a3e29",
+ "createdAt": "2026-10-21T06:46:19.391Z",
+ "updatedAt": "2026-10-24T08:39:28.165Z",
+ "status": "dormant",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "수치를 정한 뒤 각 기체의 양(mol)을 질량÷분자량, 부피÷기체 1몰의 부피로 모두 계산해 보고, $\\frac{1}{4}$, $\\frac{1}{2}$처럼 간단한 값이 되도록 질량·분자량을 다시 잡는다(분자량과 서로소인 질량을 두어 양(mol)이 $\\frac{1}{92}$ 꼴이 되지 않게 한다).",
+ "subject": "화학",
+ "topic": "",
+ "source": {
+  "jobId": "ee22324ced7635187d7c5aa4",
+  "materialId": "2a4a35abb4ba2a94f05b1aa3",
+  "label": "기체 (가)~(다)의 분자량·부피·전체 원자 수",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 11,
+ "v2": true,
+ "history": [
+  {
+   "at": "2026-10-24T08:39:28.165Z",
+   "before": "수치를 정한 뒤 각 기체의 양(mol)을 질량÷분자량, 부피÷기체 1몰의 부피로 모두 계산해 보고, $\\frac{1}{4}$, $\\frac{1}{2}$처럼 간단한 값이 되도록 질량·분자량을 다시 잡는다(분자량과 서로소인 질량을 두어 양(mol)이 $\\frac{1}{92}$ 꼴이 되지 않게 한다).",
+   "by": "system",
+   "why": "지시문에 들어간 최근 10세트에서 검수가 한 번도 인용하지 않음",
+   "jobId": "",
+   "status": "dormant"
+  }
+ ],
+ "category": "numbers",
+ "dormantAt": "2026-10-24T08:39:28.165Z"
+}

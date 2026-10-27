@@ -1,0 +1,31 @@
+{
+ "id": "79a31c9fd6a13fb9",
+ "createdAt": "2026-10-24T13:15:48.629Z",
+ "updatedAt": "2026-10-24T13:15:48.629Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "category": "choices",
+ "text": "원본 보기가 특정 STEP의 결과를 묻던 자리를 바꿀 때는, 바뀐 보기 묶음으로도 선생님 해설의 STEP을 하나도 건너뛰지 않아야 정답이 나오는지 STEP별로 확인한다. 건너뛸 수 있는 STEP이 있으면 그 STEP의 결과를 쓰는 보기를 남긴다.",
+ "subject": "생명과학",
+ "topic": "사람의 유전 - 가계도 분석(상염색체·X 염색체 판단)",
+ "history": [],
+ "source": {
+  "jobId": "4fc3d191e20a1c64b351c943",
+  "materialId": "d99d5a4a179fad894b7bd32b",
+  "label": "가계도와 DNA 상대량 (A+b 값으로 X 염색체 유전 판단, 구성원 매칭)",
+  "excerpt": "",
+  "from": "auto",
+  "faultKeys": [
+   "원본과달라진항목은하나뿐이다은원본이수치로준칸을로숨겨ㄴ",
+   "과이각각인지정하기을하지않아도정답이나온다원본에서는ㄷ이",
+   "표의값와값은풀이와보기판정어디에도쓰이지않는다의유전자형"
+  ]
+ },
+ "applied": 10,
+ "v2": true,
+ "tagged": "migrated"
+}

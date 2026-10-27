@@ -99,17 +99,20 @@ async function reviewSet({ store, set, call, providers = REVIEWERS, images, save
     try {
       const responses = [];
       for (let attempt = 0; attempt < 2; attempt++) {
-        const retry = attempt ? '\n[이전 응답의 문항 식별자가 불일치했습니다]\n아래 응답을 다시 확인하여 각 문항의 index와 label을 위 식별자 목록과 정확히 맞춘 완전한 JSON을 반환하세요. 다른 문항의 판정을 옮기지 말고 실제 문항 내용과 대응을 확인하세요.\n' + JSON.stringify(responses[0].review) : '';
+        const retry = attempt ? '\n[이전 응답의 문항 식별자가 불일치했거나 판정 항목이 불완전했습니다]\n아래 응답을 다시 확인하여 각 문항의 index와 label을 위 식별자 목록과 정확히 맞추고, 문항마다 checks에 기준 항목 전부의 판정, myAnswer에 직접 푼 정답 번호, issues에 결함 목록을 갖춘 완전한 JSON을 반환하세요. 다른 문항의 판정을 옮기지 말고 실제 문항 내용과 대응을 확인하세요.\n' + JSON.stringify(responses[0].review) : '';
         const r = await call(p, { purpose: 'review', system, text: text + retry, images, vision: true, maxTokens: 32000, effort: 'high' });
         responses.push({ usage: r.usage, review: r.data });
         const usage = responses.reduce((sum, response) => {
           for (const [key, value] of Object.entries(response.usage || {})) if (typeof value === 'number') sum[key] = (sum[key] || 0) + value;
           return sum;
         }, {});
+        // Each verdict in form too (final-review.wellFormed): a verdict without its checks or its own answer was taken,
+        // itemFaults turned "다시 검수해야 합니다" into the problem's fault, and the problem was made again for it
+        // (2026-10-27 review).
         const valid = Array.isArray(r.data?.items) && r.data.items.length === items.length
-          && items.every(it => finalReview.matchItem(r.data, it, items));
+          && items.every((it) => finalReview.wellFormed(finalReview.matchItem(r.data, it, items)));
         record.reviews[p] = { seconds: Math.round((Date.now() - started) / 1000), usage, responses,
-          ...(valid ? { review: normalizeReview(r.data, items) } : { error: '검수 응답의 문항 식별자가 누락·중복·불일치합니다. 정답 오류 판정이 아니며 다시 검수해야 합니다.' }) };
+          ...(valid ? { review: normalizeReview(r.data, items) } : { error: '검수 응답의 문항 식별자가 누락·중복·불일치하거나 판정 항목(기준 항목의 checks, 직접 푼 정답 번호, 결함 목록)이 불완전합니다. 정답 오류 판정이 아니며 다시 검수해야 합니다.' }) };
         save(record);
         if (valid) break;
       }
@@ -141,7 +144,9 @@ function failing(record, settled = null, advisory = []) {
     for (const [p, v] of Object.entries(record.reviews || {})) {
       if (v.error || !v.review) continue;
       const mine = finalReview.matchItem(v.review, it, record.set.items);
-      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }, { advisory, answer: it.problem?.answer }).map((f) => `[${NAME[p] || p}] ${f}`));
+      // The record keeps a problem's answer as `answer` (its `problem` is the text): read as it.problem.answer it was
+      // undefined and the reviewer's own note of the answer stood in for the problem's (2026-10-27 review).
+      faults.push(...finalReview.itemFaults({ items: mine ? [mine] : [] }, { advisory, answer: it.answer }).map((f) => `[${NAME[p] || p}] ${f}`));
     }
     if (faults.length) out.push({ index: it.index, label: it.label, faults });
   });
@@ -170,7 +175,7 @@ function checklist(record, advisory = []) {
     const per = items.map((it) => {
       const mine = finalReview.matchItem(v.review, it, items);
       if (!mine) return Object.fromEntries(rows.filter((r) => !r.analysis).map((r) => [r.id, ['no', '문항 검수 결과 누락·불일치']]));
-      return finalReview.checklistOf(mine, { final: it.kind === 'twin', advisory, answer: it.problem?.answer });
+      return finalReview.checklistOf(mine, { final: it.kind === 'twin', advisory, answer: it.answer });
     });
     const marks = {};
     // The score counts every problem's own mark on each row (and the analysis'), not a row's worst: with the worst, one
@@ -211,7 +216,19 @@ const reaches = (record, target, settled = null, advisory = []) => !record.stale
 /** The system's own lessons among the rules the set was made with: advice to the writer, not what the review judges by. */
 const advisoryOf = (store, set) => finalReview.advisoryTexts(set.material || store.materials.get(set.materialId) || {}, store.rules.all(), set.rules?.length ? set.rules : null);
 
+/**
+ * Whether a 학습 반복 is stuck on a fault no learning reaches: two rounds in a row whose faults are four fifths recurrences
+ * of this original (faults.setStats own/faults), each made after a learning change. The molar-mass run of 2026-10-26
+ * (one lesson reworded four rounds for a line the code put into every solution, 310 calls) stops at its third set.
+ */
+// A round whose learning step changed nothing (every proposal refused or already there) leaves the next set the same
+// as well: it counts like a round after a change (2026-10-27 review).
+function stuckAfterLearning(rounds, r = rounds.length - 1) {
+  const stuck = (rd) => Boolean(rd?.faultStats) && rd.faultStats.faults >= 3 && rd.faultStats.own / rd.faultStats.faults >= 0.8;
+  return r >= 2 && stuck(rounds[r]) && stuck(rounds[r - 1]);
+}
+
 /** The remake's note: what the reviewers found, for the writer to fix. */
 const remakeNote = (f) => `Claude·Gemini 검수에서 이 문제에 걸린 점입니다. 모두 고친 문제를 새로 만듭니다.\n${f.faults.map((x) => `- ${x}`).join('\n')}`;
 
-module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, invalidateCheck, recoverChecks, contentKey, matchesSet, normalizeReview, checkRecord, reviewSet, failing, analysisIssues, checklist, scores, reaches, advisoryOf, remakeNote };
+module.exports = { REVIEWERS, NAME, checkPath, readCheck, writeCheck, invalidateCheck, recoverChecks, contentKey, matchesSet, normalizeReview, checkRecord, reviewSet, failing, analysisIssues, checklist, scores, reaches, advisoryOf, remakeNote, stuckAfterLearning };

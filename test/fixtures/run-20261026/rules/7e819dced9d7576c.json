@@ -1,0 +1,25 @@
+{
+ "id": "7e819dced9d7576c",
+ "createdAt": "2026-10-20T16:15:17.944Z",
+ "updatedAt": "2026-10-20T16:15:17.944Z",
+ "status": "approved",
+ "scope": "global",
+ "stage": "generation",
+ "layer": "lesson",
+ "kind": "feedback",
+ "target": "problem",
+ "text": "그래프 그림의 축에 수치 눈금이나 눈금 점을 둘 때는 그 값이 변형 문제의 실제 값(가로축 길이, 세로축 힘)과 겹치거나 어긋나지 않는지 확인한다. 겹치거나 어긋날 수 있으면 원본처럼 크기 순서만 보이게 그린다.",
+ "subject": "",
+ "topic": "",
+ "source": {
+  "jobId": "d079705a3daa9fe4b9cc28ba",
+  "materialId": "87eefaa58f8fbd9140bf67fb",
+  "label": "골격근 수축 과정 — 근육 원섬유 마디 X와 구간 ㉠~㉢의 길이",
+  "excerpt": "",
+  "from": "auto"
+ },
+ "applied": 15,
+ "v2": true,
+ "history": [],
+ "category": "design"
+}
